@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Real Estate - Owner",
+    "slug": "real-estate-owner",
+    "scheme": "ownerapp",
+    "version": "1.0.0",
+    "plugins": ["expo-router"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Real Estate - Seeker",
+    "slug": "real-estate-user",
+    "scheme": "userapp",
+    "version": "1.0.0",
+    "plugins": ["expo-router"]
+  }
+}
