@@ -28,9 +28,15 @@ export function Navbar() {
 
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-6">
-          <a href="#" className="text-sm font-medium text-slate-600 hover:text-slate-900">Buy</a>
-          <a href="#" className="text-sm font-medium text-slate-600 hover:text-slate-900">Rent</a>
-          <a href="#" className="text-sm font-medium text-slate-600 hover:text-slate-900">Sell</a>
+          <Link href="/search?listType=SALE" className="text-sm font-medium text-slate-600 hover:text-rose-600 transition-colors">
+            Buy
+          </Link>
+          <Link href="/search?listType=RENT" className="text-sm font-medium text-slate-600 hover:text-rose-600 transition-colors">
+            Rent
+          </Link>
+          <Link href="/search" className="text-sm font-medium text-slate-600 hover:text-rose-600 transition-colors">
+            Explore Map
+          </Link>
         </nav>
 
         {/* Right actions */}

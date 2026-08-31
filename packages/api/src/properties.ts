@@ -1,6 +1,121 @@
 import { supabase } from './client';
 import { Property } from './database.types';
 
+export interface PropertySearchParams {
+  query?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  min_price?: number;
+  max_price?: number;
+  bedrooms?: number | string;
+  bathrooms?: number | string;
+  propType?: 'APARTMENT' | 'HOUSE' | 'VILLA' | 'COMMERCIAL' | 'ALL' | string;
+  prop_type?: string;
+  listType?: 'SALE' | 'RENT' | 'ALL' | string;
+  list_type?: string;
+  status?: string;
+  sortBy?: 'newest' | 'price_asc' | 'price_desc' | 'area_desc' | string;
+  bounds?: {
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+  };
+}
+
+export const searchProperties = async (params: PropertySearchParams = {}): Promise<Property[]> => {
+  try {
+    const listType = params.listType || params.list_type;
+    const propType = params.propType || params.prop_type;
+    const minPrice = params.minPrice ?? params.min_price;
+    const maxPrice = params.maxPrice ?? params.max_price;
+    const bedrooms = params.bedrooms;
+    const bathrooms = params.bathrooms;
+    const queryStr = params.query;
+    const status = params.status || 'PUBLISHED';
+
+    let queryBuilder = supabase
+      .from('properties')
+      .select('*, property_media(url)')
+      .eq('status', status);
+
+    if (minPrice !== undefined && minPrice !== null && minPrice > 0) {
+      queryBuilder = queryBuilder.gte('price', minPrice);
+    }
+
+    if (maxPrice !== undefined && maxPrice !== null && maxPrice > 0) {
+      queryBuilder = queryBuilder.lte('price', maxPrice);
+    }
+
+    if (bedrooms !== undefined && bedrooms !== null && bedrooms !== '' && bedrooms !== 'any') {
+      const minBeds = typeof bedrooms === 'string' ? parseInt(bedrooms, 10) : bedrooms;
+      if (!isNaN(minBeds) && minBeds > 0) {
+        queryBuilder = queryBuilder.gte('bedrooms', minBeds);
+      }
+    }
+
+    if (bathrooms !== undefined && bathrooms !== null && bathrooms !== '' && bathrooms !== 'any') {
+      const minBaths = typeof bathrooms === 'string' ? parseInt(bathrooms, 10) : bathrooms;
+      if (!isNaN(minBaths) && minBaths > 0) {
+        queryBuilder = queryBuilder.gte('bathrooms', minBaths);
+      }
+    }
+
+    if (propType && propType !== 'ALL') {
+      queryBuilder = queryBuilder.eq('prop_type', propType);
+    }
+
+    if (listType && listType !== 'ALL') {
+      queryBuilder = queryBuilder.eq('list_type', listType);
+    }
+
+    if (queryStr && queryStr.trim()) {
+      const q = queryStr.trim();
+      queryBuilder = queryBuilder.or(`title.ilike.%${q}%,address.ilike.%${q}%`);
+    }
+
+    if (params.sortBy === 'price_asc') {
+      queryBuilder = queryBuilder.order('price', { ascending: true });
+    } else if (params.sortBy === 'price_desc') {
+      queryBuilder = queryBuilder.order('price', { ascending: false });
+    } else if (params.sortBy === 'area_desc') {
+      queryBuilder = queryBuilder.order('area_sqft', { ascending: false, nullsFirst: false });
+    } else {
+      queryBuilder = queryBuilder.order('created_at', { ascending: false });
+    }
+
+    const { data, error } = await queryBuilder;
+
+    if (error) {
+      console.error('Error searching properties:', error);
+      return [];
+    }
+
+    let results: Property[] = (data as Property[]) || [];
+
+    if (params.bounds) {
+      const { north, south, east, west } = params.bounds;
+      results = results.filter((prop: Property) => {
+        if (typeof prop.latitude === 'number' && typeof prop.longitude === 'number') {
+          return (
+            prop.latitude >= south &&
+            prop.latitude <= north &&
+            prop.longitude >= west &&
+            prop.longitude <= east
+          );
+        }
+        // Fallback: if database lacks coordinates, returns filtered results gracefully
+        return true;
+      });
+    }
+
+    return results;
+  } catch (err) {
+    console.error('Unexpected error searching properties:', err);
+    return [];
+  }
+};
+
 export const getPublishedProperties = async () => {
   try {
     const { data, error } = await supabase
@@ -288,3 +403,5 @@ export const getSavedProperties = async (userId: string) => {
     return [];
   }
 };
+
+
