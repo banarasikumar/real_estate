@@ -9,11 +9,13 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
+    "@real-estate/types": "*",
+    "@real-estate/ui": "*",
+    "@repo/api": "*",
     "expo": "~51.0.0",
     "expo-router": "~3.5.14",
     "react": "18.2.0",
-    "react-native": "0.74.1",
-    "@real-estate/types": "*",
-    "@real-estate/ui": "*"
+    "react-native": "0.74.1"
   }
 }
