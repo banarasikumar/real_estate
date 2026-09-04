@@ -1,16 +1,16 @@
 import { Stack } from 'expo-router';
-import { useState } from 'react';
+import { AuthProvider } from '@repo/api';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export default function RootLayout() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
   return (
-    <Stack>
-      {isAuthenticated ? (
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      ) : (
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-      )}
-    </Stack>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{ headerShown: false }} />
+        </Stack>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

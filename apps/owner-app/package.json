@@ -9,8 +9,10 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@real-estate/types": "*",
     "@real-estate/ui": "*",
+    "@repo/api": "*",
     "expo": "~57.0.19",
     "expo-constants": "~57.0.17",
     "expo-image-picker": "^57.0.14",

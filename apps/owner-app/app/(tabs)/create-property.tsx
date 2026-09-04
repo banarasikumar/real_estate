@@ -3,6 +3,7 @@ import { View, Text, TextInput, Button, StyleSheet, ScrollView, Alert, Image, Ac
 import * as ImagePicker from 'expo-image-picker';
 import { createProperty, uploadPropertyImage, addPropertyMedia, useAuth } from '@repo/api';
 import { PropertyType, ListingType } from '@repo/api';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function CreatePropertyScreen() {
   const { session } = useAuth();
@@ -20,7 +21,7 @@ export default function CreatePropertyScreen() {
 
   const pickImages = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.7,
     });
@@ -102,57 +103,59 @@ export default function CreatePropertyScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.header}>Create New Property</Text>
-      
-      <Text style={styles.label}>Title *</Text>
-      <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Cozy Apartment" />
-      
-      <Text style={styles.label}>Description</Text>
-      <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} placeholder="Detailed description..." multiline numberOfLines={4} />
-      
-      <Text style={styles.label}>Property Type (e.g., Apartment, House)</Text>
-      <TextInput style={styles.input} value={propertyType} onChangeText={setPropertyType} placeholder="Apartment" />
-      
-      <Text style={styles.label}>Listing Type (Sale or Rent)</Text>
-      <TextInput style={styles.input} value={listingType} onChangeText={setListingType} placeholder="Sale" />
-      
-      <Text style={styles.label}>Price ($) *</Text>
-      <TextInput style={styles.input} value={price} onChangeText={setPrice} placeholder="500000" keyboardType="numeric" />
-      
-      <Text style={styles.label}>Area (Sqft)</Text>
-      <TextInput style={styles.input} value={area} onChangeText={setArea} placeholder="1200" keyboardType="numeric" />
-      
-      <Text style={styles.label}>Bedrooms</Text>
-      <TextInput style={styles.input} value={bedrooms} onChangeText={setBedrooms} placeholder="2" keyboardType="numeric" />
-      
-      <Text style={styles.label}>Bathrooms</Text>
-      <TextInput style={styles.input} value={bathrooms} onChangeText={setBathrooms} placeholder="1.5" keyboardType="numeric" />
-      
-      <Text style={styles.label}>Address *</Text>
-      <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="123 Main St" />
-      
-      <Text style={styles.label}>Images</Text>
-      <TouchableOpacity style={styles.imagePickerButton} onPress={pickImages}>
-        <Text style={styles.imagePickerButtonText}>Pick Images</Text>
-      </TouchableOpacity>
-      
-      {images.length > 0 && (
-        <View style={styles.imagesContainer}>
-          {images.map((uri, index) => (
-            <Image key={index} source={{ uri }} style={styles.imagePreview} />
-          ))}
-        </View>
-      )}
-      
-      <View style={styles.buttonContainer}>
-        {isLoading ? (
-          <ActivityIndicator size="large" color="green" />
-        ) : (
-          <Button title="Submit Property" onPress={handleSubmit} color="green" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        <Text style={styles.header}>Create New Property</Text>
+        
+        <Text style={styles.label}>Title *</Text>
+        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="Cozy Apartment" />
+        
+        <Text style={styles.label}>Description</Text>
+        <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} placeholder="Detailed description..." multiline numberOfLines={4} />
+        
+        <Text style={styles.label}>Property Type (e.g., Apartment, House)</Text>
+        <TextInput style={styles.input} value={propertyType} onChangeText={setPropertyType} placeholder="Apartment" />
+        
+        <Text style={styles.label}>Listing Type (Sale or Rent)</Text>
+        <TextInput style={styles.input} value={listingType} onChangeText={setListingType} placeholder="Sale" />
+        
+        <Text style={styles.label}>Price ($) *</Text>
+        <TextInput style={styles.input} value={price} onChangeText={setPrice} placeholder="250000" keyboardType="numeric" />
+        
+        <Text style={styles.label}>Area (sqft)</Text>
+        <TextInput style={styles.input} value={area} onChangeText={setArea} placeholder="1200" keyboardType="numeric" />
+        
+        <Text style={styles.label}>Bedrooms</Text>
+        <TextInput style={styles.input} value={bedrooms} onChangeText={setBedrooms} placeholder="3" keyboardType="numeric" />
+        
+        <Text style={styles.label}>Bathrooms</Text>
+        <TextInput style={styles.input} value={bathrooms} onChangeText={setBathrooms} placeholder="2" keyboardType="numeric" />
+        
+        <Text style={styles.label}>Address *</Text>
+        <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="123 Main St, City" />
+
+        <Text style={styles.label}>Images</Text>
+        <TouchableOpacity style={styles.imagePickerButton} onPress={pickImages}>
+          <Text style={styles.imagePickerButtonText}>Pick Images from Gallery</Text>
+        </TouchableOpacity>
+
+        {images.length > 0 && (
+          <View style={styles.imagesContainer}>
+            {images.map((uri, index) => (
+              <Image key={index} source={{ uri }} style={styles.imagePreview} />
+            ))}
+          </View>
         )}
-      </View>
-    </ScrollView>
+
+        <View style={styles.buttonContainer}>
+          {isLoading ? (
+            <ActivityIndicator size="large" color="green" />
+          ) : (
+            <Button title="Submit Property" onPress={handleSubmit} color="green" />
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

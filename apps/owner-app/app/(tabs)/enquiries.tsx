@@ -1,40 +1,63 @@
-import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
-import { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth, getOwnerEnquiries } from '@repo/api';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function EnquiriesScreen() {
   const { session } = useAuth();
   const [enquiries, setEnquiries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadEnquiries = useCallback(async () => {
+    if (session?.user?.id) {
+      try {
+        const data = await getOwnerEnquiries(session.user.id);
+        setEnquiries(data || []);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }, [session?.user?.id]);
 
   useEffect(() => {
-    async function loadEnquiries() {
-      if (session?.user?.id) {
-        const data = await getOwnerEnquiries(session.user.id);
-        setEnquiries(data);
-      }
-      setLoading(false);
-    }
     loadEnquiries();
-  }, [session?.user?.id]);
+  }, [loadEnquiries]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadEnquiries();
+  };
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="green" />
+        <ActivityIndicator size="large" color="#059669" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Customer Enquiries</Text>
-      <Text style={styles.subtitle}>Leads for your properties</Text>
+      <Text style={styles.subtitle}>Direct leads & questions for your listings</Text>
 
       <FlatList
         data={enquiries}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#059669']} />
+        }
         ListEmptyComponent={<Text style={styles.emptyText}>No enquiries yet.</Text>}
         renderItem={({ item }) => (
           <View style={styles.card}>
@@ -48,7 +71,7 @@ export default function EnquiriesScreen() {
           </View>
         )}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
