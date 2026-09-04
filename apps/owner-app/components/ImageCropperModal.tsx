@@ -10,7 +10,7 @@ import {
   PanResponder,
   ActivityIndicator,
   ScrollView,
-  Alert,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { manipulateAsync, SaveFormat, Action } from 'expo-image-manipulator';
@@ -41,6 +41,7 @@ const MAX_WIDTH = 1600;
 const MAX_HEIGHT = 1200;
 const MIN_SCALE = 1.0;
 const MAX_SCALE = 3.0;
+const THUMB_SIZE = 26;
 
 export function ImageCropperModal({
   visible,
@@ -66,11 +67,28 @@ export function ImageCropperModal({
   const cropTop = Math.max(0, (viewportSize.height - boxHeight) / 2);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [croppedMap, setCroppedMap] = useState<Record<number, CroppedImageResult>>({});
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
 
-  // Transform state: scale (1.0 to 3.0) and pan (x, y)
+  // Per-photo transform memory: preserves zoom scale & pan framing across photo switches
+  const [transformsMap, setTransformsMap] = useState<
+    Record<number, { scale: number; pan: { x: number; y: number } }>
+  >({});
+  const transformsMapRef = useRef<
+    Record<number, { scale: number; pan: { x: number; y: number } }>
+  >({});
+  transformsMapRef.current = transformsMap;
+
+  // Track confirmed photos
+  const [confirmedIndices, setConfirmedIndices] = useState<number[]>([]);
+
+  // Animated Warning Toast state
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Transform state for active photo
   const [scale, setScale] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
@@ -93,15 +111,29 @@ export function ImageCropperModal({
   scaleRef.current = scale;
   panRef.current = pan;
 
-  // Reset index when modal opens or images change
+  // Sync scale/pan updates into current photo's transform memory
+  useEffect(() => {
+    if (imageSize && normalizedImages[currentIndex]) {
+      transformsMapRef.current[currentIndex] = { scale, pan };
+    }
+  }, [scale, pan, currentIndex, imageSize, normalizedImages]);
+
+  // Reset all state when modal opens or images change
   useEffect(() => {
     if (visible) {
       setCurrentIndex(0);
-      setCroppedMap({});
+      setTransformsMap({});
+      transformsMapRef.current = {};
+      setConfirmedIndices([]);
+      setToastMessage(null);
+      setScale(1.0);
+      scaleRef.current = 1.0;
+      setPan({ x: 0, y: 0 });
+      panRef.current = { x: 0, y: 0 };
     }
   }, [visible]);
 
-  // Load natural dimensions of current image
+  // Load natural dimensions of current image and restore saved framing
   useEffect(() => {
     if (!visible || !normalizedImages[currentIndex]) {
       setImageSize(null);
@@ -109,14 +141,23 @@ export function ImageCropperModal({
     }
 
     const currentItem = normalizedImages[currentIndex];
+    const saved = transformsMapRef.current[currentIndex];
+    const initialScale = saved ? saved.scale : 1.0;
+    const initialPan = saved ? saved.pan : { x: 0, y: 0 };
+
+    const applyDimensionsAndRestore = (origW: number, origH: number) => {
+      setImageSize({ width: origW, height: origH });
+      setScale(initialScale);
+      scaleRef.current = initialScale;
+      setPan(initialPan);
+      panRef.current = initialPan;
+      dragStartTouchRef.current = null;
+      dragStartPanRef.current = { ...initialPan };
+    };
 
     // If dimensions were provided by ImagePicker, use immediately
     if (currentItem.width && currentItem.height && currentItem.width > 0 && currentItem.height > 0) {
-      setImageSize({ width: currentItem.width, height: currentItem.height });
-      setScale(1.0);
-      scaleRef.current = 1.0;
-      setPan({ x: 0, y: 0 });
-      panRef.current = { x: 0, y: 0 };
+      applyDimensionsAndRestore(currentItem.width, currentItem.height);
       return;
     }
 
@@ -128,20 +169,13 @@ export function ImageCropperModal({
       currentItem.uri,
       (origW, origH) => {
         if (isMounted) {
-          setImageSize({ width: origW, height: origH });
-          setScale(1.0);
-          scaleRef.current = 1.0;
-          setPan({ x: 0, y: 0 });
-          panRef.current = { x: 0, y: 0 };
+          applyDimensionsAndRestore(origW, origH);
         }
       },
       (error) => {
         console.error('Failed to get image size for uri:', currentItem.uri, error);
         if (isMounted) {
-          // Default fallback size so the user can still view and crop
-          setImageSize({ width: 1200, height: 900 });
-          setScale(1.0);
-          setPan({ x: 0, y: 0 });
+          applyDimensionsAndRestore(1200, 900);
         }
       }
     );
@@ -209,12 +243,13 @@ export function ImageCropperModal({
     []
   );
 
-  // Continuous Zoom Slider PanResponder
+  // Continuous Zoom Slider PanResponder with inset boundary to prevent button overlap
   const updateScaleFromSliderTouch = useCallback(
     (pageX: number) => {
-      if (sliderWidthRef.current <= 0) return;
-      const localX = pageX - sliderPageXRef.current;
-      const progress = Math.max(0, Math.min(1, localX / sliderWidthRef.current));
+      if (sliderWidthRef.current <= THUMB_SIZE) return;
+      const usableWidth = sliderWidthRef.current - THUMB_SIZE;
+      const localX = pageX - sliderPageXRef.current - THUMB_SIZE / 2;
+      const progress = Math.max(0, Math.min(1, localX / usableWidth));
       const targetScale = MIN_SCALE + progress * (MAX_SCALE - MIN_SCALE);
       // Fine 0.05 step resolution for buttery smooth slider drag
       const rounded = Math.round(targetScale * 20) / 20;
@@ -398,159 +433,205 @@ export function ImageCropperModal({
     dragStartPanRef.current = { x: 0, y: 0 };
   };
 
-  // Perform crop on the currently active image
-  const cropCurrentImage = async (): Promise<CroppedImageResult | null> => {
-    if (!imageSize || !normalizedImages[currentIndex]) return null;
-    try {
-      setIsProcessing(true);
-      const origW = imageSize.width;
-      const origH = imageSize.height;
-
-      const currentW = baseDimensions.width * scale;
-      const currentH = baseDimensions.height * scale;
-
-      // Crop coordinates: distance from image top-left to 4:3 box top-left
-      const cropScreenX = (currentW - boxWidth) / 2 - pan.x;
-      const cropScreenY = (currentH - boxHeight) / 2 - pan.y;
-
-      // Scale from original bitmap pixels to screen display pixels
-      const screenScale = currentW / origW;
-
-      let originX = Math.round(cropScreenX / screenScale);
-      let originY = Math.round(cropScreenY / screenScale);
-      let cropWidth = Math.round(boxWidth / screenScale);
-      let cropHeight = Math.round(boxHeight / screenScale);
-
-      // Boundary protections within original image
-      originX = Math.max(0, Math.min(origW - cropWidth, originX));
-      originY = Math.max(0, Math.min(origH - cropHeight, originY));
-      cropWidth = Math.min(origW - originX, cropWidth);
-      cropHeight = Math.min(origH - originY, cropHeight);
-
-      // Enforce strict 4:3 aspect ratio
-      const expectedH = Math.round((cropWidth * 3) / 4);
-      if (expectedH <= origH - originY) {
-        cropHeight = expectedH;
-      } else {
-        cropWidth = Math.round((cropHeight * 4) / 3);
+  // Show animated warning toast at the top of the viewport
+  const showWarningToast = useCallback(
+    (message: string) => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
       }
+      setToastMessage(message);
+      Animated.timing(toastAnim, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
 
-      const actions: Action[] = [
-        {
-          crop: {
-            originX,
-            originY,
-            width: cropWidth,
-            height: cropHeight,
-          },
-        },
-      ];
-
-      // If dimensions exceed 1600x1200, clamp down while preserving 4:3
-      if (cropWidth > MAX_WIDTH || cropHeight > MAX_HEIGHT) {
-        actions.push({
-          resize: {
-            width: MAX_WIDTH,
-            height: MAX_HEIGHT,
-          },
+      toastTimeoutRef.current = setTimeout(() => {
+        Animated.timing(toastAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }).start(() => {
+          setToastMessage(null);
         });
-      }
+      }, 2500);
+    },
+    [toastAnim]
+  );
 
-      // Convert to WebP with 0.82 compression and extract base64 for fast binary upload
-      const result = await manipulateAsync(normalizedImages[currentIndex].uri, actions, {
-        compress: 0.82,
-        format: SaveFormat.WEBP,
-        base64: true,
-      });
-
-      const croppedResult: CroppedImageResult = {
-        originalUri: normalizedImages[currentIndex].uri,
-        uri: result.uri,
-        base64: result.base64,
-        width: result.width,
-        height: result.height,
+  // Switch photo and save current framing before switching
+  const switchToIndex = useCallback(
+    (newIndex: number) => {
+      if (newIndex < 0 || newIndex >= normalizedImages.length) return;
+      transformsMapRef.current[currentIndex] = {
+        scale: scaleRef.current,
+        pan: { ...panRef.current },
       };
+      setTransformsMap({ ...transformsMapRef.current });
+      setCurrentIndex(newIndex);
+    },
+    [currentIndex, normalizedImages.length]
+  );
 
-      setCroppedMap((prev) => ({
-        ...prev,
-        [currentIndex]: croppedResult,
-      }));
+  // Confirm framing for current photo and advance to next photo
+  const handleConfirmAndNext = () => {
+    // 1. Mark confirmed
+    if (!confirmedIndices.includes(currentIndex)) {
+      setConfirmedIndices((prev) => [...prev, currentIndex]);
+    }
 
-      return croppedResult;
-    } catch (err: any) {
-      console.error('Error cropping image:', err);
-      Alert.alert('Crop Failed', err?.message || 'Could not crop image.');
-      return null;
-    } finally {
-      setIsProcessing(false);
+    // 2. Save current transform
+    transformsMapRef.current[currentIndex] = {
+      scale: scaleRef.current,
+      pan: { ...panRef.current },
+    };
+    setTransformsMap({ ...transformsMapRef.current });
+
+    // 3. Move to next photo sequentially if not at the end
+    if (currentIndex < normalizedImages.length - 1) {
+      switchToIndex(currentIndex + 1);
     }
   };
 
-  // Crop current and move to next uncropped image
-  const handleCropAndNext = async () => {
-    const cropped = await cropCurrentImage();
-    if (!cropped) return;
-
-    // Check if there are other uncropped images
-    const nextUncroppedIndex = normalizedImages.findIndex(
-      (_, idx) => idx !== currentIndex && !croppedMap[idx]
-    );
-
-    if (nextUncroppedIndex !== -1) {
-      setCurrentIndex(nextUncroppedIndex);
-    } else {
-      // All images are now cropped! Stay on screen so user can review before tapping Done
-      Alert.alert(
-        'All Photos Cropped!',
-        'Every selected photo has been framed. Review your cropped gallery below or tap "Done & Continue" to add them to your listing.',
-        [{ text: 'Review Gallery' }]
-      );
-    }
-  };
-
-  // Complete and pass results to caller
+  // Complete and batch-crop all confirmed photos
   const handleDone = async () => {
-    let latestMap = { ...croppedMap };
+    // Save current transform & mark confirmed
+    transformsMapRef.current[currentIndex] = {
+      scale: scaleRef.current,
+      pan: { ...panRef.current },
+    };
+    setTransformsMap({ ...transformsMapRef.current });
 
-    // If current photo has not been cropped yet, crop it now
-    if (!latestMap[currentIndex]) {
-      const result = await cropCurrentImage();
-      if (result) {
-        latestMap[currentIndex] = result;
-      }
-    }
+    const latestConfirmed = confirmedIndices.includes(currentIndex)
+      ? confirmedIndices
+      : [...confirmedIndices, currentIndex];
+    setConfirmedIndices(latestConfirmed);
 
-    // Require all photos to be explicitly reviewed and cropped
-    const uncroppedIndices = normalizedImages
+    // Verify all photos are confirmed
+    const unconfirmed = normalizedImages
       .map((_, idx) => idx)
-      .filter((idx) => !latestMap[idx]);
+      .filter((idx) => !latestConfirmed.includes(idx));
 
-    if (uncroppedIndices.length > 0) {
-      const remainingCount = uncroppedIndices.length;
-      Alert.alert(
-        'Uncropped Photos Remaining',
-        `Please review and crop all selected photos before continuing (${remainingCount} remaining).`,
-        [
-          {
-            text: `Go to Photo ${uncroppedIndices[0] + 1}`,
-            onPress: () => setCurrentIndex(uncroppedIndices[0]),
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]
+    if (unconfirmed.length > 0) {
+      showWarningToast(
+        `Please frame all photos first (${unconfirmed.length} remaining)`
       );
       return;
     }
 
-    const results: CroppedImageResult[] = normalizedImages
-      .map((_, idx) => latestMap[idx])
-      .filter((item): item is CroppedImageResult => !!item);
+    // Batch process all confirmed photos
+    try {
+      setIsProcessing(true);
+      const results: CroppedImageResult[] = [];
 
-    onComplete(results);
+      for (let i = 0; i < normalizedImages.length; i++) {
+        setProcessingStatus(`Cropping photo ${i + 1} of ${normalizedImages.length}...`);
+        const item = normalizedImages[i];
+        const transform = transformsMapRef.current[i] || { scale: 1.0, pan: { x: 0, y: 0 } };
+
+        let origW = item.width || 0;
+        let origH = item.height || 0;
+        if (!origW || !origH) {
+          await new Promise<void>((resolve) => {
+            Image.getSize(
+              item.uri,
+              (w, h) => {
+                origW = w;
+                origH = h;
+                resolve();
+              },
+              () => {
+                origW = 1200;
+                origH = 900;
+                resolve();
+              }
+            );
+          });
+        }
+
+        const imgRatio = origW / origH;
+        let baseW = boxWidth;
+        let baseH = boxHeight;
+        if (imgRatio >= 4 / 3) {
+          baseH = boxHeight;
+          baseW = Math.round(boxHeight * imgRatio);
+        } else {
+          baseW = boxWidth;
+          baseH = Math.round(boxWidth / imgRatio);
+        }
+
+        const currentW = baseW * transform.scale;
+        const currentH = baseH * transform.scale;
+
+        const cropScreenX = (currentW - boxWidth) / 2 - transform.pan.x;
+        const cropScreenY = (currentH - boxHeight) / 2 - transform.pan.y;
+        const screenScale = currentW / origW;
+
+        let originX = Math.round(cropScreenX / screenScale);
+        let originY = Math.round(cropScreenY / screenScale);
+        let cropW = Math.round(boxWidth / screenScale);
+        let cropH = Math.round(boxHeight / screenScale);
+
+        originX = Math.max(0, Math.min(origW - cropW, originX));
+        originY = Math.max(0, Math.min(origH - cropH, originY));
+        cropW = Math.min(origW - originX, cropW);
+        cropH = Math.min(origH - originY, cropH);
+
+        const expectedH = Math.round((cropW * 3) / 4);
+        if (expectedH <= origH - originY) {
+          cropH = expectedH;
+        } else {
+          cropW = Math.round((cropH * 4) / 3);
+        }
+
+        const actions: Action[] = [
+          {
+            crop: {
+              originX,
+              originY,
+              width: cropW,
+              height: cropH,
+            },
+          },
+        ];
+
+        if (cropW > MAX_WIDTH || cropH > MAX_HEIGHT) {
+          actions.push({
+            resize: {
+              width: MAX_WIDTH,
+              height: MAX_HEIGHT,
+            },
+          });
+        }
+
+        const result = await manipulateAsync(item.uri, actions, {
+          compress: 0.82,
+          format: SaveFormat.WEBP,
+          base64: true,
+        });
+
+        results.push({
+          originalUri: item.uri,
+          uri: result.uri,
+          base64: result.base64,
+          width: result.width,
+          height: result.height,
+        });
+      }
+
+      onComplete(results);
+    } catch (err: any) {
+      console.error('Error during batch cropping:', err);
+      showWarningToast(err?.message || 'Failed to crop photos.');
+    } finally {
+      setIsProcessing(false);
+      setProcessingStatus(null);
+    }
   };
 
-  const totalCroppedCount = Object.keys(croppedMap).length;
-  const isCurrentCropped = !!croppedMap[currentIndex];
-  const allImagesCropped = totalCroppedCount === normalizedImages.length && normalizedImages.length > 0;
+  const totalConfirmedCount = confirmedIndices.length;
+  const isCurrentConfirmed = confirmedIndices.includes(currentIndex);
+  const allConfirmed = normalizedImages.length > 0 && totalConfirmedCount >= normalizedImages.length;
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onCancel}>
@@ -691,6 +772,30 @@ export function ImageCropperModal({
               <Text style={styles.zoomPillText}>{scale.toFixed(1)}x</Text>
             </View>
           </View>
+
+          {/* Animated Warning Toast Pill */}
+          {toastMessage && (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.toastContainer,
+                {
+                  opacity: toastAnim,
+                  transform: [
+                    {
+                      translateY: toastAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-20, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Ionicons name="alert-circle" size={18} color="#fbbf24" />
+              <Text style={styles.toastText}>{toastMessage}</Text>
+            </Animated.View>
+          )}
         </View>
 
         {/* Interactive Continuous Zoom Slider Bar */}
@@ -733,7 +838,7 @@ export function ImageCropperModal({
               />
             </View>
 
-            {/* Draggable Knob / Thumb */}
+            {/* Draggable Knob / Thumb (Inset to never overlap side buttons) */}
             <View
               style={[
                 styles.sliderThumb,
@@ -778,12 +883,12 @@ export function ImageCropperModal({
             <Text style={styles.thumbnailLabel}>Selected Images ({normalizedImages.length})</Text>
             <View style={styles.statusBadge}>
               <Ionicons
-                name={allImagesCropped ? 'checkmark-circle' : 'hourglass-outline'}
+                name={allConfirmed ? 'checkmark-circle' : 'hourglass-outline'}
                 size={14}
-                color={allImagesCropped ? '#34d399' : '#38bdf8'}
+                color={allConfirmed ? '#34d399' : '#38bdf8'}
               />
-              <Text style={[styles.thumbnailStatus, allImagesCropped && styles.thumbnailStatusComplete]}>
-                {totalCroppedCount} of {normalizedImages.length} Cropped
+              <Text style={[styles.thumbnailStatus, allConfirmed && styles.thumbnailStatusComplete]}>
+                {totalConfirmedCount} of {normalizedImages.length} Confirmed
               </Text>
             </View>
           </View>
@@ -795,18 +900,18 @@ export function ImageCropperModal({
           >
             {normalizedImages.map((item, idx) => {
               const isSelected = idx === currentIndex;
-              const hasCropped = !!croppedMap[idx];
+              const hasConfirmed = confirmedIndices.includes(idx);
               return (
                 <TouchableOpacity
                   key={idx}
                   style={[styles.thumbnailWrap, isSelected && styles.thumbnailWrapActive]}
-                  onPress={() => setCurrentIndex(idx)}
+                  onPress={() => switchToIndex(idx)}
                 >
-                  <Image source={{ uri: croppedMap[idx]?.uri || item.uri }} style={styles.thumbnailImage} />
+                  <Image source={{ uri: item.uri }} style={styles.thumbnailImage} />
                   <View style={styles.thumbnailBadge}>
                     <Text style={styles.thumbnailBadgeText}>{idx + 1}</Text>
                   </View>
-                  {hasCropped && (
+                  {hasConfirmed && (
                     <View style={styles.checkBadge}>
                       <Ionicons name="checkmark" size={12} color="#fff" />
                     </View>
@@ -819,39 +924,36 @@ export function ImageCropperModal({
           {/* Action Buttons */}
           <View style={styles.actionsRow}>
             <TouchableOpacity
-              style={[styles.cropButton, isProcessing && styles.buttonDisabled]}
-              onPress={handleCropAndNext}
+              style={[styles.confirmButton, isProcessing && styles.buttonDisabled]}
+              onPress={handleConfirmAndNext}
               disabled={isProcessing}
             >
-              {isProcessing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Ionicons
-                    name={isCurrentCropped ? 'checkmark-circle-outline' : 'crop-outline'}
-                    size={20}
-                    color="#fff"
-                  />
-                  <Text style={styles.cropButtonText}>
-                    {isCurrentCropped ? 'Update Crop' : 'Crop & Next'}
-                  </Text>
-                </>
-              )}
+              <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+              <Text style={styles.confirmButtonText}>
+                {currentIndex < normalizedImages.length - 1 ? 'Confirm & Next' : 'Confirm'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 styles.continueButton,
-                (!allImagesCropped && !isCurrentCropped) && styles.continueButtonMuted,
+                !allConfirmed && styles.continueButtonMuted,
                 isProcessing && styles.buttonDisabled,
               ]}
               onPress={handleDone}
               disabled={isProcessing}
             >
-              <Text style={styles.continueButtonText}>
-                {allImagesCropped ? 'Done & Continue' : `Crop & Finish (${totalCroppedCount}/${normalizedImages.length})`}
-              </Text>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
+              {isProcessing ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.continueButtonText}>{processingStatus || 'Cropping...'}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.continueButtonText}>Crop & Finish</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -1016,11 +1118,36 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  toastContainer: {
+    position: 'absolute',
+    top: 16,
+    alignSelf: 'center',
+    zIndex: 99,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#78350f',
+    borderWidth: 1,
+    borderColor: '#f59e0b',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  toastText: {
+    color: '#fef3c7',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   zoomControlBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 14,
     marginTop: 10,
     paddingHorizontal: 16,
   },
@@ -1043,6 +1170,7 @@ const styles = StyleSheet.create({
     height: 38,
     justifyContent: 'center',
     position: 'relative',
+    paddingHorizontal: 13, // Insets thumb travel by THUMB_SIZE / 2 to never overlap side buttons
   },
   sliderRail: {
     height: 6,
@@ -1060,14 +1188,14 @@ const styles = StyleSheet.create({
   },
   sliderThumb: {
     position: 'absolute',
-    top: 5,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    top: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#ffffff',
     borderWidth: 3,
     borderColor: '#10b981',
-    marginLeft: -14,
+    marginLeft: -13,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,
@@ -1198,7 +1326,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 16,
   },
-  cropButton: {
+  confirmButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1210,7 +1338,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 6,
   },
-  cropButtonText: {
+  confirmButtonText: {
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
