@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   TextInput,
   RefreshControl,
-  SafeAreaView,
   ActivityIndicator,
   Dimensions,
   Animated,
@@ -16,6 +15,7 @@ import {
   Platform,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE, PROVIDER_DEFAULT, MapType } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';

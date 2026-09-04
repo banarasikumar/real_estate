@@ -11,8 +11,8 @@ import {
   Linking,
   Modal,
   TextInput,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getPropertyById, checkIfSaved, toggleSavedProperty, createEnquiry, useAuth } from '@repo/api';
