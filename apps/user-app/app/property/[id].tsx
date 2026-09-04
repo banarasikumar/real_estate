@@ -15,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getPropertyById, checkIfSaved, toggleSavedProperty, createEnquiry, useAuth } from '@repo/api';
+import { getPropertyById, checkIfSaved, toggleSavedProperty, createEnquiry, getOrCreateConversation, useAuth } from '@repo/api';
 
 const FALLBACK_PROPERTY = {
   id: '1',
@@ -102,15 +102,22 @@ export default function PropertyDetailScreen() {
     try {
       if (id) {
         await createEnquiry(id, enquiryMessage.trim());
+        if (user?.id && (property as any)?.owner_id) {
+          try {
+            await getOrCreateConversation(id, user.id, (property as any).owner_id, enquiryMessage.trim());
+          } catch (cErr) {
+            console.warn('Could not auto-create conversation thread:', cErr);
+          }
+        }
       }
       setEnquiryModalVisible(false);
       setEnquiryMessage('');
       Alert.alert(
         'Enquiry Sent!',
-        'Your enquiry has been delivered to the listing broker. You can track its status in the Enquiries tab.',
+        'Your message has been delivered to the seller. You can chat with them in real time in the Messages tab.',
         [
           { text: 'OK' },
-          { text: 'View Enquiries', onPress: () => router.push('/(tabs)/enquiries') },
+          { text: 'Open Live Chat', onPress: () => router.push('/(tabs)/messages') },
         ]
       );
     } catch (err) {

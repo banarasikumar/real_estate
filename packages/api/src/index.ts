@@ -16,4 +16,4 @@ export * from './AuthProvider';
 export * from './properties';
 export * from './storage';
 export * from './enquiries';
-
+export * from './chat';

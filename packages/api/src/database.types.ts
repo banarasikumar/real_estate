@@ -2,7 +2,7 @@ export type UserRole = 'USER' | 'OWNER' | 'ADMIN' | 'SUPER_ADMIN';
 export type PropertyType = 'APARTMENT' | 'HOUSE' | 'VILLA' | 'COMMERCIAL';
 export type ListingType = 'SALE' | 'RENT';
 export type FurnishingStatus = 'FURNISHED' | 'SEMI_FURNISHED' | 'UNFURNISHED';
-export type PropertyStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'PUBLISHED' | 'PAUSED' | 'REJECTED' | 'SOLD_RENTED';
+export type PropertyStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'PUBLISHED' | 'PAUSED' | 'UNPUBLISHED' | 'REJECTED' | 'SOLD_RENTED';
 export type MediaType = 'IMAGE' | 'VIDEO';
 export type EnquiryStatus = 'NEW' | 'READ' | 'RESPONDED' | 'CLOSED';
 
@@ -32,6 +32,7 @@ export interface Property {
   latitude: number | null;
   longitude: number | null;
   status: PropertyStatus;
+  is_approved?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -65,4 +66,43 @@ export interface SavedProperty {
   user_id: string;
   property_id: string;
   created_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  text: string;
+  is_read?: boolean;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  property_id: string;
+  buyer_id: string;
+  owner_id: string;
+  last_message: string | null;
+  last_message_at: string;
+  created_at: string;
+  updated_at: string;
+  properties?: {
+    id: string;
+    title: string;
+    address?: string | null;
+    price?: number | string | null;
+    property_media?: { url: string }[] | null;
+  } | null;
+  buyer?: {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+    phone_number?: string | null;
+  } | null;
+  owner?: {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+    phone_number?: string | null;
+  } | null;
 }

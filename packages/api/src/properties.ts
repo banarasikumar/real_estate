@@ -120,8 +120,9 @@ export const getPublishedProperties = async () => {
   try {
     const { data, error } = await supabase
       .from('properties')
-      .select('*, property_media(url)')
-      .eq('status', 'PUBLISHED');
+      .select('*, property_media(id, url, is_featured, display_order)')
+      .eq('status', 'PUBLISHED')
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching published properties:', error);
@@ -146,7 +147,7 @@ export const getPropertyById = async (id: string) => {
   try {
     const { data, error } = await supabase
       .from('properties')
-      .select('*, property_media(url)')
+      .select('*, property_media(id, url, is_featured, display_order)')
       .eq('id', id)
       .single();
 
@@ -162,23 +163,50 @@ export const getPropertyById = async (id: string) => {
   }
 };
 
-export const createEnquiry = async (propertyId: string, message: string) => {
+export const createEnquiry = async (
+  propertyId: string,
+  message: string,
+  userId?: string | null,
+  ownerId?: string | null
+) => {
   try {
-    const { data, error } = await supabase
-      .from('enquiries')
-      .insert([
-        { property_id: propertyId, message },
-      ])
-      .select();
+    const { data: { user } } = await supabase.auth.getUser();
+    const effectiveUserId = userId !== undefined ? userId : user?.id || null;
+
+    let effectiveOwnerId = ownerId;
+    if (!effectiveOwnerId) {
+      const { data: prop } = await supabase
+        .from('properties')
+        .select('owner_id')
+        .eq('id', propertyId)
+        .maybeSingle();
+      effectiveOwnerId = prop?.owner_id || null;
+    }
+
+    const payload: any = {
+      property_id: propertyId,
+      message,
+    };
+    if (effectiveUserId) payload.user_id = effectiveUserId;
+    if (effectiveOwnerId) payload.owner_id = effectiveOwnerId;
+
+    // Do not chain .select() for guest enquiries because RETURNING * invokes SELECT RLS policies
+    // which require authentication (auth.uid() = user_id or owner_id)
+    let query: any = supabase.from('enquiries').insert([payload]);
+    if (effectiveUserId) {
+      query = query.select();
+    }
+
+    const { data, error } = await query;
 
     if (error) {
-      console.error('Error creating enquiry:', error);
+      console.error('Error creating enquiry:', error.message || error);
       return { success: false, error };
     }
 
-    return { success: true, data };
-  } catch (err) {
-    console.error('Unexpected error creating enquiry:', err);
+    return { success: true, data: data || null };
+  } catch (err: any) {
+    console.error('Unexpected error creating enquiry:', err?.message || err);
     return { success: false, error: err };
   }
 };
@@ -206,7 +234,7 @@ export const approveProperty = async (id: string) => {
   try {
     const { data, error } = await supabase
       .from('properties')
-      .update({ status: 'PUBLISHED' })
+      .update({ status: 'PUBLISHED', is_approved: true })
       .eq('id', id)
       .select();
 
@@ -218,6 +246,94 @@ export const approveProperty = async (id: string) => {
     return { success: true, data };
   } catch (err) {
     console.error(`Unexpected error approving property (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const submitPropertyForApproval = async (id: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .update({ status: 'PENDING_APPROVAL' })
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error(`Error submitting property for approval (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    console.error(`Unexpected error submitting property for approval (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const togglePropertyPublish = async (id: string, publish: boolean) => {
+  try {
+    const newStatus = publish ? 'PUBLISHED' : 'UNPUBLISHED';
+    const { data, error } = await supabase
+      .from('properties')
+      .update({ status: newStatus })
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error(`Error toggling property publish (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    console.error(`Unexpected error toggling property publish (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const updateProperty = async (id: string, propertyData: Partial<Property>) => {
+  try {
+    const updatePayload = {
+      ...propertyData,
+      is_approved: false,
+      status: 'PENDING_APPROVAL' as const,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('properties')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Error updating property (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    console.error(`Unexpected error updating property (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const deletePropertyMedia = async (mediaId: string) => {
+  try {
+    const { error } = await supabase
+      .from('property_media')
+      .delete()
+      .eq('id', mediaId);
+
+    if (error) {
+      console.error(`Error deleting property media (${mediaId}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error(`Unexpected error deleting property media (${mediaId}):`, err);
     return { success: false, error: err };
   }
 };
@@ -266,7 +382,7 @@ export const getOwnerProperties = async (ownerId: string) => {
   try {
     const { data, error } = await supabase
       .from('properties')
-      .select('*, property_media(url)')
+      .select('*, property_media(id, url, is_featured, display_order)')
       .eq('owner_id', ownerId)
       .order('created_at', { ascending: false });
 
