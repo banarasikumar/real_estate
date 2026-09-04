@@ -16,7 +16,7 @@ import { PropertyType, ListingType } from '@repo/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ImageCropperModal, CroppedImageResult } from '../../components/ImageCropperModal';
+import { ImageCropperModal, CroppedImageResult, CropperImageInput } from '../../components/ImageCropperModal';
 
 export default function CreatePropertyScreen() {
   const { session } = useAuth();
@@ -34,7 +34,7 @@ export default function CreatePropertyScreen() {
 
   // Cropped images with base64 WebP data ready for high-speed binary upload
   const [croppedImages, setCroppedImages] = useState<CroppedImageResult[]>([]);
-  const [pendingRawImages, setPendingRawImages] = useState<string[]>([]);
+  const [pendingRawImages, setPendingRawImages] = useState<CropperImageInput[]>([]);
   const [isCropperVisible, setIsCropperVisible] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -56,8 +56,12 @@ export default function CreatePropertyScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const uris = result.assets.map((asset) => asset.uri);
-        setPendingRawImages(uris);
+        const assets: CropperImageInput[] = result.assets.map((asset) => ({
+          uri: asset.uri,
+          width: asset.width,
+          height: asset.height,
+        }));
+        setPendingRawImages(assets);
         setIsCropperVisible(true);
       }
     } catch (err: any) {

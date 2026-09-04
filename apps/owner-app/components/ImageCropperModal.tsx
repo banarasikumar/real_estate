@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -10,11 +10,17 @@ import {
   PanResponder,
   ActivityIndicator,
   ScrollView,
-  SafeAreaView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { manipulateAsync, SaveFormat, Action } from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
+
+export interface CropperImageInput {
+  uri: string;
+  width?: number;
+  height?: number;
+}
 
 export interface CroppedImageResult {
   originalUri: string;
@@ -26,13 +32,15 @@ export interface CroppedImageResult {
 
 interface ImageCropperModalProps {
   visible: boolean;
-  images: string[];
+  images: (string | CropperImageInput)[];
   onCancel: () => void;
   onComplete: (results: CroppedImageResult[]) => void;
 }
 
 const MAX_WIDTH = 1600;
 const MAX_HEIGHT = 1200;
+const MIN_SCALE = 1.0;
+const MAX_SCALE = 3.0;
 
 export function ImageCropperModal({
   visible,
@@ -45,57 +53,135 @@ export function ImageCropperModal({
   const boxWidth = Math.min(windowDimensions.width - 32, 420);
   const boxHeight = Math.round(boxWidth * (3 / 4));
 
+  const normalizedImages: CropperImageInput[] = useMemo(() => {
+    return (images || []).map((item) => (typeof item === 'string' ? { uri: item } : item));
+  }, [images]);
+
+  const [viewportSize, setViewportSize] = useState({
+    width: windowDimensions.width,
+    height: Math.round(boxHeight + 80),
+  });
+
+  const cropLeft = Math.max(0, (viewportSize.width - boxWidth) / 2);
+  const cropTop = Math.max(0, (viewportSize.height - boxHeight) / 2);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [croppedMap, setCroppedMap] = useState<Record<number, CroppedImageResult>>({});
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Transform state for interactive canvas
-  const [scale, setScale] = useState(1);
+  // Transform state: scale (1.0 to 3.0) and pan (x, y)
+  const [scale, setScale] = useState(1.0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  // Refs for tracking pinch and pan gestures smoothly
-  const minScaleRef = useRef(1);
-  const scaleRef = useRef(1);
+  // Refs for tracking image gestures smoothly without stale closures or jitter
+  const scaleRef = useRef(1.0);
   const panRef = useRef({ x: 0, y: 0 });
-  const startPanRef = useRef({ x: 0, y: 0 });
-  const initialDistanceRef = useRef<number | null>(null);
-  const initialScaleRef = useRef(1);
+  const dragStartTouchRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStartPanRef = useRef({ x: 0, y: 0 });
+  const lastDistanceRef = useRef<number | null>(null);
+  const lastMidpointRef = useRef<{ x: number; y: number } | null>(null);
+  const isPinchingRef = useRef(false);
+  const lastTapTimestampRef = useRef<number>(0);
 
-  // Synchronize state with refs
+  // Slider refs for tracking continuous zoom bar interaction
+  const sliderViewRef = useRef<View>(null);
+  const sliderWidthRef = useRef<number>(0);
+  const sliderPageXRef = useRef<number>(0);
+
+  // Keep refs synchronized with state
   scaleRef.current = scale;
   panRef.current = pan;
 
+  // Reset index when modal opens or images change
+  useEffect(() => {
+    if (visible) {
+      setCurrentIndex(0);
+      setCroppedMap({});
+    }
+  }, [visible]);
+
   // Load natural dimensions of current image
   useEffect(() => {
-    if (!visible || !images[currentIndex]) return;
+    if (!visible || !normalizedImages[currentIndex]) {
+      setImageSize(null);
+      return;
+    }
 
+    const currentItem = normalizedImages[currentIndex];
+
+    // If dimensions were provided by ImagePicker, use immediately
+    if (currentItem.width && currentItem.height && currentItem.width > 0 && currentItem.height > 0) {
+      setImageSize({ width: currentItem.width, height: currentItem.height });
+      setScale(1.0);
+      scaleRef.current = 1.0;
+      setPan({ x: 0, y: 0 });
+      panRef.current = { x: 0, y: 0 };
+      return;
+    }
+
+    // Fallback: fetch natural dimensions with Image.getSize
+    let isMounted = true;
     setImageSize(null);
+
     Image.getSize(
-      images[currentIndex],
+      currentItem.uri,
       (origW, origH) => {
-        setImageSize({ width: origW, height: origH });
-        // Calculate initial fill-mode scale: image MUST fully cover boxWidth x boxHeight
-        const fillScale = Math.max(boxWidth / origW, boxHeight / origH);
-        minScaleRef.current = fillScale;
-        setScale(fillScale);
-        scaleRef.current = fillScale;
-        setPan({ x: 0, y: 0 });
-        panRef.current = { x: 0, y: 0 };
+        if (isMounted) {
+          setImageSize({ width: origW, height: origH });
+          setScale(1.0);
+          scaleRef.current = 1.0;
+          setPan({ x: 0, y: 0 });
+          panRef.current = { x: 0, y: 0 };
+        }
       },
       (error) => {
-        console.error('Failed to get image size:', error);
-        Alert.alert('Error', 'Could not load selected image.');
+        console.error('Failed to get image size for uri:', currentItem.uri, error);
+        if (isMounted) {
+          // Default fallback size so the user can still view and crop
+          setImageSize({ width: 1200, height: 900 });
+          setScale(1.0);
+          setPan({ x: 0, y: 0 });
+        }
       }
     );
-  }, [visible, currentIndex, images, boxWidth, boxHeight]);
 
-  // Clamp translation so image never leaves the 4:3 box (fill mode)
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, currentIndex, normalizedImages]);
+
+  // Base display dimensions: guarantees image covers 100% of 4:3 box at scale = 1.0
+  const baseDimensions = useMemo(() => {
+    if (!imageSize || imageSize.width <= 0 || imageSize.height <= 0) {
+      return { width: boxWidth, height: boxHeight };
+    }
+
+    const imageRatio = imageSize.width / imageSize.height;
+    const frameRatio = 4 / 3;
+
+    if (imageRatio >= frameRatio) {
+      // Landscape / wider than 4:3 -> height fits boxHeight exactly, width overflows
+      const height = boxHeight;
+      const width = Math.round(boxHeight * imageRatio);
+      return { width, height };
+    } else {
+      // Portrait / taller than 4:3 -> width fits boxWidth exactly, height overflows
+      const width = boxWidth;
+      const height = Math.round(boxWidth / imageRatio);
+      return { width, height };
+    }
+  }, [imageSize, boxWidth, boxHeight]);
+
+  const baseDimensionsRef = useRef(baseDimensions);
+  baseDimensionsRef.current = baseDimensions;
+
+  // Clamp translation so image never leaves the 4:3 box (no voids or black bars)
   const clampPan = useCallback(
     (targetX: number, targetY: number, currentScale: number) => {
-      if (!imageSize) return { x: 0, y: 0 };
-      const currentW = imageSize.width * currentScale;
-      const currentH = imageSize.height * currentScale;
+      const bDim = baseDimensionsRef.current;
+      const currentW = bDim.width * currentScale;
+      const currentH = bDim.height * currentScale;
 
       const maxPanX = Math.max(0, (currentW - boxWidth) / 2);
       const maxPanY = Math.max(0, (currentH - boxHeight) / 2);
@@ -104,100 +190,249 @@ export function ImageCropperModal({
       const clampedY = Math.min(maxPanY, Math.max(-maxPanY, targetY));
       return { x: clampedX, y: clampedY };
     },
-    [imageSize, boxWidth, boxHeight]
+    [boxWidth, boxHeight]
   );
 
-  // PanResponder to handle 1-finger pan and 2-finger pinch-zoom
+  const clampPanRef = useRef(clampPan);
+  clampPanRef.current = clampPan;
+
+  // Helper to programmatically apply scale and safely clamp pan
+  const applyScale = useCallback(
+    (targetScale: number) => {
+      const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, targetScale));
+      const clamped = clampPanRef.current(panRef.current.x, panRef.current.y, newScale);
+      setScale(newScale);
+      scaleRef.current = newScale;
+      setPan(clamped);
+      panRef.current = clamped;
+    },
+    []
+  );
+
+  // Continuous Zoom Slider PanResponder
+  const updateScaleFromSliderTouch = useCallback(
+    (pageX: number) => {
+      if (sliderWidthRef.current <= 0) return;
+      const localX = pageX - sliderPageXRef.current;
+      const progress = Math.max(0, Math.min(1, localX / sliderWidthRef.current));
+      const targetScale = MIN_SCALE + progress * (MAX_SCALE - MIN_SCALE);
+      // Fine 0.05 step resolution for buttery smooth slider drag
+      const rounded = Math.round(targetScale * 20) / 20;
+      applyScale(rounded);
+    },
+    [applyScale]
+  );
+
+  const sliderPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+
+      onPanResponderGrant: (evt) => {
+        const touch = evt.nativeEvent.touches[0];
+        if (!touch) return;
+        if (sliderWidthRef.current > 0) {
+          updateScaleFromSliderTouch(touch.pageX);
+        }
+        sliderViewRef.current?.measure((_x, _y, width, _height, pageX) => {
+          if (width > 0) {
+            sliderWidthRef.current = width;
+            sliderPageXRef.current = pageX;
+            updateScaleFromSliderTouch(touch.pageX);
+          }
+        });
+      },
+
+      onPanResponderMove: (evt) => {
+        const touch = evt.nativeEvent.touches[0];
+        if (touch) {
+          updateScaleFromSliderTouch(touch.pageX);
+        }
+      },
+    })
+  ).current;
+
+  // PanResponder to handle silky smooth 1-finger pan and 2-finger pinch-zoom
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+
       onPanResponderGrant: (evt) => {
         const touches = evt.nativeEvent.touches;
+        const now = Date.now();
+
         if (touches.length === 1) {
-          startPanRef.current = { ...panRef.current };
-          initialDistanceRef.current = null;
+          // Double-tap detection to toggle 1.0x <-> 2.0x zoom
+          if (now - lastTapTimestampRef.current < 300) {
+            const target = scaleRef.current > 1.15 ? 1.0 : 2.0;
+            applyScale(target);
+            lastTapTimestampRef.current = 0;
+            dragStartTouchRef.current = null;
+            return;
+          }
+          lastTapTimestampRef.current = now;
+          isPinchingRef.current = false;
+          lastDistanceRef.current = null;
+          dragStartPanRef.current = { ...panRef.current };
+          dragStartTouchRef.current = { x: touches[0].pageX, y: touches[0].pageY };
         } else if (touches.length >= 2) {
+          isPinchingRef.current = true;
+          dragStartTouchRef.current = null;
           const t1 = touches[0];
           const t2 = touches[1];
-          initialDistanceRef.current = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
-          initialScaleRef.current = scaleRef.current;
+          lastDistanceRef.current = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
+          lastMidpointRef.current = {
+            x: (t1.pageX + t2.pageX) / 2,
+            y: (t1.pageY + t2.pageY) / 2,
+          };
         }
       },
-      onPanResponderMove: (evt, gestureState) => {
+
+      onPanResponderMove: (evt) => {
         const touches = evt.nativeEvent.touches;
-        if (touches.length === 1 && initialDistanceRef.current === null) {
-          // Pan
-          const newX = startPanRef.current.x + gestureState.dx;
-          const newY = startPanRef.current.y + gestureState.dy;
-          const clamped = clampPan(newX, newY, scaleRef.current);
-          setPan(clamped);
-        } else if (touches.length >= 2) {
-          // Pinch
+
+        if (touches.length >= 2) {
+          // 2 or more touches -> Pinch to zoom + Pan with midpoint
+          isPinchingRef.current = true;
+          dragStartTouchRef.current = null;
+
           const t1 = touches[0];
           const t2 = touches[1];
           const currentDistance = Math.hypot(t1.pageX - t2.pageX, t1.pageY - t2.pageY);
-          if (initialDistanceRef.current && initialDistanceRef.current > 0) {
-            const distanceRatio = currentDistance / initialDistanceRef.current;
-            const newScaleCandidate = initialScaleRef.current * distanceRatio;
-            // Never zoom out smaller than fill scale!
-            const newScale = Math.max(minScaleRef.current, Math.min(minScaleRef.current * 4, newScaleCandidate));
-            setScale(newScale);
-            // Reclamp pan with new scale
-            const clamped = clampPan(panRef.current.x, panRef.current.y, newScale);
+          const currentMidX = (t1.pageX + t2.pageX) / 2;
+          const currentMidY = (t1.pageY + t2.pageY) / 2;
+
+          if (!lastDistanceRef.current || lastDistanceRef.current <= 0) {
+            lastDistanceRef.current = currentDistance;
+            lastMidpointRef.current = { x: currentMidX, y: currentMidY };
+            return;
+          }
+
+          // Incremental ratio scaling: smooth and immune to transient touch drops
+          const ratio = currentDistance / lastDistanceRef.current;
+          lastDistanceRef.current = currentDistance;
+
+          let nextScale = scaleRef.current * ratio;
+          nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+
+          // Midpoint movement delta (pan with fingers while pinching)
+          let nextPanX = panRef.current.x;
+          let nextPanY = panRef.current.y;
+          if (lastMidpointRef.current) {
+            const dx = currentMidX - lastMidpointRef.current.x;
+            const dy = currentMidY - lastMidpointRef.current.y;
+            nextPanX += dx;
+            nextPanY += dy;
+          }
+          lastMidpointRef.current = { x: currentMidX, y: currentMidY };
+
+          const clamped = clampPanRef.current(nextPanX, nextPanY, nextScale);
+          setScale(nextScale);
+          scaleRef.current = nextScale;
+          setPan(clamped);
+          panRef.current = clamped;
+        } else if (touches.length === 1) {
+          // 1 touch -> Silky smooth baseline panning
+          if (isPinchingRef.current) {
+            // Transitioning out of pinch: reset drag baseline cleanly
+            lastDistanceRef.current = null;
+            lastMidpointRef.current = null;
+            isPinchingRef.current = false;
+            dragStartPanRef.current = { ...panRef.current };
+            dragStartTouchRef.current = { x: touches[0].pageX, y: touches[0].pageY };
+            return;
+          }
+
+          const touch = touches[0];
+          if (!dragStartTouchRef.current) {
+            dragStartTouchRef.current = { x: touch.pageX, y: touch.pageY };
+            dragStartPanRef.current = { ...panRef.current };
+            return;
+          }
+
+          const totalDeltaX = touch.pageX - dragStartTouchRef.current.x;
+          const totalDeltaY = touch.pageY - dragStartTouchRef.current.y;
+
+          const targetX = dragStartPanRef.current.x + totalDeltaX;
+          const targetY = dragStartPanRef.current.y + totalDeltaY;
+          const clamped = clampPanRef.current(targetX, targetY, scaleRef.current);
+
+          // Sub-pixel deadband to eliminate digitizer sensor jitter
+          if (
+            Math.abs(clamped.x - panRef.current.x) > 0.25 ||
+            Math.abs(clamped.y - panRef.current.y) > 0.25
+          ) {
             setPan(clamped);
+            panRef.current = clamped;
           }
         }
       },
+
       onPanResponderRelease: () => {
-        initialDistanceRef.current = null;
+        lastDistanceRef.current = null;
+        lastMidpointRef.current = null;
+        dragStartTouchRef.current = null;
+        isPinchingRef.current = false;
       },
       onPanResponderTerminate: () => {
-        initialDistanceRef.current = null;
+        lastDistanceRef.current = null;
+        lastMidpointRef.current = null;
+        dragStartTouchRef.current = null;
+        isPinchingRef.current = false;
       },
     })
   ).current;
 
   // Reset current crop to center-fill
   const handleReset = () => {
-    if (!imageSize) return;
-    const fillScale = Math.max(boxWidth / imageSize.width, boxHeight / imageSize.height);
-    setScale(fillScale);
+    applyScale(1.0);
     setPan({ x: 0, y: 0 });
+    dragStartTouchRef.current = null;
+    dragStartPanRef.current = { x: 0, y: 0 };
   };
 
   // Perform crop on the currently active image
   const cropCurrentImage = async (): Promise<CroppedImageResult | null> => {
-    if (!imageSize) return null;
+    if (!imageSize || !normalizedImages[currentIndex]) return null;
     try {
       setIsProcessing(true);
       const origW = imageSize.width;
       const origH = imageSize.height;
 
-      // Crop coordinates relative to the original image dimensions
-      const screenImgLeft = (boxWidth - origW * scale) / 2 + pan.x;
-      const screenImgTop = (boxHeight - origH * scale) / 2 + pan.y;
+      const currentW = baseDimensions.width * scale;
+      const currentH = baseDimensions.height * scale;
 
-      const cropRelX = -screenImgLeft;
-      const cropRelY = -screenImgTop;
+      // Crop coordinates: distance from image top-left to 4:3 box top-left
+      const cropScreenX = (currentW - boxWidth) / 2 - pan.x;
+      const cropScreenY = (currentH - boxHeight) / 2 - pan.y;
 
-      let originX = Math.round(cropRelX / scale);
-      let originY = Math.round(cropRelY / scale);
-      let width = Math.round(boxWidth / scale);
-      let height = Math.round(boxHeight / scale);
+      // Scale from original bitmap pixels to screen display pixels
+      const screenScale = currentW / origW;
 
-      // Boundary protections
-      originX = Math.max(0, Math.min(origW - width, originX));
-      originY = Math.max(0, Math.min(origH - height, originY));
-      width = Math.min(origW - originX, width);
-      height = Math.min(origH - originY, height);
+      let originX = Math.round(cropScreenX / screenScale);
+      let originY = Math.round(cropScreenY / screenScale);
+      let cropWidth = Math.round(boxWidth / screenScale);
+      let cropHeight = Math.round(boxHeight / screenScale);
 
-      // Enforce 4:3 aspect ratio consistency
-      if (width > 0 && height > 0) {
-        const expectedH = Math.round((width * 3) / 4);
-        if (expectedH <= origH - originY) {
-          height = expectedH;
-        }
+      // Boundary protections within original image
+      originX = Math.max(0, Math.min(origW - cropWidth, originX));
+      originY = Math.max(0, Math.min(origH - cropHeight, originY));
+      cropWidth = Math.min(origW - originX, cropWidth);
+      cropHeight = Math.min(origH - originY, cropHeight);
+
+      // Enforce strict 4:3 aspect ratio
+      const expectedH = Math.round((cropWidth * 3) / 4);
+      if (expectedH <= origH - originY) {
+        cropHeight = expectedH;
+      } else {
+        cropWidth = Math.round((cropHeight * 4) / 3);
       }
 
       const actions: Action[] = [
@@ -205,14 +440,14 @@ export function ImageCropperModal({
           crop: {
             originX,
             originY,
-            width,
-            height,
+            width: cropWidth,
+            height: cropHeight,
           },
         },
       ];
 
       // If dimensions exceed 1600x1200, clamp down while preserving 4:3
-      if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+      if (cropWidth > MAX_WIDTH || cropHeight > MAX_HEIGHT) {
         actions.push({
           resize: {
             width: MAX_WIDTH,
@@ -222,14 +457,14 @@ export function ImageCropperModal({
       }
 
       // Convert to WebP with 0.82 compression and extract base64 for fast binary upload
-      const result = await manipulateAsync(images[currentIndex], actions, {
+      const result = await manipulateAsync(normalizedImages[currentIndex].uri, actions, {
         compress: 0.82,
         format: SaveFormat.WEBP,
         base64: true,
       });
 
       const croppedResult: CroppedImageResult = {
-        originalUri: images[currentIndex],
+        originalUri: normalizedImages[currentIndex].uri,
         uri: result.uri,
         base64: result.base64,
         width: result.width,
@@ -256,19 +491,28 @@ export function ImageCropperModal({
     const cropped = await cropCurrentImage();
     if (!cropped) return;
 
-    // Check if there are other images to crop
-    const nextUncroppedIndex = images.findIndex((_, idx) => idx !== currentIndex && !croppedMap[idx]);
+    // Check if there are other uncropped images
+    const nextUncroppedIndex = normalizedImages.findIndex(
+      (_, idx) => idx !== currentIndex && !croppedMap[idx]
+    );
+
     if (nextUncroppedIndex !== -1) {
       setCurrentIndex(nextUncroppedIndex);
-    } else if (currentIndex + 1 < images.length) {
-      setCurrentIndex(currentIndex + 1);
+    } else {
+      // All images are now cropped! Stay on screen so user can review before tapping Done
+      Alert.alert(
+        'All Photos Cropped!',
+        'Every selected photo has been framed. Review your cropped gallery below or tap "Done & Continue" to add them to your listing.',
+        [{ text: 'Review Gallery' }]
+      );
     }
   };
 
   // Complete and pass results to caller
   const handleDone = async () => {
-    // If current image has not been cropped yet, crop it first
     let latestMap = { ...croppedMap };
+
+    // If current photo has not been cropped yet, crop it now
     if (!latestMap[currentIndex]) {
       const result = await cropCurrentImage();
       if (result) {
@@ -276,20 +520,37 @@ export function ImageCropperModal({
       }
     }
 
-    const results: CroppedImageResult[] = images
-      .map((_, idx) => latestMap[idx])
-      .filter((item): item is CroppedImageResult => !!item);
+    // Require all photos to be explicitly reviewed and cropped
+    const uncroppedIndices = normalizedImages
+      .map((_, idx) => idx)
+      .filter((idx) => !latestMap[idx]);
 
-    if (results.length === 0) {
-      Alert.alert('No Images Cropped', 'Please crop at least one image before continuing.');
+    if (uncroppedIndices.length > 0) {
+      const remainingCount = uncroppedIndices.length;
+      Alert.alert(
+        'Uncropped Photos Remaining',
+        `Please review and crop all selected photos before continuing (${remainingCount} remaining).`,
+        [
+          {
+            text: `Go to Photo ${uncroppedIndices[0] + 1}`,
+            onPress: () => setCurrentIndex(uncroppedIndices[0]),
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
       return;
     }
+
+    const results: CroppedImageResult[] = normalizedImages
+      .map((_, idx) => latestMap[idx])
+      .filter((item): item is CroppedImageResult => !!item);
 
     onComplete(results);
   };
 
   const totalCroppedCount = Object.keys(croppedMap).length;
   const isCurrentCropped = !!croppedMap[currentIndex];
+  const allImagesCropped = totalCroppedCount === normalizedImages.length && normalizedImages.length > 0;
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onCancel}>
@@ -301,7 +562,7 @@ export function ImageCropperModal({
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitle}>
-              Crop Photo {currentIndex + 1} of {images.length}
+              Crop Photo {currentIndex + 1} of {normalizedImages.length}
             </Text>
             <Text style={styles.headerSubtitle}>Fixed 4:3 Aspect Ratio (Fill Mode)</Text>
           </View>
@@ -312,35 +573,107 @@ export function ImageCropperModal({
         </View>
 
         {/* Viewport Area */}
-        <View style={styles.viewportContainer}>
-          <View
-            style={[
-              styles.cropBox,
-              {
-                width: boxWidth,
-                height: boxHeight,
-              },
-            ]}
-            {...panResponder.panHandlers}
-          >
-            {imageSize ? (
+        <View
+          style={styles.viewportContainer}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            if (width > 0 && height > 0) {
+              setViewportSize({ width, height });
+            }
+          }}
+          {...panResponder.panHandlers}
+        >
+          {/* Active Image (Extends into shadow area) */}
+          {imageSize && normalizedImages[currentIndex] ? (
+            <View pointerEvents="none">
               <Image
-                source={{ uri: images[currentIndex] }}
+                source={{ uri: normalizedImages[currentIndex].uri }}
                 style={{
-                  width: imageSize.width,
-                  height: imageSize.height,
+                  width: baseDimensions.width,
+                  height: baseDimensions.height,
                   transform: [
-                    { translateX: (boxWidth - imageSize.width) / 2 + pan.x },
-                    { translateY: (boxHeight - imageSize.height) / 2 + pan.y },
+                    { translateX: pan.x },
+                    { translateY: pan.y },
                     { scale },
                   ],
                 }}
                 resizeMode="cover"
               />
-            ) : (
+            </View>
+          ) : (
+            <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#059669" />
-            )}
+              <Text style={styles.loadingText}>Loading image preview...</Text>
+            </View>
+          )}
 
+          {/* 4-Quadrant 60% Dimmed Shadow Mask */}
+          {/* Top Shadow */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.shadowOverlay,
+              {
+                top: 0,
+                left: 0,
+                right: 0,
+                height: cropTop,
+              },
+            ]}
+          />
+          {/* Bottom Shadow */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.shadowOverlay,
+              {
+                top: cropTop + boxHeight,
+                left: 0,
+                right: 0,
+                bottom: 0,
+              },
+            ]}
+          />
+          {/* Left Shadow */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.shadowOverlay,
+              {
+                top: cropTop,
+                height: boxHeight,
+                left: 0,
+                width: cropLeft,
+              },
+            ]}
+          />
+          {/* Right Shadow */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.shadowOverlay,
+              {
+                top: cropTop,
+                height: boxHeight,
+                left: cropLeft + boxWidth,
+                right: 0,
+              },
+            ]}
+          />
+
+          {/* 4:3 Clear Crop Frame (Positioned at exact center) */}
+          <View
+            pointerEvents="none"
+            style={[
+              styles.cropFrame,
+              {
+                top: cropTop,
+                left: cropLeft,
+                width: boxWidth,
+                height: boxHeight,
+              },
+            ]}
+          >
             {/* Visual Grid Lines & Corner Brackets */}
             <View pointerEvents="none" style={styles.gridOverlay}>
               <View style={styles.gridLineH1} />
@@ -352,22 +685,115 @@ export function ImageCropperModal({
               <View style={[styles.corner, styles.cornerBL]} />
               <View style={[styles.corner, styles.cornerBR]} />
             </View>
+
+            {/* Zoom Factor Pill */}
+            <View pointerEvents="none" style={styles.zoomPill}>
+              <Text style={styles.zoomPillText}>{scale.toFixed(1)}x</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Interactive Continuous Zoom Slider Bar */}
+        <View style={styles.zoomControlBar}>
+          <TouchableOpacity
+            style={[styles.zoomStepButton, scale <= MIN_SCALE && styles.zoomButtonDisabled]}
+            onPress={() => applyScale(Math.max(MIN_SCALE, Math.round((scale - 0.2) * 10) / 10))}
+            disabled={scale <= MIN_SCALE}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="remove" size={20} color={scale <= MIN_SCALE ? '#475569' : '#ffffff'} />
+          </TouchableOpacity>
+
+          <View
+            ref={sliderViewRef}
+            style={styles.sliderTrackWrapper}
+            onLayout={() => {
+              sliderViewRef.current?.measure((_x, _y, width, _height, pageX) => {
+                if (width > 0) {
+                  sliderWidthRef.current = width;
+                  sliderPageXRef.current = pageX;
+                }
+              });
+            }}
+            {...sliderPanResponder.panHandlers}
+          >
+            {/* Background Rail */}
+            <View style={styles.sliderRail}>
+              {/* Active Fill Rail */}
+              <View
+                style={[
+                  styles.sliderActiveRail,
+                  {
+                    width: `${Math.min(
+                      100,
+                      Math.max(0, ((scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)) * 100)
+                    )}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            {/* Draggable Knob / Thumb */}
+            <View
+              style={[
+                styles.sliderThumb,
+                {
+                  left: `${Math.min(
+                    100,
+                    Math.max(0, ((scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE)) * 100)
+                  )}%`,
+                },
+              ]}
+            >
+              <View style={styles.sliderThumbInner} />
+            </View>
           </View>
 
-          <Text style={styles.gestureHint}>Pinch to zoom · Drag to position (Always fills frame)</Text>
+          <TouchableOpacity
+            style={[styles.zoomStepButton, scale >= MAX_SCALE && styles.zoomButtonDisabled]}
+            onPress={() => applyScale(Math.min(MAX_SCALE, Math.round((scale + 0.2) * 10) / 10))}
+            disabled={scale >= MAX_SCALE}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="add" size={20} color={scale >= MAX_SCALE ? '#475569' : '#ffffff'} />
+          </TouchableOpacity>
         </View>
+
+        {/* Labels below slider: 1.0x on left, current zoom in center, 3.0x on right */}
+        <View style={styles.sliderLabelsRow}>
+          <Text style={styles.sliderMinMaxLabel}>1.0x</Text>
+          <View style={styles.sliderValueBadge}>
+            <Text style={styles.sliderValueBadgeText}>{scale.toFixed(1)}x</Text>
+          </View>
+          <Text style={styles.sliderMinMaxLabel}>3.0x</Text>
+        </View>
+
+        <Text style={styles.gestureHint}>
+          Drag slider or pinch to zoom · Double-tap for 2.0x · Drag image to position
+        </Text>
 
         {/* Bottom Carousel of Selected Images */}
         <View style={styles.bottomSection}>
           <View style={styles.thumbnailHeader}>
-            <Text style={styles.thumbnailLabel}>Selected Images ({images.length})</Text>
-            <Text style={styles.thumbnailStatus}>
-              {totalCroppedCount} of {images.length} Cropped
-            </Text>
+            <Text style={styles.thumbnailLabel}>Selected Images ({normalizedImages.length})</Text>
+            <View style={styles.statusBadge}>
+              <Ionicons
+                name={allImagesCropped ? 'checkmark-circle' : 'hourglass-outline'}
+                size={14}
+                color={allImagesCropped ? '#34d399' : '#38bdf8'}
+              />
+              <Text style={[styles.thumbnailStatus, allImagesCropped && styles.thumbnailStatusComplete]}>
+                {totalCroppedCount} of {normalizedImages.length} Cropped
+              </Text>
+            </View>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailList}>
-            {images.map((uri, idx) => {
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.thumbnailList}
+          >
+            {normalizedImages.map((item, idx) => {
               const isSelected = idx === currentIndex;
               const hasCropped = !!croppedMap[idx];
               return (
@@ -376,7 +802,7 @@ export function ImageCropperModal({
                   style={[styles.thumbnailWrap, isSelected && styles.thumbnailWrapActive]}
                   onPress={() => setCurrentIndex(idx)}
                 >
-                  <Image source={{ uri: croppedMap[idx]?.uri || uri }} style={styles.thumbnailImage} />
+                  <Image source={{ uri: croppedMap[idx]?.uri || item.uri }} style={styles.thumbnailImage} />
                   <View style={styles.thumbnailBadge}>
                     <Text style={styles.thumbnailBadgeText}>{idx + 1}</Text>
                   </View>
@@ -414,11 +840,17 @@ export function ImageCropperModal({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.continueButton, isProcessing && styles.buttonDisabled]}
+              style={[
+                styles.continueButton,
+                (!allImagesCropped && !isCurrentCropped) && styles.continueButtonMuted,
+                isProcessing && styles.buttonDisabled,
+              ]}
               onPress={handleDone}
               disabled={isProcessing}
             >
-              <Text style={styles.continueButtonText}>Done & Continue</Text>
+              <Text style={styles.continueButtonText}>
+                {allImagesCropped ? 'Done & Continue' : `Crop & Finish (${totalCroppedCount}/${normalizedImages.length})`}
+              </Text>
               <Ionicons name="arrow-forward" size={18} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -473,19 +905,31 @@ const styles = StyleSheet.create({
   },
   viewportContainer: {
     flex: 1,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-  },
-  cropBox: {
     overflow: 'hidden',
-    backgroundColor: '#1e293b',
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#059669',
     position: 'relative',
-    justifyContent: 'center',
+    backgroundColor: '#090d16',
+  },
+  shadowOverlay: {
+    position: 'absolute',
+    backgroundColor: 'rgba(9, 13, 22, 0.60)',
+  },
+  cropFrame: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderColor: '#10b981',
+    borderRadius: 8,
+  },
+  loadingContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    color: '#94a3b8',
+    fontSize: 12,
   },
   gridOverlay: {
     position: 'absolute',
@@ -556,10 +1000,117 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderRightWidth: 3,
   },
+  zoomPill: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  zoomPillText: {
+    color: '#34d399',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  zoomControlBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 10,
+    paddingHorizontal: 16,
+  },
+  zoomStepButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomButtonDisabled: {
+    opacity: 0.35,
+    borderColor: '#1e293b',
+  },
+  sliderTrackWrapper: {
+    flex: 1,
+    height: 38,
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  sliderRail: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    overflow: 'hidden',
+    width: '100%',
+  },
+  sliderActiveRail: {
+    height: '100%',
+    backgroundColor: '#10b981',
+    borderRadius: 3,
+  },
+  sliderThumb: {
+    position: 'absolute',
+    top: 5,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    borderWidth: 3,
+    borderColor: '#10b981',
+    marginLeft: -14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+  },
+  sliderThumbInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10b981',
+  },
+  sliderLabelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    marginTop: 2,
+  },
+  sliderMinMaxLabel: {
+    color: '#64748b',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sliderValueBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+  },
+  sliderValueBadgeText: {
+    color: '#34d399',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   gestureHint: {
     color: '#64748b',
-    fontSize: 12,
-    marginTop: 14,
+    fontSize: 11,
+    marginTop: 6,
     textAlign: 'center',
   },
   bottomSection: {
@@ -581,10 +1132,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   thumbnailStatus: {
-    color: '#34d399',
+    color: '#38bdf8',
     fontSize: 12,
     fontWeight: '600',
+  },
+  thumbnailStatusComplete: {
+    color: '#34d399',
   },
   thumbnailList: {
     flexDirection: 'row',
@@ -665,6 +1224,9 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
     borderRadius: 12,
     gap: 6,
+  },
+  continueButtonMuted: {
+    backgroundColor: '#0f766e',
   },
   continueButtonText: {
     color: '#ffffff',
