@@ -11,10 +11,10 @@
   "dependencies": {
     "@real-estate/types": "*",
     "@real-estate/ui": "*",
-    "expo": "~51.0.0",
+    "expo": "~57.0.19",
     "expo-image-picker": "^57.0.14",
-    "expo-router": "~3.5.14",
-    "react": "18.2.0",
-    "react-native": "0.74.1"
+    "expo-router": "~57.0.18",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
   }
 }
