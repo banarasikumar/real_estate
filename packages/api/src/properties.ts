@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import { Property } from './database.types';
+import { deletePropertyStorageFolder } from './storage';
 
 export interface PropertySearchParams {
   query?: string;
@@ -37,7 +38,8 @@ export const searchProperties = async (params: PropertySearchParams = {}): Promi
     let queryBuilder = supabase
       .from('properties')
       .select('*, property_media(url)')
-      .eq('status', status);
+      .eq('status', status)
+      .is('deleted_at', null);
 
     if (minPrice !== undefined && minPrice !== null && minPrice > 0) {
       queryBuilder = queryBuilder.gte('price', minPrice);
@@ -122,6 +124,7 @@ export const getPublishedProperties = async () => {
       .from('properties')
       .select('*, property_media(id, url, is_featured, display_order)')
       .eq('status', 'PUBLISHED')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -216,7 +219,8 @@ export const getPendingProperties = async () => {
     const { data, error } = await supabase
       .from('properties')
       .select('*, property_media(url)')
-      .eq('status', 'PENDING_APPROVAL');
+      .eq('status', 'PENDING_APPROVAL')
+      .is('deleted_at', null);
 
     if (error) {
       console.error('Error fetching pending properties:', error);
@@ -291,14 +295,23 @@ export const togglePropertyPublish = async (id: string, publish: boolean) => {
   }
 };
 
-export const updateProperty = async (id: string, propertyData: Partial<Property>) => {
+export const updateProperty = async (
+  id: string,
+  propertyData: Partial<Property>,
+  wasPublished?: boolean
+) => {
   try {
-    const updatePayload = {
-      ...propertyData,
-      is_approved: false,
-      status: 'PENDING_APPROVAL' as const,
-      updated_at: new Date().toISOString(),
-    };
+    const updatePayload: any = wasPublished
+      ? {
+          ...propertyData,
+          is_approved: false,
+          status: 'PENDING_APPROVAL',
+          updated_at: new Date().toISOString(),
+        }
+      : {
+          ...propertyData,
+          updated_at: new Date().toISOString(),
+        };
 
     const { data, error } = await supabase
       .from('properties')
@@ -315,6 +328,52 @@ export const updateProperty = async (id: string, propertyData: Partial<Property>
     return { success: true, data };
   } catch (err) {
     console.error(`Unexpected error updating property (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const updatePropertyMediaOrder = async (
+  updates: { id: string; display_order: number; is_featured: boolean }[] | string,
+  displayOrder?: number,
+  isFeatured?: boolean
+): Promise<{ success: boolean; error?: any; data?: any }> => {
+  try {
+    if (Array.isArray(updates)) {
+      const promises = updates.map((item) =>
+        supabase
+          .from('property_media')
+          .update({
+            display_order: item.display_order,
+            is_featured: item.is_featured,
+          })
+          .eq('id', item.id)
+      );
+      const results = await Promise.all(promises);
+      const failed = results.find((res) => res.error);
+      if (failed?.error) {
+        console.error('Error updating property media order:', failed.error);
+        return { success: false, error: failed.error };
+      }
+      return { success: true };
+    } else {
+      const updateData: any = { display_order: displayOrder ?? 0 };
+      if (isFeatured !== undefined) {
+        updateData.is_featured = isFeatured;
+      }
+      const { data, error } = await supabase
+        .from('property_media')
+        .update(updateData)
+        .eq('id', updates)
+        .select();
+
+      if (error) {
+        console.error(`Error updating property media order (${updates}):`, error);
+        return { success: false, error };
+      }
+      return { success: true, data };
+    }
+  } catch (err) {
+    console.error('Unexpected error updating property media order:', err);
     return { success: false, error: err };
   }
 };
@@ -378,13 +437,23 @@ export const getOwnerEnquiries = async (ownerId: string) => {
   }
 };
 
-export const getOwnerProperties = async (ownerId: string) => {
+export const getOwnerProperties = async (
+  ownerId: string,
+  options?: { showDeleted?: boolean }
+) => {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('properties')
       .select('*, property_media(id, url, is_featured, display_order)')
-      .eq('owner_id', ownerId)
-      .order('created_at', { ascending: false });
+      .eq('owner_id', ownerId);
+
+    if (options?.showDeleted) {
+      query = query.not('deleted_at', 'is', null);
+    } else {
+      query = query.is('deleted_at', null);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       console.error(`Error fetching owner properties (${ownerId}):`, error);
@@ -395,6 +464,81 @@ export const getOwnerProperties = async (ownerId: string) => {
   } catch (err) {
     console.error(`Unexpected error fetching owner properties (${ownerId}):`, err);
     return [];
+  }
+};
+
+export const softDeleteProperty = async (id: string): Promise<{ success: boolean; error?: any }> => {
+  try {
+    const { error } = await supabase
+      .from('properties')
+      .update({
+        deleted_at: new Date().toISOString(),
+        status: 'UNPUBLISHED',
+      })
+      .eq('id', id);
+
+    if (error) {
+      console.error(`Error soft deleting property (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error(`Unexpected error soft deleting property (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const restoreProperty = async (id: string): Promise<{ success: boolean; error?: any }> => {
+  try {
+    const { error } = await supabase
+      .from('properties')
+      .update({
+        deleted_at: null,
+        status: 'PENDING_APPROVAL',
+        is_approved: false,
+      })
+      .eq('id', id);
+
+    if (error) {
+      console.error(`Error restoring property (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error(`Unexpected error restoring property (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+export const deletePropertyPermanently = async (id: string): Promise<{ success: boolean; error?: any }> => {
+  try {
+    await deletePropertyStorageFolder(id);
+
+    const { error: mediaError } = await supabase
+      .from('property_media')
+      .delete()
+      .eq('property_id', id);
+
+    if (mediaError) {
+      console.error(`Error deleting property media for property (${id}):`, mediaError);
+    }
+
+    const { error: propError } = await supabase
+      .from('properties')
+      .delete()
+      .eq('id', id);
+
+    if (propError) {
+      console.error(`Error permanently deleting property (${id}):`, propError);
+      return { success: false, error: propError };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error(`Unexpected error permanently deleting property (${id}):`, err);
+    return { success: false, error: err };
   }
 };
 

@@ -64,6 +64,18 @@ real_estate/
   - Full two-way realtime chat powered by Supabase Realtime postgres changes.
 - **Profile (`app/(tabs)/profile.tsx`)**: Owner details, phone number, logout.
 
+- **Edit Property (`app/edit-property/[id].tsx`)** ⭐ *Newly Added*:
+  - Route navigation with `useLocalSearchParams` and stack presentation.
+  - Pre-fills property details (title, description, price, area, specs, address, property & listing type chips).
+  - **Unified Media Manager**: Displays existing uploaded photos and newly cropped photos. Supports setting cover photo (★), reordering left/right (◀/▶), deleting photos, and adding new photos with the 4:3 `ImageCropperModal`.
+  - **Admin Re-Approval Lifecycle**: Amber banner alert and confirmation prompt when modifying published listings. Submitting resets status to `PENDING_APPROVAL` and `is_approved = false`.
+  - Cleans up deleted photos from Supabase Storage (`property_images` bucket) and updates order in `property_media`.
+- **Property Management & Trash Recovery (`app/(tabs)/properties.tsx`)** ⭐ *Newly Enhanced*:
+  - **Top Segmented Filter Chips**: "Active Listings" vs "Trash / Archived (30 Days)" with live count badges.
+  - **Card Action Bar**: Dedicated "Edit" button (routes to `/edit-property/[id]`) and "Delete" button.
+  - **Deletion Strategy**: Prompts "Move to Trash (30 Days)" (soft-delete via `deleted_at`) or "Permanently Delete Now" with destructive confirmation.
+  - **Trash Recovery Tab**: Shows days remaining until 30-day auto-purge, with one-tap "Restore Listing" and immediate "Permanently Delete Now" actions.
+
 ### 📱 `apps/user-app` (Seeker Mobile Application)
 - **Feed & Discovery (`app/(tabs)/index.tsx`)**: Hero banner, city chips, quick filter tabs, featured cards, search bar.
 - **Property Detail (`app/property/[id].tsx`)**: Photo gallery, pricing, specs, amenities list, owner contact card, Enquiry modal, Realtime chat modal.
@@ -73,7 +85,7 @@ real_estate/
 - **Profile (`app/(tabs)/profile.tsx`)**: User credentials, saved preferences, logout.
 
 ### 💻 `apps/admin-panel` (Web Admin Dashboard)
-- **Properties Review (`app/properties/pending/page.tsx`)**: Review incoming owner submissions with photo galleries and specs.
+- **Properties Review (`app/properties/pending/page.tsx`)**: Review incoming owner submissions and edited listings with photo galleries and specs.
 - **Approval Actions**: One-click "Approve" (moves status to `PUBLISHED`) or "Reject" (prompts reason).
 - **Users Management (`app/users/page.tsx`)**: View registered owners and seekers, role assignments.
 
@@ -92,6 +104,7 @@ All migrations reside in `supabase/migrations/`:
 3. `00000000000002_property_lifecycle.sql`: Property status enum and transition security rules.
 4. `00000000000003_admin_roles_rls.sql`: Admin privileges and review access.
 5. `00000000000004_enquiries_fix.sql`: Foreign key relationships and RLS adjustments for enquiries.
+6. `00000000000005_soft_delete_and_owner_delete.sql`: Soft delete (`deleted_at`), owner DELETE RLS policy, and performance indexes.
 
 ---
 
@@ -110,19 +123,15 @@ All migrations reside in `supabase/migrations/`:
 
 ## 6. Next Session Plan & Roadmap
 
-When starting the next conversation, pick up directly from these items:
-
 ### Immediate Next Steps:
-1. **End-to-End Property Publishing Test**:
-   - In `owner-app`, select multiple photos of varying dimensions.
-   - Frame photos with the 4:3 cropper, confirm each, and run batch crop on "Crop & Finish".
-   - Submit property to Supabase Storage + Database (`PENDING_APPROVAL`).
-   - Open `admin-panel` (`/properties/pending`) and verify the property listing.
-   - Click **Approve** and verify status updates to `PUBLISHED`.
-   - Open `user-app` and `customer-web` to confirm the new listing appears immediately in discovery feeds.
-2. **Owner App Edit Property Feature**:
-   - Implement ability for owners to edit existing listings (update price, description, add/remove/re-crop photos).
-3. **Push Notifications & Unread Badges**:
-   - Real-time badges for new enquiries and chat messages for both owner and seeker.
-4. **Production Build & EAS Setup**:
+1. **Live End-to-End Publishing & Admin Verification Lifecycle**:
+   - Start the development servers (`owner-app` on `:8082`, `admin-panel` on `:3001`, `user-app` on `:8081`, `customer-web` on `:3000`).
+   - Create a listing in `owner-app` with 4:3 cropped photos.
+   - Verify submission in `admin-panel` (`/properties/pending`) and approve it.
+   - Edit the listing from `owner-app` (modify price/photo) -> verify it returns to pending approval.
+   - Re-approve in `admin-panel` -> verify instant live reflection in `user-app` and `customer-web`.
+   - Test "Move to Trash (30 Days)" and "Restore Listing".
+2. **Push Notifications & Unread Badges**:
+   - Real-time badge counters for incoming enquiries and chat messages for both owner and seeker tabs.
+3. **Production Build & EAS Setup**:
    - Verify `eas.json` configuration, app icons, splash screens, and generate release APKs.

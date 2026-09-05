@@ -32,8 +32,7 @@ export const uploadPropertyImage = async (
         !input.startsWith('http://') &&
         !input.startsWith('https://') &&
         !input.startsWith('file://') &&
-        !input.startsWith('content://') &&
-        input.length > 500
+        !input.startsWith('content://')
       ) {
         // Raw base64 string
         uploadBody = decode(input);
@@ -85,3 +84,83 @@ export const uploadPropertyImage = async (
     return { success: false, error: err };
   }
 };
+
+export const deletePropertyImageFromStorage = async (
+  url: string
+): Promise<{ success: boolean; error?: any }> => {
+  try {
+    if (!url) {
+      return { success: true };
+    }
+
+    let filePath = url;
+    const bucket = 'property_images';
+    if (filePath.includes('/' + bucket + '/')) {
+      filePath = filePath.split('/' + bucket + '/')[1];
+    } else if (filePath.includes(bucket + '/')) {
+      filePath = filePath.split(bucket + '/')[1];
+    } else if (filePath.includes('/')) {
+      const parts = filePath.split('/');
+      if (parts.length >= 2) {
+        filePath = `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+      }
+    }
+
+    filePath = filePath.split('?')[0].split('#')[0];
+    filePath = decodeURIComponent(filePath);
+
+    const { error } = await supabase.storage
+      .from(bucket)
+      .remove([filePath]);
+
+    if (error) {
+      console.error('Error deleting image from Supabase Storage:', error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error('Unexpected error deleting image from storage:', err);
+    return { success: false, error: err };
+  }
+};
+
+export const deletePropertyStorageFolder = async (
+  propertyId: string
+): Promise<{ success: boolean; error?: any }> => {
+  try {
+    if (!propertyId) {
+      return { success: false, error: 'Property ID is required' };
+    }
+
+    const { data: files, error: listError } = await supabase.storage
+      .from('property_images')
+      .list(propertyId);
+
+    if (listError) {
+      console.error(`Error listing storage files for property (${propertyId}):`, listError);
+      return { success: false, error: listError };
+    }
+
+    if (!files || files.length === 0) {
+      return { success: true };
+    }
+
+    const filePaths = files.map((file) => `${propertyId}/${file.name}`);
+
+    const { error: removeError } = await supabase.storage
+      .from('property_images')
+      .remove(filePaths);
+
+    if (removeError) {
+      console.error(`Error deleting storage folder files for property (${propertyId}):`, removeError);
+      return { success: false, error: removeError };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error(`Unexpected error deleting storage folder for property (${propertyId}):`, err);
+    return { success: false, error: err };
+  }
+};
+
