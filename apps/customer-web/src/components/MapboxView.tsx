@@ -150,11 +150,14 @@ export const SATELLITE_STYLE: any = {
   ],
 };
 
-// MapLibre Styles: Positron (Default Airbnb minimalist), Liberty (Detailed Street), Esri Satellite
+// MapLibre Styles: Streets (Default vibrant vector streets), Satellite (High-Res Aerial), Minimal (Warm gray)
 export const MAP_STYLES = {
-  positron: "https://tiles.openfreemap.org/styles/positron",
-  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  streets: "https://tiles.openfreemap.org/styles/liberty",
   satellite: SATELLITE_STYLE,
+  minimal: "https://tiles.openfreemap.org/styles/positron",
+  // Aliases for compatibility
+  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  positron: "https://tiles.openfreemap.org/styles/positron",
 } as const;
 
 export type MapStyleKey = keyof typeof MAP_STYLES;
@@ -180,13 +183,24 @@ export function MapboxView({
   pitch: defaultPitch = 0,
   className = "",
 }: MapboxViewProps) {
-  // Styles and camera state
-  const [mapStyleKey, setMapStyleKey] = useState<MapStyleKey>("positron");
+  // Styles and camera state: Default to vibrant detailed Streets
+  const [mapStyleKey, setMapStyleKey] = useState<MapStyleKey>("streets");
   const [is3D, setIs3D] = useState(defaultPitch > 20);
   const [activeProperty, setActiveProperty] = useState<MapProperty | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [internalViewedIds, setInternalViewedIds] = useState<Set<string>>(new Set());
-  const [internalSavedIds, setInternalSavedIds] = useState<Set<string>>(new Set(savedPropertyIds));
+  const [toggledSavedIds, setToggledSavedIds] = useState<Record<string, boolean>>({});
+
+  // Check if a property is saved (respecting optimistic toggles and external props)
+  const isPropertySaved = useCallback(
+    (id: string) => {
+      if (toggledSavedIds[id] !== undefined) {
+        return toggledSavedIds[id];
+      }
+      return Array.isArray(savedPropertyIds) && savedPropertyIds.includes(id);
+    },
+    [toggledSavedIds, savedPropertyIds]
+  );
 
   // "Search as I move the map"
   const [internalSearchAsMove, setInternalSearchAsMove] = useState(searchAsMapMoves);
@@ -232,11 +246,6 @@ export function MapboxView({
 
   const onHoverPropertyRef = useRef(onHoverProperty);
   onHoverPropertyRef.current = onHoverProperty;
-
-  // Sync external saved IDs
-  useEffect(() => {
-    setInternalSavedIds(new Set(savedPropertyIds));
-  }, [savedPropertyIds]);
 
   // Combined viewed IDs
   const isPropertyViewed = useCallback(
@@ -521,15 +530,11 @@ export function MapboxView({
     e.preventDefault();
     e.stopPropagation();
 
-    setInternalSavedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(propId)) {
-        next.delete(propId);
-      } else {
-        next.add(propId);
-      }
-      return next;
-    });
+    const currentlySaved = isPropertySaved(propId);
+    setToggledSavedIds((prev) => ({
+      ...prev,
+      [propId]: !currentlySaved,
+    }));
 
     onToggleSave?.(propId);
   };
@@ -697,33 +702,20 @@ export function MapboxView({
 
       {/* 3. Top-Right Map Controls: Style Switcher, 3D Tilt, Reset North, Zoom In/Out, Fit All */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
-        {/* Style Switcher: Positron (Default), Liberty, Satellite */}
+        {/* Style Switcher: Streets (Default), Satellite, Minimal */}
         <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 p-1 flex items-center gap-0.5">
           <button
             type="button"
-            onClick={() => handleMapStyleChange("positron")}
+            onClick={() => handleMapStyleChange("streets")}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "positron"
+              mapStyleKey === "streets" || mapStyleKey === "liberty"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Positron (Clean Minimalist View)"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Positron</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleMapStyleChange("liberty")}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "liberty"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="Liberty (Detailed Street View)"
+            title="Streets (Vibrant Vector Street Map)"
           >
             <Navigation className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Liberty</span>
+            <span className="hidden sm:inline">Streets</span>
           </button>
           <button
             type="button"
@@ -737,6 +729,19 @@ export function MapboxView({
           >
             <Eye className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Satellite</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMapStyleChange("minimal")}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              mapStyleKey === "minimal" || mapStyleKey === "positron"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+            title="Minimal (Warm Low-Contrast View)"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Minimal</span>
           </button>
         </div>
 
@@ -821,12 +826,12 @@ export function MapboxView({
             onClick={(e) => handleToggleFavorite(e, activeProperty.id)}
             className="absolute top-2.5 left-2.5 z-30 p-1.5 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md transition-all cursor-pointer active:scale-90"
             title={
-              internalSavedIds.has(activeProperty.id) ? "Remove from saved" : "Save property"
+              isPropertySaved(activeProperty.id) ? "Remove from saved" : "Save property"
             }
           >
             <Heart
               className={`w-4 h-4 transition-colors ${
-                internalSavedIds.has(activeProperty.id)
+                isPropertySaved(activeProperty.id)
                   ? "fill-rose-500 text-rose-500"
                   : "text-white hover:text-rose-300"
               }`}
