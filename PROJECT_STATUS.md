@@ -40,75 +40,9 @@ real_estate/
 
 ---
 
-## 3. Current Implementation Status
+## 3. Database & SQL Migrations (Complete)
 
-### 📱 `apps/owner-app` (Owner Mobile Application)
-- **Authentication**: Email/Password login, session persistence via Supabase.
-- **Dashboard (`app/(tabs)/index.tsx`)**: Property metrics, total listings, active enquiries, quick action shortcuts.
-- **Property Management (`app/(tabs)/properties.tsx`)**: List of owned properties with live status badges (`PUBLISHED`, `PENDING_APPROVAL`, `DRAFT`, `REJECTED`, `SOLD_RENTED`), pause/delete actions.
-- **Create Property (`app/(tabs)/create-property.tsx`)**:
-  - Multi-photo picker with custom aspect-ratio cropper integration.
-  - Property type, listing type (Sale/Rent), price, area, bedroom/bathroom selectors, address & amenities.
-  - Submission creates property in `PENDING_APPROVAL` status for Admin review.
-- **Custom 4:3 Image Cropper (`components/ImageCropperModal.tsx`)** ⭐ *Recently Perfected*:
-  - **4:3 Aspect Ratio Viewport**: With dim/shadow overlay showing image areas beyond the crop box for contextual adjustment.
-  - **Zoom Slider & Fine-Tuning**: Smooth continuous zoom slider (1.0x to 3.0x) flanked by `+` and `-` step buttons (0.1x steps) with gutter offsets to eliminate thumb overlap.
-  - **Touch Gestures**: Smooth baseline panning and 2x double-tap zoom toggle.
-  - **Gaps Prevention**: Dynamic scale clamping ensuring the image always fills both dimensions without blank borders.
-  - **Per-Photo Framing Memory**: State-persisted `transformsMap` remembering each photo's exact zoom scale, pan position, and slider thumb when toggling between images.
-  - **Confirm & Next Flow**: Replaced confusing 'Crop and Next' with 'Confirm & Next' (dynamically becomes 'Confirm' on last photo) with automatic progression.
-  - **Non-Blocking Toast Warning**: Floating pill warning (`⚠️ Please frame all photos first (X remaining)`) instead of disruptive alerts.
-  - **Sequential Batch Cropping**: 'Crop & Finish' crops all confirmed photos in one batch with progress indicator modal (`Cropping photo X of Y...`).
-- **Enquiries & Realtime Chat (`app/(tabs)/enquiries.tsx`)** ⭐ *Newly Enhanced with WhatsApp Ticks*:
-  - **WhatsApp Message Status Ticks**: Single gray tick (sending), double gray ticks (persisted), double sky blue ticks (`#0284c7`) when read, and red alert icon with tap-to-retry on failure.
-  - **Optimistic Message Sending**: Messages render immediately with in-flight state and smoothly swap with server record.
-  - **Live Blue Ticks Synchronization**: Realtime listener for `UPDATE` events on messages flips ticks to sky blue live when recipient reads.
-  - **Automatic Read Receipts**: Opening a lead/chat immediately marks unread messages as read and updates lead status to `READ`.
-  - **In-App Notification Banner**: Floating animated top toast pill displaying incoming lead/message with instant tap-to-open gesture and 4s auto-dismiss.
-  - **Live Leads Tab Badge**: Real-time badge counter on `Leads` tab showing unread leads + unread chat messages.
-- **Profile (`app/(tabs)/profile.tsx`)**: Owner details, phone number, logout.
-
-- **Edit Property (`app/edit-property/[id].tsx`)** ⭐ *Newly Added*:
-  - Route navigation with `useLocalSearchParams` and stack presentation.
-  - Pre-fills property details (title, description, price, area, specs, address, property & listing type chips).
-  - **Unified Media Manager**: Displays existing uploaded photos and newly cropped photos. Supports setting cover photo (★), reordering left/right (◀/▶), deleting photos, and adding new photos with the 4:3 `ImageCropperModal`.
-  - **Admin Re-Approval Lifecycle**: Amber banner alert and confirmation prompt when modifying published listings. Submitting resets status to `PENDING_APPROVAL` and `is_approved = false`.
-  - Cleans up deleted photos from Supabase Storage (`property_images` bucket) and updates order in `property_media`.
-- **Property Management & Trash Recovery (`app/(tabs)/properties.tsx`)** ⭐ *Newly Enhanced*:
-  - **Top Segmented Filter Chips**: "Active Listings" vs "Trash / Archived (30 Days)" with live count badges.
-  - **Card Action Bar**: Dedicated "Edit" button (routes to `/edit-property/[id]`) and "Delete" button.
-  - **Deletion Strategy**: Prompts "Move to Trash (30 Days)" (soft-delete via `deleted_at`) or "Permanently Delete Now" with destructive confirmation.
-  - **Trash Recovery Tab**: Shows days remaining until 30-day auto-purge, with one-tap "Restore Listing" and immediate "Permanently Delete Now" actions.
-
-### 📱 `apps/user-app` (Seeker Mobile Application)
-- **Feed & Discovery (`app/(tabs)/index.tsx`)**: Hero banner, city chips, quick filter tabs, featured cards, search bar.
-- **Property Detail (`app/property/[id].tsx`)**: Photo gallery, pricing, specs, amenities list, owner contact card, Enquiry modal, Realtime chat modal.
-- **Saved Favorites (`app/(tabs)/saved.tsx`)**: Bookmark listings with optimistic UI updates.
-- **Enquiries (`app/(tabs)/enquiries.tsx`)**: History of submitted enquiries with current response status.
-- **Realtime Messages (`app/(tabs)/messages.tsx`)** ⭐ *Newly Enhanced with WhatsApp Ticks*:
-  - **WhatsApp Message Status Ticks**: Single gray tick (sending), double gray ticks (persisted), double sky blue ticks (`#0284c7`) when read, and red alert icon with tap-to-retry on failure.
-  - **Optimistic Sending**: Instant message feedback with server persistence swap.
-  - **Live Read Sync**: Realtime `UPDATE` listener changes ticks to blue live when owner reads.
-  - **Per-Thread Unread Counters & Filter**: Unread count badges on conversation items and `UNREAD` filter chip.
-  - **Live Messages Tab Badge**: Tab badge counter on `Messages` tab dynamically updating via Supabase Realtime.
-  - **In-App Notification Banner**: Floating animated top toast pill displaying incoming owner replies with tap-to-open.
-- **Profile (`app/(tabs)/profile.tsx`)**: User credentials, saved preferences, logout.
-
-### 💻 `apps/admin-panel` (Web Admin Dashboard)
-- **Properties Review (`app/properties/pending/page.tsx`)**: Review incoming owner submissions and edited listings with photo galleries and specs.
-- **Approval Actions**: One-click "Approve" (moves status to `PUBLISHED`) or "Reject" (prompts reason).
-- **Users Management (`app/users/page.tsx`)**: View registered owners and seekers, role assignments.
-
-### 🌐 `apps/customer-web` (Public Web Portal)
-- **Home & Search (`app/page.tsx`, `app/search/page.tsx`)**: Full discovery experience with URL query filter params.
-- **Property Details (`app/property/[id]/page.tsx`)**: Desktop-optimized layout, gallery carousel, lead form.
-- **User Dashboard (`app/enquiries/page.tsx`, `app/messages/page.tsx`, `app/saved/page.tsx`)**: Parity with mobile seeker features.
-
----
-
-## 4. Supabase Database & Migrations
-
-All migrations reside in `supabase/migrations/`:
+All 8 migrations reside in `supabase/migrations/` and have been pushed to the remote Supabase database:
 1. `00000000000000_initial_schema.sql`: Profiles, properties, property_media, enquiries, saved_properties.
 2. `00000000000001_realtime_chat.sql`: `messages` table with sender/receiver IDs, enquiry linking, and realtime pub/sub.
 3. `00000000000002_property_lifecycle.sql`: Property status enum and transition security rules.
@@ -116,33 +50,80 @@ All migrations reside in `supabase/migrations/`:
 5. `00000000000004_enquiries_fix.sql`: Foreign key relationships and RLS adjustments for enquiries.
 6. `00000000000005_soft_delete_and_owner_delete.sql`: Soft delete (`deleted_at`), owner DELETE RLS policy, and performance indexes.
 7. `00000000000006_realtime_notifications_and_badges.sql`: Message `read_at`, `push_token`, participant UPDATE RLS for `is_read`, full replica identity on `messages`, and realtime publication on `enquiries`.
+8. `00000000000007_message_delivered_status.sql`: Zillow professional message delivery status with `delivered_at`, indexes, and participant update RLS policies.
+9. `00000000000008_property_coordinates_index.sql`: Composite B-Tree indexes on `(latitude, longitude)` and `(status, latitude, longitude) WHERE deleted_at IS NULL` for bounding-box search queries.
 
 ---
 
-## 5. Development Servers & Ports
+## 4. Current Web Map Architecture (`apps/customer-web`)
 
-| Application | Command | Default Port / Host |
-|-------------|---------|---------------------|
-| `owner-app` | `npm run dev --workspace=owner-app` | `8082` (LAN host: `192.168.31.63`) |
-| `user-app` | `npm run dev --workspace=user-app` | `8081` |
-| `admin-panel` | `npm run dev --workspace=admin-panel` | `3001` |
-| `customer-web` | `npm run dev --workspace=customer-web` | `3000` |
-
-*Note: In Windows PowerShell, run sequential commands using `;` instead of `&&`, and escape or quote parentheses when referencing Expo paths (e.g. `'apps/owner-app/app/(tabs)/create-property.tsx'`).*
+The discovery map is implemented in `apps/customer-web/src/components/MapboxView.tsx`:
+- **Engine**: MapLibre GL JS (pure open-source WebGL map renderer).
+- **Basemap Providers (100% Free, Zero API Keys, Unlimited Forever)**:
+  - **Streets Mode**: Esri World Light Gray Canvas (`Canvas/World_Light_Gray_Base` + `Canvas/World_Light_Gray_Reference`). Muted, high-contrast background that makes property markers stand out like Airbnb.
+  - **Satellite Mode**: Esri World Imagery (`World_Imagery/MapServer`). High-resolution global satellite photography.
+- **Strict Zoom & Tile Boundary Enforcement (Fixed & Verified)**:
+  - **Streets**: Source `maxzoom: 16` (Esri documented tile limit for India/Europe/Americas), Camera `maxZoom: 16`.
+  - **Satellite**: Source `maxzoom: 19` (empirically confirmed valid tiles for India), Camera `maxZoom: 19`.
+  - **Layer `maxzoom: 24`**: Set high because layer `maxzoom` is **exclusive** in MapLibre. Keeping layer `maxzoom: 24` ensures the layer never disappears at zoom 15/16/18/19, preventing blank canvas errors.
+  - **Minimum Zoom**: `minZoom: 3` (prevents disorienting whole-globe zoom-out).
+- **Zillow-Style Freehand Border Drawing**:
+  - Pen/lasso drawing tool allows seekers to circle any neighborhood or polygon on the map.
+  - Interactive point-in-polygon filtering isolates listings exclusively within the drawn boundary.
+  - Clear / Redraw controls with dynamic GeoJSON styling.
+- **Search as I Move the Map**:
+  - Floating top toggle ("Search as I move the map").
+  - 300ms debounced bounding-box queries (`north`, `south`, `east`, `west`) sent directly to `@repo/api` indexed coordinate search.
+- **Price Chip Markers**:
+  - Styled with Solid Brand Rose (`#e11d48` / `bg-rose-600 text-white font-bold`).
+  - Active/Selected state: Deep Rose (`#be123c`).
+  - Viewed state: Soft Rose/Slate (`#ffe4e6` / `#9f1239`).
+  - Interactive micro-card preview popup on tap with property photo, specs, and direct route to `/property/[id]`.
 
 ---
 
-## 6. Next Session Plan & Roadmap
+## 5. Mobile Applications Status (`owner-app` & `user-app`)
 
-### Immediate Next Steps:
-1. **Live End-to-End Publishing & Admin Verification Lifecycle**:
-   - Start the development servers (`owner-app` on `:8082`, `admin-panel` on `:3001`, `user-app` on `:8081`, `customer-web` on `:3000`).
-   - Create a listing in `owner-app` with 4:3 cropped photos.
-   - Verify submission in `admin-panel` (`/properties/pending`) and approve it.
-   - Edit the listing from `owner-app` (modify price/photo) -> verify it returns to pending approval.
-   - Re-approve in `admin-panel` -> verify instant live reflection in `user-app` and `customer-web`.
-   - Test "Move to Trash (30 Days)" and "Restore Listing".
-2. **Push Notifications & Unread Badges**:
-   - Real-time badge counters for incoming enquiries and chat messages for both owner and seeker tabs.
-3. **Production Build & EAS Setup**:
-   - Verify `eas.json` configuration, app icons, splash screens, and generate release APKs.
+- **Owner App (`apps/owner-app`)**:
+  - 4:3 aspect-ratio image cropper with framing memory, zoom slider, touch panning, and batch crop execution.
+  - Complete listing lifecycle: Create (`PENDING_APPROVAL`), Edit (amber banner re-approval warning), Soft Delete to Trash (30 days countdown), Permanent Delete, and Restore.
+  - Professional Zillow message delivery ticks (Clock 🕒 -> Single Tick ✓ -> Double Gray Tick ✓✓).
+  - Geocoding and coordinate capture on address input.
+- **User App (`apps/user-app`)**:
+  - Feed with Google Maps (`react-native-maps`) and custom Brand Rose price badges.
+  - Bounding box search as region changes.
+  - Realtime messaging with Zillow delivery ticks and unread badges.
+
+---
+
+## 6. Next Plan: Mapbox Vector Tiles ("Stunning UI" Initiative)
+
+### The Strategy:
+To give the web discovery map the identical high-end, bespoke visual quality of Airbnb (vector-sharp typography, customized porcelain landuse, soft pastel road network, 3D building extrusions, and fluid 60fps camera transitions):
+
+1. **Safety & Branch Isolation**:
+   - The current `main` branch is **100% stable, fully committed, and completely free** (zero external keys needed).
+   - In the next session/conversation, create a dedicated branch:
+     ```bash
+     git checkout -b feature/mapbox-stunning-ui
+     ```
+2. **Implementation Scope for `feature/mapbox-stunning-ui`**:
+   - Add `NEXT_PUBLIC_MAPBOX_TOKEN` configuration to `apps/customer-web/.env.local`.
+   - Upgrade `MapboxView.tsx` to utilize official Mapbox Vector Tiles (or custom Mapbox Studio style url `mapbox://styles/...`).
+   - Implement elegant 3D building extrusions on tilt/pitch.
+   - Configure smooth fractional zoom animations.
+   - Graceful fallback: If `NEXT_PUBLIC_MAPBOX_TOKEN` is unset or invalid, automatically fall back to the rock-solid Esri Light Canvas setup on `main`.
+3. **Billing Awareness**:
+   - Mapbox provides **50,000 free web map loads per month** under pay-as-you-go.
+   - Commercial real estate terms will be kept in mind as traffic scales.
+
+---
+
+## 7. Active Ports & Commands
+
+| Application | Command | Port |
+|---|---|---|
+| `customer-web` | `npm run dev --workspace=customer-web` | `http://localhost:3000` |
+| `admin-panel` | `npm run dev --workspace=admin-panel` | `http://localhost:3001` |
+| `owner-app` | `npm run dev --workspace=owner-app` | `http://localhost:8082` |
+| `user-app` | `npm run dev --workspace=user-app` | `http://localhost:8081` |
