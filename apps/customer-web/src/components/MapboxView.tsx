@@ -5,7 +5,6 @@ import Link from "next/link";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  Layers,
   Plus,
   Minus,
   Maximize2,
@@ -15,14 +14,11 @@ import {
   Square,
   ShieldCheck,
   Heart,
-  Navigation,
-  Eye,
   Compass,
   ChevronLeft,
   ChevronRight,
   MapPin,
   Info,
-  Mountain,
 } from "lucide-react";
 import SafeImage from "./SafeImage";
 import { formatPricePill, formatPriceLabel } from "../utils/formatters";
@@ -61,6 +57,8 @@ export interface MapboxViewProps {
   hoveredPropertyId?: string | null;
   viewedPropertyIds?: string[] | Set<string>;
   savedPropertyIds?: string[];
+  drawnPolygon?: [number, number][] | null;
+  onDrawnPolygonChange?: (polygon: [number, number][] | null) => void;
   onSelectProperty?: (property: MapProperty | null) => void;
   onHoverProperty?: (propertyId: string | null) => void;
   onBoundsChange?: (bounds: MapBounds) => void;
@@ -126,42 +124,13 @@ export function getDeterministicCoords(
   };
 }
 
-// High-Res Retina Carto Voyager pure MapLibre style JSON (zero keys required, 100% free forever)
-export const VOYAGER_STYLE: any = {
-  version: 8,
-  sources: {
-    "carto-voyager": {
-      type: "raster",
-      tiles: [
-        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-        "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
-      ],
-      tileSize: 256,
-      attribution: "© CARTO, © OpenStreetMap contributors",
-    },
-  },
-  layers: [
-    {
-      id: "carto-voyager-layer",
-      type: "raster",
-      source: "carto-voyager",
-      minzoom: 0,
-      maxzoom: 20,
-    },
-  ],
-};
-
 // OpenStreetMap Classic Standard pure MapLibre style JSON (100% free forever)
 export const OSM_STYLE: any = {
   version: 8,
   sources: {
     "osm-tiles": {
       type: "raster",
-      tiles: [
-        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
       attribution: "© OpenStreetMap contributors",
     },
@@ -201,23 +170,37 @@ export const SATELLITE_STYLE: any = {
   ],
 };
 
-// MapLibre Styles: Streets (Carto Voyager @2x Retina - Default), Satellite (Esri Imagery), Liberty (3D Vector), OSM (Classic)
+// 100% Free 3-Map System
 export const MAP_STYLES = {
-  streets: VOYAGER_STYLE,
+  streets: OSM_STYLE,
   satellite: SATELLITE_STYLE,
   liberty: "https://tiles.openfreemap.org/styles/liberty",
-  osm: OSM_STYLE,
-  minimal: "https://tiles.openfreemap.org/styles/positron",
   // Aliases for compatibility
-  voyager: VOYAGER_STYLE,
-  positron: "https://tiles.openfreemap.org/styles/positron",
+  osm: OSM_STYLE,
 } as const;
 
-export type MapStyleKey = keyof typeof MAP_STYLES;
+export type MapStyleKey = "streets" | "satellite" | "liberty";
 
 // Aliases for backwards compatibility
 export const MAPBOX_STYLES = MAP_STYLES;
 export type MapboxStyleKey = MapStyleKey;
+
+// Point-in-Polygon Ray-Casting Algorithm
+export function isPointInPolygon(
+  point: [number, number], // [lng, lat]
+  polygon: [number, number][] // array of [lng, lat]
+): boolean {
+  const [x, y] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    const intersect =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 
 export function MapboxView({
   properties,
@@ -225,6 +208,8 @@ export function MapboxView({
   hoveredPropertyId,
   viewedPropertyIds: externalViewedIds,
   savedPropertyIds = [],
+  drawnPolygon,
+  onDrawnPolygonChange,
   onSelectProperty,
   onHoverProperty,
   onBoundsChange,
@@ -236,13 +221,38 @@ export function MapboxView({
   pitch: defaultPitch = 0,
   className = "",
 }: MapboxViewProps) {
-  // Styles and camera state: Default to vibrant detailed Streets
+  // Styles and camera state: Default to streets
   const [mapStyleKey, setMapStyleKey] = useState<MapStyleKey>("streets");
   const [is3D, setIs3D] = useState(defaultPitch > 20);
   const [activeProperty, setActiveProperty] = useState<MapProperty | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [internalViewedIds, setInternalViewedIds] = useState<Set<string>>(new Set());
   const [toggledSavedIds, setToggledSavedIds] = useState<Record<string, boolean>>({});
+
+  // Freehand border drawing state
+  const [isDrawingMode, setIsDrawingMode] = useState<boolean>(false);
+  const [isMouseDown, setIsMouseDown] = useState<boolean>(false);
+  const [screenPoints, setScreenPoints] = useState<Array<{ x: number; y: number }>>([]);
+  const [internalPolygon, setInternalPolygon] = useState<[number, number][] | null>(null);
+
+  // Sync internalPolygon with drawnPolygon prop if passed
+  useEffect(() => {
+    if (drawnPolygon !== undefined) {
+      setInternalPolygon(drawnPolygon);
+    }
+  }, [drawnPolygon]);
+
+  const activePolygon = drawnPolygon !== undefined ? drawnPolygon : internalPolygon;
+
+  // Refs for drawing interactions and synchronization
+  const isMouseDownRef = useRef(false);
+  const screenPointsRef = useRef<Array<{ x: number; y: number }>>([]);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const activePolygonRef = useRef<[number, number][] | null>(activePolygon);
+  activePolygonRef.current = activePolygon;
+
+  const onDrawnPolygonChangeRef = useRef(onDrawnPolygonChange);
+  onDrawnPolygonChangeRef.current = onDrawnPolygonChange;
 
   // Check if a property is saved (respecting optimistic toggles and external props)
   const isPropertySaved = useCallback(
@@ -344,17 +354,28 @@ export function MapboxView({
     });
   }, [properties]);
 
+  // Filter properties by active drawn boundary polygon
+  const visibleProperties = useMemo(() => {
+    if (!activePolygon || activePolygon.length < 3) {
+      return mappedProperties;
+    }
+    return mappedProperties.filter((p) =>
+      isPointInPolygon([p.lng, p.lat], activePolygon)
+    );
+  }, [mappedProperties, activePolygon]);
+
   // Center calculation
   const averageCenter = useMemo(() => {
     if (defaultCenter) return defaultCenter;
-    if (mappedProperties.length === 0) return { lat: 19.076, lng: 72.8777 };
-    const totalLat = mappedProperties.reduce((acc, p) => acc + p.lat, 0);
-    const totalLng = mappedProperties.reduce((acc, p) => acc + p.lng, 0);
+    const listToAvg = visibleProperties.length > 0 ? visibleProperties : mappedProperties;
+    if (listToAvg.length === 0) return { lat: 19.076, lng: 72.8777 };
+    const totalLat = listToAvg.reduce((acc, p) => acc + p.lat, 0);
+    const totalLng = listToAvg.reduce((acc, p) => acc + p.lng, 0);
     return {
-      lat: totalLat / mappedProperties.length,
-      lng: totalLng / mappedProperties.length,
+      lat: totalLat / listToAvg.length,
+      lng: totalLng / listToAvg.length,
     };
-  }, [mappedProperties, defaultCenter]);
+  }, [visibleProperties, mappedProperties, defaultCenter]);
 
   // Sync active property from prop
   useEffect(() => {
@@ -395,31 +416,80 @@ export function MapboxView({
     }, 300);
   }, []);
 
-  // Helper to add 3D building extrusion layer on Positron/Liberty
-  const add3DBuildingsLayer = useCallback((map: maplibregl.Map, currentStyle: string) => {
-    try {
-      if (currentStyle !== "satellite" && !map.getLayer("3d-buildings")) {
-        if (map.getSource("openmaptiles")) {
-          map.addLayer({
-            id: "3d-buildings",
-            source: "openmaptiles",
-            "source-layer": "building",
-            filter: ["==", "extrude", "true"],
-            type: "fill-extrusion",
-            minzoom: 14,
-            paint: {
-              "fill-extrusion-color": "#e2e8f0",
-              "fill-extrusion-height": ["get", "render_height"],
-              "fill-extrusion-base": ["get", "render_min_height"],
-              "fill-extrusion-opacity": 0.65,
-            },
+  // Sync boundary GeoJSON source and layers on MapLibre
+  const syncBoundaryLayer = useCallback(
+    (map: maplibregl.Map, polygon: [number, number][] | null | undefined) => {
+      if (!map || !map.isStyleLoaded()) return;
+
+      const sourceId = "drawn-boundary-source";
+      const fillLayerId = "drawn-boundary-fill";
+      const lineLayerId = "drawn-boundary-line";
+
+      const data: any =
+        polygon && polygon.length >= 3
+          ? {
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [polygon],
+              },
+              properties: {},
+            }
+          : {
+              type: "FeatureCollection",
+              features: [],
+            };
+
+      const existingSource = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+
+      if (!existingSource) {
+        try {
+          map.addSource(sourceId, {
+            type: "geojson",
+            data,
           });
+
+          if (!map.getLayer(fillLayerId)) {
+            map.addLayer({
+              id: fillLayerId,
+              type: "fill",
+              source: sourceId,
+              paint: {
+                "fill-color": "#f43f5e",
+                "fill-opacity": 0.12,
+              },
+            });
+          }
+
+          if (!map.getLayer(lineLayerId)) {
+            map.addLayer({
+              id: lineLayerId,
+              type: "line",
+              source: sourceId,
+              paint: {
+                "line-color": "#e11d48",
+                "line-width": 2.5,
+                "line-dasharray": [2, 1],
+              },
+            });
+          }
+        } catch (err) {
+          console.warn("[MapLibre Boundary Layer]:", err);
         }
+      } else {
+        existingSource.setData(data);
       }
-    } catch (err) {
-      console.warn("Could not inject 3D buildings layer:", err);
+    },
+    []
+  );
+
+  // Sync boundary layer whenever activePolygon updates
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (map && map.isStyleLoaded()) {
+      syncBoundaryLayer(map, activePolygon);
     }
-  }, []);
+  }, [activePolygon, syncBoundaryLayer]);
 
   // Initialize MapLibre GL instance
   useEffect(() => {
@@ -454,12 +524,12 @@ export function MapboxView({
 
     map.on("load", () => {
       map.resize();
-      add3DBuildingsLayer(map, currentStyleRef.current);
+      syncBoundaryLayer(map, activePolygonRef.current);
     });
 
     map.on("style.load", () => {
       map.resize();
-      add3DBuildingsLayer(map, currentStyleRef.current);
+      syncBoundaryLayer(map, activePolygonRef.current);
     });
 
     map.on("error", (e) => {
@@ -506,27 +576,30 @@ export function MapboxView({
     };
   }, []);
 
-  // Switch Map Style dynamically
+  // Switch Map Style dynamically with Smart 3D Camera Fly-In
   const handleMapStyleChange = (key: MapStyleKey) => {
     setMapStyleKey(key);
     currentStyleRef.current = key;
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.setStyle(MAP_STYLES[key] as any);
-      setTimeout(() => mapInstanceRef.current?.resize(), 100);
-    }
-  };
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.setStyle(MAP_STYLES[key] as any);
 
-  // Toggle 3D pitch camera between 0° and 50°
-  const handleToggle3D = () => {
-    if (mapInstanceRef.current) {
-      const targetPitch = is3D ? 0 : 50;
-      mapInstanceRef.current.easeTo({
-        pitch: targetPitch,
-        duration: 600,
-      });
-      setIs3D(!is3D);
-    } else {
-      setIs3D(!is3D);
+      if (key === "liberty") {
+        // Smart 3D Camera Fly-In
+        map.easeTo({
+          pitch: 55,
+          zoom: Math.max(map.getZoom(), 14.5),
+          duration: 800,
+        });
+        map.dragRotate.enable();
+        setIs3D(true);
+      } else {
+        // Smoothly level camera back to top-down
+        map.easeTo({ pitch: 0, duration: 600 });
+        setIs3D(false);
+      }
+
+      setTimeout(() => mapInstanceRef.current?.resize(), 100);
     }
   };
 
@@ -535,7 +608,7 @@ export function MapboxView({
     if (mapInstanceRef.current) {
       mapInstanceRef.current.easeTo({
         bearing: 0,
-        pitch: is3D ? 50 : 0,
+        pitch: mapStyleKey === "liberty" ? 55 : 0,
         duration: 500,
       });
     }
@@ -556,10 +629,11 @@ export function MapboxView({
 
   // Fit all properties
   const handleFitAll = () => {
-    if (mappedProperties.length === 0 || !mapInstanceRef.current) return;
+    const listToFit = visibleProperties.length > 0 ? visibleProperties : mappedProperties;
+    if (listToFit.length === 0 || !mapInstanceRef.current) return;
 
     const bounds = new maplibregl.LngLatBounds();
-    mappedProperties.forEach((p) => {
+    listToFit.forEach((p) => {
       bounds.extend([p.lng, p.lat]);
     });
     mapInstanceRef.current.fitBounds(bounds, {
@@ -617,12 +691,141 @@ export function MapboxView({
     onToggleSave?.(propId);
   };
 
+  // Freehand Drawing Event Handlers
+  const handleStartDraw = () => {
+    // Clear any existing boundary and re-arm lasso
+    setInternalPolygon(null);
+    onDrawnPolygonChangeRef.current?.(null);
+    screenPointsRef.current = [];
+    setScreenPoints([]);
+    setIsMouseDown(false);
+    isMouseDownRef.current = false;
+    setIsDrawingMode(true);
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.dragPan.disable();
+      mapInstanceRef.current.doubleClickZoom.disable();
+    }
+  };
+
+  const handleCancelDraw = () => {
+    setIsDrawingMode(false);
+    setIsMouseDown(false);
+    isMouseDownRef.current = false;
+    screenPointsRef.current = [];
+    setScreenPoints([]);
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.dragPan.enable();
+      mapInstanceRef.current.doubleClickZoom.enable();
+    }
+  };
+
+  const handleClearBoundary = () => {
+    setInternalPolygon(null);
+    onDrawnPolygonChangeRef.current?.(null);
+    screenPointsRef.current = [];
+    setScreenPoints([]);
+  };
+
+  const getSvgCoordinates = (e: React.PointerEvent<SVGSVGElement>): { x: number; y: number } => {
+    if (svgRef.current) {
+      const rect = svgRef.current.getBoundingClientRect();
+      return {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+    }
+    return { x: e.clientX, y: e.clientY };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      (e.target as Element).setPointerCapture(e.pointerId);
+    } catch {}
+
+    setIsMouseDown(true);
+    isMouseDownRef.current = true;
+    const pt = getSvgCoordinates(e);
+    screenPointsRef.current = [pt];
+    setScreenPoints([pt]);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!isMouseDownRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const pt = getSvgCoordinates(e);
+    const pts = screenPointsRef.current;
+    if (pts.length === 0) {
+      screenPointsRef.current = [pt];
+      setScreenPoints([pt]);
+      return;
+    }
+
+    const last = pts[pts.length - 1];
+    const distSq = (pt.x - last.x) ** 2 + (pt.y - last.y) ** 2;
+    // Append current point if distance from last point > 4px (16px^2)
+    if (distSq > 16) {
+      pts.push(pt);
+      setScreenPoints([...pts]);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+    } catch {}
+
+    setIsMouseDown(false);
+    isMouseDownRef.current = false;
+
+    const map = mapInstanceRef.current;
+    const pts = screenPointsRef.current;
+
+    if (map && pts.length > 5) {
+      // Convert screen coordinates to [lng, lat]
+      const geoPoints: [number, number][] = pts.map((p) => {
+        const ll = map.unproject([p.x, p.y]);
+        return [ll.lng, ll.lat];
+      });
+
+      // Connect last point to first point to close polygon
+      if (geoPoints.length > 0) {
+        const first = geoPoints[0];
+        const last = geoPoints[geoPoints.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+          geoPoints.push([first[0], first[1]]);
+        }
+      }
+
+      setInternalPolygon(geoPoints);
+      onDrawnPolygonChangeRef.current?.(geoPoints);
+    }
+
+    screenPointsRef.current = [];
+    setScreenPoints([]);
+
+    if (map) {
+      map.dragPan.enable();
+      map.doubleClickZoom.enable();
+    }
+    setIsDrawingMode(false);
+  };
+
   // Update or Create Custom Airbnb-Style Price Pill Markers
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    const currentPropIds = new Set(mappedProperties.map((p) => p.id));
+    const currentPropIds = new Set(visibleProperties.map((p) => p.id));
 
     // Clean up markers that are no longer present
     markersRef.current.forEach((markerObj, id) => {
@@ -632,14 +835,15 @@ export function MapboxView({
       }
     });
 
-    // Create or update markers
-    mappedProperties.forEach((property) => {
+    // Create or update markers for visible properties
+    visibleProperties.forEach((property) => {
       let markerItem = markersRef.current.get(property.id);
 
       if (!markerItem) {
         // Container element
         const el = document.createElement("div");
-        el.className = "maplibre-marker-container cursor-pointer select-none transition-transform duration-200";
+        el.className =
+          "maplibre-marker-container cursor-pointer select-none transition-transform duration-200";
 
         // Price Pill Button
         const pillBtn = document.createElement("button");
@@ -720,7 +924,7 @@ export function MapboxView({
       }
     });
   }, [
-    mappedProperties,
+    visibleProperties,
     selectedPropertyId,
     hoveredPropertyId,
     activeProperty?.id,
@@ -751,119 +955,158 @@ export function MapboxView({
       ref={mapContainerRef}
       className={`relative w-full h-full bg-slate-100 overflow-hidden select-none ${className}`}
     >
-      {/* 1. Floating Toggle Switch: "Search as I move the map" (Top Center) */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-        <div className="bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-lg border border-slate-200/90 flex items-center gap-2 transition-all hover:shadow-xl">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={isSearchAsMapMoves}
-              onChange={(e) => handleToggleSearchAsMapMoves(e.target.checked)}
-              className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer accent-rose-600"
+      {/* Freehand Drawing Overlay */}
+      {isDrawingMode && (
+        <svg
+          ref={svgRef}
+          className="absolute inset-0 w-full h-full pointer-events-auto z-40 cursor-crosshair touch-none select-none"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {screenPoints.length > 1 && (
+            <polyline
+              points={screenPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+              stroke="#e11d48"
+              strokeWidth="3"
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray="4 2"
             />
-            <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
-              Search as I move the map
-            </span>
-          </label>
-        </div>
-      </div>
+          )}
+        </svg>
+      )}
 
-      {/* 2. Top-Left Badge: MapLibre Engine Info Badge */}
+      {/* Drawing Instructions Banner (Top Center while drawing) */}
+      {isDrawingMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+          <div className="bg-slate-900/90 text-white backdrop-blur-md px-4 py-2 rounded-full shadow-xl border border-white/10 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+              <span className="text-xs font-semibold">
+                Draw a shape around the area you want to search
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelDraw}
+              className="text-xs font-bold text-slate-300 hover:text-white px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Top-Center Floating Pill Container: Draw Tool | Search as I move | Clear Badge */}
+      {!isDrawingMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+          <div className="bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-lg border border-slate-200/90 flex items-center gap-2.5 transition-all hover:shadow-xl">
+            {/* ✏️ Draw Button */}
+            <button
+              type="button"
+              onClick={handleStartDraw}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full transition-all cursor-pointer ${
+                isDrawingMode
+                  ? "bg-rose-600 text-white shadow-xs"
+                  : "text-slate-700 hover:text-rose-600 hover:bg-rose-50"
+              }`}
+              title="Draw a custom boundary on the map"
+            >
+              <span>✏️</span>
+              <span>Draw</span>
+            </button>
+
+            <span className="text-slate-300 font-light select-none">|</span>
+
+            {/* "Search as I move the map" Checkbox Toggle */}
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isSearchAsMapMoves}
+                onChange={(e) => handleToggleSearchAsMapMoves(e.target.checked)}
+                className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer accent-rose-600"
+              />
+              <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
+                Search as I move the map
+              </span>
+            </label>
+
+            {/* If boundary drawn: ✕ Clear Boundary badge */}
+            {activePolygon && activePolygon.length >= 3 && (
+              <>
+                <span className="text-slate-300 font-light select-none">|</span>
+                <button
+                  type="button"
+                  onClick={handleClearBoundary}
+                  className="flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-full transition-all cursor-pointer"
+                  title="Clear drawn boundary"
+                >
+                  <span>Drawn Area active •</span>
+                  <span className="flex items-center gap-0.5 underline">✕ Clear</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Top-Left Badge: OpenStreetMap & Esri • 100% Free */}
       <div className="absolute top-4 left-4 z-30 max-w-[280px] pointer-events-auto hidden sm:block">
         <div className="inline-flex items-center gap-2 bg-slate-900/85 backdrop-blur-md text-white text-[11px] font-medium px-3.5 py-2 rounded-xl shadow-lg border border-white/10">
           <Info className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="leading-tight">
-            MapLibre GL • Carto, Esri & OSM
-          </span>
+          <span className="leading-tight">OpenStreetMap &amp; Esri • 100% Free</span>
         </div>
       </div>
 
-      {/* 3. Top-Right Map Controls: Style Switcher, 3D Tilt, Reset North, Zoom In/Out, Fit All */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
-        {/* Style Switcher: Streets (Default), Satellite, 3D Liberty, OSM */}
-        <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 p-1 flex items-center gap-0.5">
+      {/* Top-Right: Segmented Pill [ 🗺️ Streets | 🛰️ Satellite | 🏙️ 3D ] */}
+      <div className="absolute top-4 right-4 z-30 pointer-events-auto">
+        <div className="bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 p-1 flex items-center gap-1">
           <button
             type="button"
             onClick={() => handleMapStyleChange("streets")}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "streets" || mapStyleKey === "voyager"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
+              mapStyleKey === "streets"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Streets (High-Res Voyager Retina Street Map)"
+            title="Streets (OpenStreetMap Standard)"
           >
-            <Navigation className="w-3.5 h-3.5" />
+            <span>🗺️</span>
             <span className="hidden sm:inline">Streets</span>
           </button>
           <button
             type="button"
             onClick={() => handleMapStyleChange("satellite")}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
               mapStyleKey === "satellite"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Esri Satellite (High-Res Aerial View)"
+            title="Satellite (Esri World Imagery)"
           >
-            <Eye className="w-3.5 h-3.5" />
+            <span>🛰️</span>
             <span className="hidden sm:inline">Satellite</span>
           </button>
           <button
             type="button"
             onClick={() => handleMapStyleChange("liberty")}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
               mapStyleKey === "liberty"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="3D Vector (OpenFreeMap with Extruded Buildings)"
+            title="3D Vector (OpenFreeMap Liberty 3D Buildings)"
           >
-            <Mountain className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">3D Vector</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleMapStyleChange("osm")}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "osm"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="OSM (OpenStreetMap Standard)"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">OSM</span>
+            <span>🏙️</span>
+            <span className="hidden sm:inline">3D</span>
           </button>
         </div>
+      </div>
 
-        {/* 3D Tilt & Orientation Controls */}
-        <div className="flex bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 overflow-hidden divide-x divide-slate-100">
-          <button
-            type="button"
-            onClick={handleToggle3D}
-            className={`flex-1 px-2.5 py-2 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              is3D
-                ? "bg-rose-50 text-rose-600"
-                : "text-slate-700 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-            title={is3D ? "Switch to 2D Top-Down View" : "Switch to 3D Extruded Buildings View"}
-          >
-            <Mountain className="w-3.5 h-3.5" />
-            <span className="text-[10px] uppercase tracking-wider font-extrabold">3D</span>
-            <Compass className={`w-3.5 h-3.5 transition-transform ${is3D ? "rotate-45" : ""}`} />
-          </button>
-
-          <button
-            type="button"
-            onClick={handleResetNorth}
-            className="p-2 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
-            title="Reset Bearing to North"
-          >
-            <Navigation className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Zoom & Fit Controls */}
+      {/* Vertical Floating Controls on right side: Zoom In (+), Zoom Out (−), Compass, Fit All */}
+      <div className="absolute top-16 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
         <div className="flex flex-col bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 overflow-hidden divide-y divide-slate-100">
           <button
             type="button"
@@ -883,6 +1126,14 @@ export function MapboxView({
           </button>
           <button
             type="button"
+            onClick={handleResetNorth}
+            className="p-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
+            title="Reset bearing to North"
+          >
+            <Compass className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={handleFitAll}
             className="p-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
             title="Fit all properties in view"
@@ -892,7 +1143,7 @@ export function MapboxView({
         </div>
       </div>
 
-      {/* 4. Interactive Photo Carousel Popup Preview Card */}
+      {/* Interactive Photo Carousel Popup Preview Card */}
       {activeProperty && (
         <div
           className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[92%] sm:w-84 md:w-92 max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-40 animate-in fade-in slide-in-from-bottom-3 duration-200"
@@ -982,7 +1233,6 @@ export function MapboxView({
                 </div>
                 {isPropertyViewed(activeProperty.id) && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                    <Eye className="w-3 h-3" />
                     Viewed
                   </span>
                 )}

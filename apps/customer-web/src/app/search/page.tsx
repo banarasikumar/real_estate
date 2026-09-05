@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, useTransition, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, useTransition, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -18,6 +18,7 @@ import {
   RotateCcw,
   Sparkles,
   Search,
+  X,
 } from "lucide-react";
 import { searchProperties, Property, useAuth, toggleSavedProperty, getSavedProperties } from "@repo/api";
 import SearchFiltersBar, {
@@ -27,6 +28,7 @@ import MapboxView, {
   MapProperty,
   MapBounds,
   getDeterministicCoords,
+  isPointInPolygon,
 } from "../../components/MapboxView";
 import { formatPricePill, formatPriceLabel } from "../../utils/formatters";
 import SafeImage from "../../components/SafeImage";
@@ -229,6 +231,32 @@ function SearchContent() {
   const [sortBy, setSortBy] = useState<"newest" | "price_asc" | "price_desc" | "area_desc">("newest");
   const [results, setResults] = useState<MapProperty[]>(SEED_PROPERTIES);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Zillow-style custom border drawing tool boundary polygon
+  const [drawnPolygon, setDrawnPolygon] = useState<[number, number][] | null>(null);
+
+  const handleDrawnPolygonChange = useCallback((polygon: [number, number][] | null) => {
+    setDrawnPolygon(polygon);
+  }, []);
+
+  // Filter listings based on drawn boundary polygon if active
+  const displayedResults = useMemo(() => {
+    if (!drawnPolygon || drawnPolygon.length < 3) {
+      return results;
+    }
+    return results.filter((property, idx) => {
+      const coords = getDeterministicCoords(property, idx);
+      const lat =
+        typeof property.latitude === "number" && property.latitude !== 0 && !isNaN(property.latitude)
+          ? property.latitude
+          : coords.lat;
+      const lng =
+        typeof property.longitude === "number" && property.longitude !== 0 && !isNaN(property.longitude)
+          ? property.longitude
+          : coords.lng;
+      return isPointInPolygon([lng, lat], drawnPolygon);
+    });
+  }, [results, drawnPolygon]);
 
   // Sync state between List & Map
   const [hoveredPropertyId, setHoveredPropertyId] = useState<string | null>(null);
@@ -534,7 +562,7 @@ function SearchContent() {
         <SearchFiltersBar
           filters={filters}
           onChange={handleFilterChange}
-          totalResults={results.length}
+          totalResults={displayedResults.length}
         />
       </div>
 
@@ -552,11 +580,28 @@ function SearchContent() {
               <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
                 {filters.query ? `Properties in "${filters.query}"` : "Explore All Properties"}
               </h1>
-              <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                {isLoading ? "Searching..." : `${results.length} homes available`}
-                {filters.listType === "SALE" && " · For Sale"}
-                {filters.listType === "RENT" && " · For Rent"}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <p className="text-xs font-semibold text-slate-500">
+                  {isLoading
+                    ? "Searching..."
+                    : drawnPolygon && drawnPolygon.length >= 3
+                    ? `${displayedResults.length} homes in drawn boundary`
+                    : `${results.length} homes available`}
+                  {filters.listType === "SALE" && " · For Sale"}
+                  {filters.listType === "RENT" && " · For Rent"}
+                </p>
+                {drawnPolygon && drawnPolygon.length >= 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setDrawnPolygon(null)}
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors border border-rose-200 cursor-pointer shadow-xs"
+                    title="Clear drawn boundary"
+                  >
+                    <span>Clear Boundary</span>
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Sort Dropdown */}
@@ -598,9 +643,9 @@ function SearchContent() {
           )}
 
           {/* Results Grid */}
-          {!isLoading && results.length > 0 && (
+          {!isLoading && displayedResults.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pb-24 md:pb-8">
-              {results.map((property) => {
+              {displayedResults.map((property) => {
                 const isHovered = hoveredPropertyId === property.id;
                 const isSelected = selectedPropertyId === property.id;
                 const displayPrice = formatPricePill(property.price);
@@ -694,35 +739,50 @@ function SearchContent() {
           )}
 
           {/* Empty State */}
-          {!isLoading && results.length === 0 && (
+          {!isLoading && displayedResults.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center py-16 px-4 bg-white rounded-3xl border border-dashed border-slate-200 my-6">
               <div className="w-16 h-16 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mb-4">
                 <Search className="w-8 h-8" />
               </div>
               <h3 className="text-lg font-bold text-slate-900 mb-1">
-                No matching properties found
+                {drawnPolygon && drawnPolygon.length >= 3
+                  ? "No homes found in drawn boundary"
+                  : "No matching properties found"}
               </h3>
               <p className="text-sm text-slate-500 max-w-sm mb-6">
-                Try widening your price range, searching a different location, or resetting the filters.
+                {drawnPolygon && drawnPolygon.length >= 3
+                  ? "Try clearing or drawing a wider boundary to include more areas."
+                  : "Try widening your price range, searching a different location, or resetting the filters."}
               </p>
-              <button
-                type="button"
-                onClick={() =>
-                  handleFilterChange({
-                    query: "",
-                    listType: "ALL",
-                    propType: "ALL",
-                    minPrice: undefined,
-                    maxPrice: undefined,
-                    bedrooms: undefined,
-                    bathrooms: undefined,
-                  })
-                }
-                className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span>Reset All Filters</span>
-              </button>
+              {drawnPolygon && drawnPolygon.length >= 3 ? (
+                <button
+                  type="button"
+                  onClick={() => setDrawnPolygon(null)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Clear Boundary</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleFilterChange({
+                      query: "",
+                      listType: "ALL",
+                      propType: "ALL",
+                      minPrice: undefined,
+                      maxPrice: undefined,
+                      bedrooms: undefined,
+                      bathrooms: undefined,
+                    })
+                  }
+                  className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Reset All Filters</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -741,6 +801,8 @@ function SearchContent() {
             hoveredPropertyId={hoveredPropertyId}
             viewedPropertyIds={viewedPropertyIds}
             savedPropertyIds={savedPropertyIds}
+            drawnPolygon={drawnPolygon}
+            onDrawnPolygonChange={handleDrawnPolygonChange}
             onSelectProperty={handleMarkerSelect}
             onHoverProperty={handleMarkerHover}
             onBoundsChange={handleBoundsChange}
@@ -762,12 +824,12 @@ function SearchContent() {
           {mobileView === "list" ? (
             <>
               <MapIcon className="w-4 h-4 text-rose-400" />
-              <span>Show Map ({results.length})</span>
+              <span>Show Map ({displayedResults.length})</span>
             </>
           ) : (
             <>
               <ListIcon className="w-4 h-4 text-rose-400" />
-              <span>Show List ({results.length})</span>
+              <span>Show List ({displayedResults.length})</span>
             </>
           )}
         </button>
