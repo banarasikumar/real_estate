@@ -24,19 +24,25 @@ import {
   sendChatMessage,
   subscribeToConversationMessages,
   subscribeToUserConversations,
+  markConversationMessagesAsRead,
+  getConversationUnreadCounts,
   Conversation,
   ChatMessage,
 } from '@repo/api';
+import { MessageStatusTicks } from '../../components/MessageStatusTicks';
+import { useNotification } from '../../context/NotificationContext';
 
 type FilterType = 'ALL' | 'UNREAD';
 
 export default function MessagesScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { refreshCounts } = useNotification();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   const [threads, setThreads] = useState<Conversation[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [selectedThread, setSelectedThread] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingThreads, setLoadingThreads] = useState(true);
@@ -48,18 +54,23 @@ export default function MessagesScreen() {
 
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Load user conversations
+  // Load user conversations & unread counts
   const loadConversations = useCallback(async () => {
     if (!user?.id) {
       setThreads([]);
+      setUnreadCounts({});
       setLoadingThreads(false);
       setRefreshing(false);
       return;
     }
 
     try {
-      const data = await getUserConversations(user.id);
-      setThreads(data || []);
+      const [convsData, unreadsData] = await Promise.all([
+        getUserConversations(user.id),
+        getConversationUnreadCounts(user.id),
+      ]);
+      setThreads(convsData || []);
+      setUnreadCounts(unreadsData || {});
     } catch (err) {
       console.error('Error loading conversations:', err);
     } finally {
@@ -81,7 +92,7 @@ export default function MessagesScreen() {
 
   // Load messages and subscribe when thread is opened
   useEffect(() => {
-    if (!selectedThread?.id) {
+    if (!selectedThread?.id || !user?.id) {
       setMessages([]);
       return;
     }
@@ -89,11 +100,26 @@ export default function MessagesScreen() {
     let isMounted = true;
     setLoadingMessages(true);
 
+    // On selecting thread, immediately mark conversation messages as read
+    markConversationMessagesAsRead(selectedThread.id, user.id)
+      .then(() => {
+        if (isMounted) {
+          setUnreadCounts((prev) => ({ ...prev, [selectedThread.id]: 0 }));
+          refreshCounts();
+        }
+      })
+      .catch((err) => console.error('Error marking read on thread select:', err));
+
     getConversationMessages(selectedThread.id)
       .then((data) => {
         if (isMounted) {
           const unique = Array.from(new Map((data || []).map((m) => [m.id, m])).values());
-          setMessages(unique);
+          setMessages(
+            unique.map((m) => ({
+              ...m,
+              status: m.status || (m.is_read ? 'read' : 'sent'),
+            }))
+          );
           setLoadingMessages(false);
           setTimeout(() => {
             scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -105,44 +131,91 @@ export default function MessagesScreen() {
         if (isMounted) setLoadingMessages(false);
       });
 
-    // Realtime subscription
-    const unsubscribe = subscribeToConversationMessages(selectedThread.id, (newMsg) => {
-      if (isMounted) {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === newMsg.id)) return prev;
-
-          // Match pending optimistic message
-          const optIdx = prev.findIndex(
-            (m) => m.id.startsWith('temp-') && m.sender_id === newMsg.sender_id && m.text === newMsg.text
-          );
-          if (optIdx !== -1) {
-            const updated = [...prev];
-            updated[optIdx] = newMsg;
-            return updated;
+    // Realtime subscription with onMessage AND onMessageUpdate
+    const unsubscribe = subscribeToConversationMessages(
+      selectedThread.id,
+      // onMessage: appends new incoming message
+      (newMsg) => {
+        if (isMounted) {
+          // If counterpart sent this while viewing thread, mark as read immediately
+          if (newMsg.sender_id !== user.id) {
+            markConversationMessagesAsRead(selectedThread.id, user.id)
+              .then(() => {
+                setUnreadCounts((prev) => ({ ...prev, [selectedThread.id]: 0 }));
+                refreshCounts();
+              })
+              .catch((err) => console.error('Error marking incoming message read:', err));
           }
 
-          return [...prev, newMsg];
-        });
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 50);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+
+            // Match pending optimistic message
+            const optIdx = prev.findIndex(
+              (m) =>
+                (m.id.startsWith('temp_') || m.id.startsWith('temp-')) &&
+                m.sender_id === newMsg.sender_id &&
+                m.text === newMsg.text
+            );
+            if (optIdx !== -1) {
+              const updated = [...prev];
+              updated[optIdx] = {
+                ...newMsg,
+                status: newMsg.is_read ? 'read' : 'sent',
+              };
+              return updated;
+            }
+
+            return [...prev, { ...newMsg, status: newMsg.is_read ? 'read' : 'sent' }];
+          });
+
+          setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }, 50);
+        }
+      },
+      // onMessageUpdate: updates message read status so ticks turn sky blue live when owner reads
+      (updatedMsg) => {
+        if (isMounted) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === updatedMsg.id
+                ? {
+                    ...m,
+                    ...updatedMsg,
+                    status: updatedMsg.is_read ? 'read' : (updatedMsg.status || m.status),
+                  }
+                : m
+            )
+          );
+        }
       }
-    });
+    );
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [selectedThread?.id]);
+  }, [selectedThread?.id, user?.id, refreshCounts]);
 
   const onRefresh = () => {
     setRefreshing(true);
     loadConversations();
   };
 
-  const handleOpenThread = (thread: Conversation) => {
+  const handleOpenThread = async (thread: Conversation) => {
     setSelectedThread(thread);
     setChatModalVisible(true);
+
+    if (user?.id) {
+      try {
+        await markConversationMessagesAsRead(thread.id, user.id);
+        setUnreadCounts((prev) => ({ ...prev, [thread.id]: 0 }));
+        refreshCounts();
+      } catch (err) {
+        console.error('Error marking conversation messages as read on open:', err);
+      }
+    }
   };
 
   const handleSendMessage = async () => {
@@ -152,13 +225,14 @@ export default function MessagesScreen() {
     setSending(true);
     setReplyText('');
 
-    // Optimistic message
-    const tempId = `temp-${Date.now()}`;
+    // Optimistic message: id: 'temp_' + Date.now(), status: 'sending', is_read: false
+    const tempId = `temp_${Date.now()}`;
     const optimisticMsg: ChatMessage = {
       id: tempId,
       conversation_id: selectedThread.id,
       sender_id: user.id,
       text,
+      status: 'sending',
       is_read: false,
       created_at: new Date().toISOString(),
     };
@@ -177,7 +251,11 @@ export default function MessagesScreen() {
           if (prev.some((m) => m.id === realMsg.id)) {
             return prev.filter((m) => m.id !== tempId);
           }
-          return prev.map((m) => (m.id === tempId ? realMsg : m));
+          return prev.map((m) =>
+            m.id === tempId
+              ? { ...realMsg, status: realMsg.is_read ? 'read' : 'sent' }
+              : m
+          );
         });
         // Update thread in local list
         setThreads((prev) =>
@@ -188,17 +266,74 @@ export default function MessagesScreen() {
           )
         );
       } else {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        // If sendChatMessage errors, updates temp message to status: 'failed'
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
+        );
       }
     } catch (err) {
       console.error('Error sending message:', err);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      // If sendChatMessage errors, updates temp message to status: 'failed'
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
+      );
     } finally {
       setSending(false);
     }
   };
 
+  // Resend handler: retries sending the failed message
+  const resendMessage = async (failedMsg: ChatMessage) => {
+    if (!selectedThread?.id || !user?.id) return;
+
+    // Set message status back to 'sending'
+    setMessages((prev) =>
+      prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'sending' } : m))
+    );
+
+    try {
+      const res = await sendChatMessage(selectedThread.id, user.id, failedMsg.text);
+      if (res.success && res.data) {
+        const realMsg = res.data;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === realMsg.id)) {
+            return prev.filter((m) => m.id !== failedMsg.id);
+          }
+          return prev.map((m) =>
+            m.id === failedMsg.id
+              ? { ...realMsg, status: realMsg.is_read ? 'read' : 'sent' }
+              : m
+          );
+        });
+
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === selectedThread.id
+              ? { ...t, last_message: failedMsg.text, last_message_at: new Date().toISOString() }
+              : t
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'failed' } : m))
+        );
+      }
+    } catch (err) {
+      console.error('Error resending message:', err);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'failed' } : m))
+      );
+    }
+  };
+
+  const unreadThreadsTotal = threads.filter((t) => (unreadCounts[t.id] || 0) > 0).length;
+
   const filteredThreads = threads.filter((thread) => {
+    const unreadCount = unreadCounts[thread.id] || 0;
+    if (activeFilter === 'UNREAD' && unreadCount === 0) {
+      return false;
+    }
+
     const isBuyer = thread.buyer_id === user?.id;
     const otherName = isBuyer
       ? thread.owner?.full_name || 'Property Owner'
@@ -252,27 +387,35 @@ export default function MessagesScreen() {
       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
     const propThumb = item.properties?.property_media?.[0]?.url;
 
+    const unreadCount = unreadCounts[item.id] || 0;
+
     const formattedTime = item.last_message_at
       ? new Date(item.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : '';
 
     return (
       <TouchableOpacity
-        style={styles.threadItem}
+        style={[styles.threadItem, unreadCount > 0 && styles.threadItemUnread]}
         onPress={() => handleOpenThread(item)}
         activeOpacity={0.7}
       >
         <View style={styles.avatarContainer}>
           <Image source={{ uri: propThumb || avatar }} style={styles.avatar} />
-          <View style={styles.onlineDot} />
+          {unreadCount > 0 ? (
+            <View style={styles.unreadDot} />
+          ) : (
+            <View style={styles.onlineDot} />
+          )}
         </View>
 
         <View style={styles.threadContent}>
           <View style={styles.threadHeader}>
-            <Text style={styles.agentName} numberOfLines={1}>
+            <Text style={[styles.agentName, unreadCount > 0 && styles.agentNameUnread]} numberOfLines={1}>
               {name}
             </Text>
-            <Text style={styles.timeText}>{formattedTime}</Text>
+            <Text style={[styles.timeText, unreadCount > 0 && styles.timeTextUnread]}>
+              {formattedTime}
+            </Text>
           </View>
 
           <View style={styles.propertyTag}>
@@ -283,9 +426,14 @@ export default function MessagesScreen() {
           </View>
 
           <View style={styles.previewRow}>
-            <Text style={styles.previewText} numberOfLines={1}>
+            <Text style={[styles.previewText, unreadCount > 0 && styles.previewTextUnread]} numberOfLines={1}>
               {item.last_message || 'Conversation started'}
             </Text>
+            {unreadCount > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>{unreadCount}</Text>
+              </View>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -323,6 +471,14 @@ export default function MessagesScreen() {
             All Messages ({threads.length})
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterChip, activeFilter === 'UNREAD' && styles.filterChipActive]}
+          onPress={() => setActiveFilter('UNREAD')}
+        >
+          <Text style={[styles.filterChipText, activeFilter === 'UNREAD' && styles.filterChipTextActive]}>
+            Unread ({unreadThreadsTotal})
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {loadingThreads ? (
@@ -343,9 +499,13 @@ export default function MessagesScreen() {
               <View style={styles.emptyIconCircle}>
                 <Ionicons name="chatbubbles-outline" size={40} color="#94a3b8" />
               </View>
-              <Text style={styles.emptyTitle}>No Conversations Yet</Text>
+              <Text style={styles.emptyTitle}>
+                {activeFilter === 'UNREAD' ? 'No Unread Messages' : 'No Conversations Yet'}
+              </Text>
               <Text style={styles.emptySubtitle}>
-                {searchQuery
+                {activeFilter === 'UNREAD'
+                  ? "You have caught up with all messages! When owners reply, they'll appear here."
+                  : searchQuery
                   ? `No conversations matched "${searchQuery}".`
                   : "You don't have any active chats yet. Inquire on a property listing to chat with verified sellers in real-time!"}
               </Text>
@@ -470,9 +630,20 @@ export default function MessagesScreen() {
                           <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.agentMessageText]}>
                             {msg.text}
                           </Text>
-                          <Text style={[styles.messageTimestamp, isUser ? styles.userTimestamp : styles.agentTimestamp]}>
-                            {formattedTime}
-                          </Text>
+                          <View style={styles.messageFooterRow}>
+                            <Text style={[styles.messageTimestamp, isUser ? styles.userTimestamp : styles.agentTimestamp]}>
+                              {formattedTime}
+                            </Text>
+                            {isUser && (
+                              <View style={styles.ticksWrapper}>
+                                <MessageStatusTicks
+                                  status={msg.status}
+                                  isRead={msg.is_read}
+                                  onRetry={() => resendMessage(msg)}
+                                />
+                              </View>
+                            )}
+                          </View>
                         </View>
                       </View>
                     );
@@ -810,7 +981,6 @@ const styles = StyleSheet.create({
   },
   messageTimestamp: {
     fontSize: 10,
-    marginTop: 4,
   },
   userTimestamp: {
     color: 'rgba(255,255,255,0.75)',
@@ -818,6 +988,57 @@ const styles = StyleSheet.create({
   },
   agentTimestamp: {
     color: '#94a3b8',
+  },
+  messageFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 4,
+  },
+  ticksWrapper: {
+    marginLeft: 4,
+    alignSelf: 'center',
+  },
+  threadItemUnread: {
+    backgroundColor: '#fffbfa',
+  },
+  unreadDot: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 13,
+    height: 13,
+    borderRadius: 6.5,
+    backgroundColor: '#e11d48',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  agentNameUnread: {
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  timeTextUnread: {
+    color: '#e11d48',
+    fontWeight: '700',
+  },
+  previewTextUnread: {
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  unreadBadge: {
+    backgroundColor: '#e11d48',
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    marginLeft: 8,
+  },
+  unreadBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   inputBar: {
     flexDirection: 'row',

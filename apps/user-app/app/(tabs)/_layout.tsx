@@ -1,7 +1,10 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function TabsLayout() {
+  const { unreadMessagesCount } = useNotification();
+
   return (
     <Tabs
       screenOptions={{
@@ -65,6 +68,8 @@ export default function TabsLayout() {
         options={{
           title: 'Messages',
           headerTitle: 'Messages',
+          tabBarBadge: unreadMessagesCount > 0 ? unreadMessagesCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#e11d48', color: '#ffffff', fontSize: 10, fontWeight: '700' },
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
           ),

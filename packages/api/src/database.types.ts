@@ -12,6 +12,7 @@ export interface Profile {
   phone_number: string | null;
   role: UserRole;
   avatar_url: string | null;
+  push_token?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -75,6 +76,8 @@ export interface ChatMessage {
   sender_id: string;
   text: string;
   is_read?: boolean;
+  read_at?: string | null;
+  status?: 'sending' | 'sent' | 'read' | 'failed';
   created_at: string;
 }
 

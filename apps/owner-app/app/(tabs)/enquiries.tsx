@@ -20,14 +20,19 @@ import {
   sendChatMessage,
   subscribeToConversationMessages,
   subscribeToUserConversations,
+  markConversationMessagesAsRead,
+  markEnquiryAsRead,
   Conversation,
   ChatMessage,
 } from '@repo/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import MessageStatusTicks from '../../components/MessageStatusTicks';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function EnquiriesScreen() {
   const { session } = useAuth();
+  const { refreshCounts } = useNotification();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -71,13 +76,27 @@ export default function EnquiriesScreen() {
       return;
     }
 
+    // Immediately mark conversation messages and enquiry as read
+    if (session?.user?.id) {
+      markConversationMessagesAsRead(selectedConv.id, session.user.id)
+        .then(() => refreshCounts())
+        .catch((err) => console.error('Error marking messages as read:', err));
+      markEnquiryAsRead(selectedConv.id)
+        .then(() => refreshCounts())
+        .catch((err) => console.error('Error marking enquiry as read:', err));
+    }
+
     let isMounted = true;
     setLoadingMessages(true);
 
     getConversationMessages(selectedConv.id)
       .then((data) => {
         if (isMounted) {
-          const unique = Array.from(new Map((data || []).map((m) => [m.id, m])).values());
+          const mapped: ChatMessage[] = (data || []).map((m) => ({
+            ...m,
+            status: m.is_read ? ('read' as const) : ('sent' as const),
+          }));
+          const unique = Array.from(new Map(mapped.map((m) => [m.id, m])).values());
           setMessages(unique);
           setLoadingMessages(false);
           setTimeout(() => {
@@ -90,44 +109,93 @@ export default function EnquiriesScreen() {
         if (isMounted) setLoadingMessages(false);
       });
 
-    // Realtime subscription
-    const unsubscribe = subscribeToConversationMessages(selectedConv.id, (newMsg) => {
-      if (isMounted) {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === newMsg.id)) return prev;
+    // Realtime subscription: handles onMessage AND onMessageUpdate
+    const unsubscribe = subscribeToConversationMessages(
+      selectedConv.id,
+      (newMsg) => {
+        if (isMounted) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) {
+              return prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m));
+            }
 
-          // Check if this incoming message matches an optimistic temp message
-          const optIdx = prev.findIndex(
-            (m) => m.id.startsWith('temp-') && m.sender_id === newMsg.sender_id && m.text === newMsg.text
-          );
-          if (optIdx !== -1) {
-            const updated = [...prev];
-            updated[optIdx] = newMsg;
-            return updated;
+            // Check if this incoming message matches an optimistic temp message
+            const optIdx = prev.findIndex(
+              (m) =>
+                (m.id.startsWith('temp_') || m.id.startsWith('temp-')) &&
+                m.sender_id === newMsg.sender_id &&
+                m.text === newMsg.text
+            );
+            if (optIdx !== -1) {
+              const updated = [...prev];
+              updated[optIdx] = { ...newMsg, status: 'sent' };
+              return updated;
+            }
+
+            return [
+              ...prev,
+              {
+                ...newMsg,
+                status: newMsg.sender_id === session?.user?.id ? 'sent' : undefined,
+              },
+            ];
+          });
+
+          // If incoming message from counterpart while modal is open, mark as read
+          if (session?.user?.id && newMsg.sender_id !== session.user.id) {
+            markConversationMessagesAsRead(selectedConv.id, session.user.id)
+              .then(() => refreshCounts())
+              .catch(console.error);
           }
 
-          return [...prev, newMsg];
-        });
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 50);
+          setTimeout(() => {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }, 50);
+        }
+      },
+      (updatedMsg) => {
+        // onMessageUpdate: when updated message arrives (e.g. is_read = true), ticks turn sky blue
+        if (isMounted) {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === updatedMsg.id) {
+                return {
+                  ...m,
+                  ...updatedMsg,
+                  status: updatedMsg.is_read ? ('read' as const) : m.status || ('sent' as const),
+                };
+              }
+              return m;
+            })
+          );
+        }
       }
-    });
+    );
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [selectedConv?.id]);
+  }, [selectedConv?.id, session?.user?.id, refreshCounts]);
 
   const onRefresh = () => {
     setRefreshing(true);
     loadData();
+    refreshCounts();
   };
 
   const handleOpenChat = (conv: Conversation) => {
     setSelectedConv(conv);
     setChatModalVisible(true);
+
+    if (session?.user?.id) {
+      markConversationMessagesAsRead(conv.id, session.user.id)
+        .then(() => refreshCounts())
+        .catch((err) => console.error('Error marking messages as read on open:', err));
+      markEnquiryAsRead(conv.id)
+        .then(() => refreshCounts())
+        .catch((err) => console.error('Error marking enquiry as read on open:', err));
+    }
   };
 
   const handleSendMessage = async () => {
@@ -137,13 +205,14 @@ export default function EnquiriesScreen() {
     setSending(true);
     setReplyText('');
 
-    const tempId = `temp-${Date.now()}`;
+    const tempId = 'temp_' + Date.now();
     const optimisticMsg: ChatMessage = {
       id: tempId,
       conversation_id: selectedConv.id,
       sender_id: session.user.id,
       text,
       is_read: false,
+      status: 'sending',
       created_at: new Date().toISOString(),
     };
 
@@ -155,7 +224,10 @@ export default function EnquiriesScreen() {
     try {
       const res = await sendChatMessage(selectedConv.id, session.user.id, text);
       if (res.success && res.data) {
-        const realMsg = res.data;
+        const realMsg: ChatMessage = {
+          ...res.data,
+          status: 'sent',
+        };
         setMessages((prev) => {
           // If realtime already added or replaced the message with this UUID
           if (prev.some((m) => m.id === realMsg.id)) {
@@ -171,13 +243,59 @@ export default function EnquiriesScreen() {
           )
         );
       } else {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        // If sendChatMessage errors, updates temp message to status: 'failed'
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
+        );
       }
     } catch (err) {
       console.error('Error sending reply:', err);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, status: 'failed' } : m))
+      );
     } finally {
       setSending(false);
+    }
+  };
+
+  const resendMessage = async (failedMsg: ChatMessage) => {
+    if (!selectedConv?.id || !session?.user?.id) return;
+
+    // Immediately update status back to sending
+    setMessages((prev) =>
+      prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'sending' } : m))
+    );
+
+    try {
+      const res = await sendChatMessage(selectedConv.id, session.user.id, failedMsg.text);
+      if (res.success && res.data) {
+        const realMsg: ChatMessage = {
+          ...res.data,
+          status: 'sent',
+        };
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === realMsg.id)) {
+            return prev.filter((m) => m.id !== failedMsg.id);
+          }
+          return prev.map((m) => (m.id === failedMsg.id ? realMsg : m));
+        });
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === selectedConv.id
+              ? { ...c, last_message: failedMsg.text, last_message_at: new Date().toISOString() }
+              : c
+          )
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'failed' } : m))
+        );
+      }
+    } catch (err) {
+      console.error('Error resending message:', err);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === failedMsg.id ? { ...m, status: 'failed' } : m))
+      );
     }
   };
 
@@ -315,9 +433,18 @@ export default function EnquiriesScreen() {
                         <Text style={[styles.messageText, isOwner ? styles.ownerMessageText : styles.buyerMessageText]}>
                           {msg.text}
                         </Text>
-                        <Text style={[styles.messageTimestamp, isOwner ? styles.ownerTimestamp : styles.buyerTimestamp]}>
-                          {time}
-                        </Text>
+                        <View style={[styles.bubbleFooter, isOwner ? styles.ownerFooter : styles.buyerFooter]}>
+                          <Text style={[styles.messageTimestamp, isOwner ? styles.ownerTimestamp : styles.buyerTimestamp]}>
+                            {time}
+                          </Text>
+                          {isOwner && (
+                            <MessageStatusTicks
+                              status={msg.status}
+                              isRead={msg.is_read}
+                              onRetry={() => resendMessage(msg)}
+                            />
+                          )}
+                        </View>
                       </View>
                     </View>
                   );
@@ -512,13 +639,23 @@ const styles = StyleSheet.create({
   buyerMessageText: {
     color: '#0f172a',
   },
+  bubbleFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 3,
+  },
+  ownerFooter: {
+    justifyContent: 'flex-end',
+  },
+  buyerFooter: {
+    justifyContent: 'flex-start',
+  },
   messageTimestamp: {
     fontSize: 10,
-    marginTop: 4,
   },
   ownerTimestamp: {
     color: 'rgba(255,255,255,0.75)',
-    textAlign: 'right',
   },
   buyerTimestamp: {
     color: '#94a3b8',

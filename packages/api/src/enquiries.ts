@@ -62,3 +62,91 @@ export const getUserEnquiries = async (identifier: string): Promise<UserEnquiryR
     };
   }
 };
+
+/**
+ * Marks an enquiry as READ if its current status is NEW.
+ */
+export const markEnquiryAsRead = async (
+  enquiryId: string
+): Promise<{ success: boolean; error?: any }> => {
+  if (!enquiryId) {
+    return { success: false, error: 'Enquiry ID is required' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('enquiries')
+      .update({
+        status: 'READ',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', enquiryId)
+      .eq('status', 'NEW');
+
+    if (error) {
+      console.error('Error marking enquiry as read:', error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Unexpected error in markEnquiryAsRead:', err);
+    return { success: false, error: err };
+  }
+};
+
+/**
+ * Counts unread (NEW) enquiries for a given property owner.
+ */
+export const getOwnerUnreadEnquiryCount = async (ownerId: string): Promise<number> => {
+  if (!ownerId) return 0;
+
+  try {
+    const { count, error } = await supabase
+      .from('enquiries')
+      .select('*', { count: 'exact', head: true })
+      .eq('owner_id', ownerId)
+      .eq('status', 'NEW');
+
+    if (error) {
+      console.error('Error counting owner unread enquiries:', error);
+      return 0;
+    }
+
+    return count || 0;
+  } catch (err) {
+    console.error('Unexpected error in getOwnerUnreadEnquiryCount:', err);
+    return 0;
+  }
+};
+
+/**
+ * Subscribes to realtime changes on the enquiries table for a property owner.
+ */
+export const subscribeToOwnerEnquiries = (
+  ownerId: string,
+  onUpdate: (newEnquiry?: any) => void
+): (() => void) => {
+  const channelName = `owner-enquiries-${ownerId}-${Date.now()}`;
+
+  const channel = supabase
+    .channel(channelName)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'enquiries',
+        filter: `owner_id=eq.${ownerId}`,
+      },
+      (payload) => {
+        onUpdate(payload.new);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+};
+

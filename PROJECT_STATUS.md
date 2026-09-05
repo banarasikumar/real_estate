@@ -59,9 +59,13 @@ real_estate/
   - **Confirm & Next Flow**: Replaced confusing 'Crop and Next' with 'Confirm & Next' (dynamically becomes 'Confirm' on last photo) with automatic progression.
   - **Non-Blocking Toast Warning**: Floating pill warning (`⚠️ Please frame all photos first (X remaining)`) instead of disruptive alerts.
   - **Sequential Batch Cropping**: 'Crop & Finish' crops all confirmed photos in one batch with progress indicator modal (`Cropping photo X of Y...`).
-- **Enquiries & Realtime Chat (`app/(tabs)/enquiries.tsx`)**:
-  - Incoming seeker leads with instant response drawer.
-  - Full two-way realtime chat powered by Supabase Realtime postgres changes.
+- **Enquiries & Realtime Chat (`app/(tabs)/enquiries.tsx`)** ⭐ *Newly Enhanced with WhatsApp Ticks*:
+  - **WhatsApp Message Status Ticks**: Single gray tick (sending), double gray ticks (persisted), double sky blue ticks (`#0284c7`) when read, and red alert icon with tap-to-retry on failure.
+  - **Optimistic Message Sending**: Messages render immediately with in-flight state and smoothly swap with server record.
+  - **Live Blue Ticks Synchronization**: Realtime listener for `UPDATE` events on messages flips ticks to sky blue live when recipient reads.
+  - **Automatic Read Receipts**: Opening a lead/chat immediately marks unread messages as read and updates lead status to `READ`.
+  - **In-App Notification Banner**: Floating animated top toast pill displaying incoming lead/message with instant tap-to-open gesture and 4s auto-dismiss.
+  - **Live Leads Tab Badge**: Real-time badge counter on `Leads` tab showing unread leads + unread chat messages.
 - **Profile (`app/(tabs)/profile.tsx`)**: Owner details, phone number, logout.
 
 - **Edit Property (`app/edit-property/[id].tsx`)** ⭐ *Newly Added*:
@@ -81,7 +85,13 @@ real_estate/
 - **Property Detail (`app/property/[id].tsx`)**: Photo gallery, pricing, specs, amenities list, owner contact card, Enquiry modal, Realtime chat modal.
 - **Saved Favorites (`app/(tabs)/saved.tsx`)**: Bookmark listings with optimistic UI updates.
 - **Enquiries (`app/(tabs)/enquiries.tsx`)**: History of submitted enquiries with current response status.
-- **Realtime Messages (`app/(tabs)/messages.tsx`)**: Active conversation threads with owners.
+- **Realtime Messages (`app/(tabs)/messages.tsx`)** ⭐ *Newly Enhanced with WhatsApp Ticks*:
+  - **WhatsApp Message Status Ticks**: Single gray tick (sending), double gray ticks (persisted), double sky blue ticks (`#0284c7`) when read, and red alert icon with tap-to-retry on failure.
+  - **Optimistic Sending**: Instant message feedback with server persistence swap.
+  - **Live Read Sync**: Realtime `UPDATE` listener changes ticks to blue live when owner reads.
+  - **Per-Thread Unread Counters & Filter**: Unread count badges on conversation items and `UNREAD` filter chip.
+  - **Live Messages Tab Badge**: Tab badge counter on `Messages` tab dynamically updating via Supabase Realtime.
+  - **In-App Notification Banner**: Floating animated top toast pill displaying incoming owner replies with tap-to-open.
 - **Profile (`app/(tabs)/profile.tsx`)**: User credentials, saved preferences, logout.
 
 ### 💻 `apps/admin-panel` (Web Admin Dashboard)
@@ -105,6 +115,7 @@ All migrations reside in `supabase/migrations/`:
 4. `00000000000003_admin_roles_rls.sql`: Admin privileges and review access.
 5. `00000000000004_enquiries_fix.sql`: Foreign key relationships and RLS adjustments for enquiries.
 6. `00000000000005_soft_delete_and_owner_delete.sql`: Soft delete (`deleted_at`), owner DELETE RLS policy, and performance indexes.
+7. `00000000000006_realtime_notifications_and_badges.sql`: Message `read_at`, `push_token`, participant UPDATE RLS for `is_read`, full replica identity on `messages`, and realtime publication on `enquiries`.
 
 ---
 

@@ -199,14 +199,15 @@ export const sendChatMessage = async (
 };
 
 /**
- * Subscribes to Realtime INSERT events on the messages table for a specific conversation.
+ * Subscribes to Realtime INSERT and UPDATE events on the messages table for a specific conversation.
  * Returns an unsubscribe cleanup function.
  */
 export const subscribeToConversationMessages = (
   conversationId: string,
-  onMessage: (message: ChatMessage) => void
+  onMessage: (message: ChatMessage) => void,
+  onMessageUpdate?: (message: ChatMessage) => void
 ): (() => void) => {
-  const channelName = `chat-messages-${conversationId}`;
+  const channelName = `chat-messages-${conversationId}-${Date.now()}`;
 
   const channel = supabase
     .channel(channelName)
@@ -221,6 +222,20 @@ export const subscribeToConversationMessages = (
       (payload) => {
         if (payload.new) {
           onMessage(payload.new as ChatMessage);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        if (payload.new && onMessageUpdate) {
+          onMessageUpdate(payload.new as ChatMessage);
         }
       }
     )
@@ -239,7 +254,7 @@ export const subscribeToUserConversations = (
   userId: string,
   onUpdate: () => void
 ): (() => void) => {
-  const channelName = `user-conversations-${userId}`;
+  const channelName = `user-conversations-${userId}-${Date.now()}`;
 
   const channel = supabase
     .channel(channelName)
@@ -260,3 +275,156 @@ export const subscribeToUserConversations = (
     supabase.removeChannel(channel);
   };
 };
+
+/**
+ * Marks unread messages in a conversation as read (sent by other users).
+ */
+export const markConversationMessagesAsRead = async (
+  conversationId: string,
+  currentUserId: string
+): Promise<{ success: boolean; count?: number; error?: any }> => {
+  if (!conversationId || !currentUserId) {
+    return { success: false, error: 'Missing required parameters' };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .update({
+        is_read: true,
+        read_at: new Date().toISOString(),
+      })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', currentUserId)
+      .eq('is_read', false)
+      .select('id');
+
+    if (error) {
+      console.error('Error marking conversation messages as read:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, count: data ? data.length : 0 };
+  } catch (err: any) {
+    console.error('Unexpected error in markConversationMessagesAsRead:', err);
+    return { success: false, error: err };
+  }
+};
+
+/**
+ * Counts unread messages for a user across all conversations where they are a participant.
+ */
+export const getUnreadMessageCount = async (userId: string): Promise<number> => {
+  if (!userId) return 0;
+
+  try {
+    // 1. Fetch conversations the user is part of
+    const { data: convs, error: convError } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`buyer_id.eq.${userId},owner_id.eq.${userId}`);
+
+    if (convError || !convs || convs.length === 0) {
+      return 0;
+    }
+
+    const convIds = convs.map((c: any) => c.id);
+
+    // 2. Count unread messages sent by counterparts
+    const { count, error } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .in('conversation_id', convIds)
+      .neq('sender_id', userId)
+      .eq('is_read', false);
+
+    if (error) {
+      console.error('Error counting unread messages:', error);
+      return 0;
+    }
+
+    return count || 0;
+  } catch (err) {
+    console.error('Unexpected error in getUnreadMessageCount:', err);
+    return 0;
+  }
+};
+
+/**
+ * Returns a map of conversation_id -> unread_count for a user.
+ */
+export const getConversationUnreadCounts = async (
+  userId: string
+): Promise<Record<string, number>> => {
+  if (!userId) return {};
+
+  try {
+    const { data: convs, error: convError } = await supabase
+      .from('conversations')
+      .select('id')
+      .or(`buyer_id.eq.${userId},owner_id.eq.${userId}`);
+
+    if (convError || !convs || convs.length === 0) {
+      return {};
+    }
+
+    const convIds = convs.map((c: any) => c.id);
+    const counts: Record<string, number> = {};
+    convIds.forEach((id: string) => {
+      counts[id] = 0;
+    });
+
+    const { data: messages, error } = await supabase
+      .from('messages')
+      .select('conversation_id')
+      .in('conversation_id', convIds)
+      .neq('sender_id', userId)
+      .eq('is_read', false);
+
+    if (error) {
+      console.error('Error fetching conversation unread counts:', error);
+      return counts;
+    }
+
+    if (messages) {
+      for (const msg of messages as { conversation_id: string }[]) {
+        counts[msg.conversation_id] = (counts[msg.conversation_id] || 0) + 1;
+      }
+    }
+
+    return counts;
+  } catch (err) {
+    console.error('Unexpected error in getConversationUnreadCounts:', err);
+    return {};
+  }
+};
+
+/**
+ * Subscribes to realtime changes on the messages table and calls onUpdate.
+ */
+export const subscribeToUserUnreadMessages = (
+  userId: string,
+  onUpdate: (payload?: any) => void
+): (() => void) => {
+  const channelName = `user-unread-messages-${userId}-${Date.now()}`;
+
+  const channel = supabase
+    .channel(channelName)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+      },
+      (payload) => {
+        onUpdate(payload);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+};
+
