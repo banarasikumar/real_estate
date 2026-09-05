@@ -126,6 +126,57 @@ export function getDeterministicCoords(
   };
 }
 
+// High-Res Retina Carto Voyager pure MapLibre style JSON (zero keys required, 100% free forever)
+export const VOYAGER_STYLE: any = {
+  version: 8,
+  sources: {
+    "carto-voyager": {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+        "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png",
+      ],
+      tileSize: 256,
+      attribution: "© CARTO, © OpenStreetMap contributors",
+    },
+  },
+  layers: [
+    {
+      id: "carto-voyager-layer",
+      type: "raster",
+      source: "carto-voyager",
+      minzoom: 0,
+      maxzoom: 20,
+    },
+  ],
+};
+
+// OpenStreetMap Classic Standard pure MapLibre style JSON (100% free forever)
+export const OSM_STYLE: any = {
+  version: 8,
+  sources: {
+    "osm-tiles": {
+      type: "raster",
+      tiles: [
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [
+    {
+      id: "osm-layer",
+      type: "raster",
+      source: "osm-tiles",
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+};
+
 // High-Res Esri Satellite pure MapLibre style JSON (zero keys required)
 export const SATELLITE_STYLE: any = {
   version: 8,
@@ -150,13 +201,15 @@ export const SATELLITE_STYLE: any = {
   ],
 };
 
-// MapLibre Styles: Streets (Default vibrant vector streets), Satellite (High-Res Aerial), Minimal (Warm gray)
+// MapLibre Styles: Streets (Carto Voyager @2x Retina - Default), Satellite (Esri Imagery), Liberty (3D Vector), OSM (Classic)
 export const MAP_STYLES = {
-  streets: "https://tiles.openfreemap.org/styles/liberty",
+  streets: VOYAGER_STYLE,
   satellite: SATELLITE_STYLE,
+  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  osm: OSM_STYLE,
   minimal: "https://tiles.openfreemap.org/styles/positron",
   // Aliases for compatibility
-  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  voyager: VOYAGER_STYLE,
   positron: "https://tiles.openfreemap.org/styles/positron",
 } as const;
 
@@ -383,14 +436,34 @@ export function MapboxView({
       attributionControl: false,
     });
 
+    // 1. Observe container resize (handles flexbox dynamic layout calculations)
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.resize();
+      }
+    });
+    resizeObserver.observe(mapContainerRef.current);
+
+    // 2. Multi-stage resize triggers ensuring zero 0x0 canvas blank states
+    requestAnimationFrame(() => map.resize());
+    const t1 = setTimeout(() => map.resize(), 100);
+    const t2 = setTimeout(() => map.resize(), 400);
+    const t3 = setTimeout(() => map.resize(), 1000);
+
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     map.on("load", () => {
+      map.resize();
       add3DBuildingsLayer(map, currentStyleRef.current);
     });
 
     map.on("style.load", () => {
+      map.resize();
       add3DBuildingsLayer(map, currentStyleRef.current);
+    });
+
+    map.on("error", (e) => {
+      console.warn("[MapLibre GL Notice]:", e?.error?.message || e);
     });
 
     map.on("moveend", () => {
@@ -419,6 +492,10 @@ export function MapboxView({
     mapInstanceRef.current = map;
 
     return () => {
+      resizeObserver.disconnect();
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
@@ -435,6 +512,7 @@ export function MapboxView({
     currentStyleRef.current = key;
     if (mapInstanceRef.current) {
       mapInstanceRef.current.setStyle(MAP_STYLES[key] as any);
+      setTimeout(() => mapInstanceRef.current?.resize(), 100);
     }
   };
 
@@ -691,28 +769,28 @@ export function MapboxView({
       </div>
 
       {/* 2. Top-Left Badge: MapLibre Engine Info Badge */}
-      <div className="absolute top-4 left-4 z-30 max-w-[260px] pointer-events-auto hidden sm:block">
+      <div className="absolute top-4 left-4 z-30 max-w-[280px] pointer-events-auto hidden sm:block">
         <div className="inline-flex items-center gap-2 bg-slate-900/85 backdrop-blur-md text-white text-[11px] font-medium px-3.5 py-2 rounded-xl shadow-lg border border-white/10">
           <Info className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="leading-tight">
-            MapLibre GL • OpenFreeMap & Esri
+            MapLibre GL • Carto, Esri & OSM
           </span>
         </div>
       </div>
 
       {/* 3. Top-Right Map Controls: Style Switcher, 3D Tilt, Reset North, Zoom In/Out, Fit All */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
-        {/* Style Switcher: Streets (Default), Satellite, Minimal */}
+        {/* Style Switcher: Streets (Default), Satellite, 3D Liberty, OSM */}
         <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 p-1 flex items-center gap-0.5">
           <button
             type="button"
             onClick={() => handleMapStyleChange("streets")}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "streets" || mapStyleKey === "liberty"
+              mapStyleKey === "streets" || mapStyleKey === "voyager"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Streets (Vibrant Vector Street Map)"
+            title="Streets (High-Res Voyager Retina Street Map)"
           >
             <Navigation className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Streets</span>
@@ -732,16 +810,29 @@ export function MapboxView({
           </button>
           <button
             type="button"
-            onClick={() => handleMapStyleChange("minimal")}
+            onClick={() => handleMapStyleChange("liberty")}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "minimal" || mapStyleKey === "positron"
+              mapStyleKey === "liberty"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Minimal (Warm Low-Contrast View)"
+            title="3D Vector (OpenFreeMap with Extruded Buildings)"
+          >
+            <Mountain className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">3D Vector</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMapStyleChange("osm")}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              mapStyleKey === "osm"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+            title="OSM (OpenStreetMap Standard)"
           >
             <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Minimal</span>
+            <span className="hidden sm:inline">OSM</span>
           </button>
         </div>
 
