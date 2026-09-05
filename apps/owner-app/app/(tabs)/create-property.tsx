@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { createProperty, uploadPropertyImage, addPropertyMedia, useAuth } from '@repo/api';
+import { createProperty, uploadPropertyImage, addPropertyMedia, useAuth, geocodeAddress } from '@repo/api';
 import { PropertyType, ListingType } from '@repo/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,9 @@ export default function CreatePropertyScreen() {
   const [bedrooms, setBedrooms] = useState('');
   const [bathrooms, setBathrooms] = useState('');
   const [address, setAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
 
   // Cropped images with base64 WebP data ready for high-speed binary upload
   const [croppedImages, setCroppedImages] = useState<CroppedImageResult[]>([]);
@@ -105,6 +108,32 @@ export default function CreatePropertyScreen() {
     });
   };
 
+  // Automatically geocode address coordinates whenever owner types/changes address
+  React.useEffect(() => {
+    if (!address.trim()) {
+      setLatitude(null);
+      setLongitude(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsGeocoding(true);
+      try {
+        const coords = await geocodeAddress(address);
+        if (coords) {
+          setLatitude(coords.latitude);
+          setLongitude(coords.longitude);
+        }
+      } catch (err) {
+        console.error('Error geocoding address:', err);
+      } finally {
+        setIsGeocoding(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [address]);
+
   const resetForm = () => {
     setTitle('');
     setDescription('');
@@ -115,6 +144,8 @@ export default function CreatePropertyScreen() {
     setBedrooms('');
     setBathrooms('');
     setAddress('');
+    setLatitude(null);
+    setLongitude(null);
     setCroppedImages([]);
     setPendingRawImages([]);
   };
@@ -137,6 +168,22 @@ export default function CreatePropertyScreen() {
       const propTypeMapped = propertyType.toUpperCase() as PropertyType;
       const listTypeMapped = listingType.toUpperCase() as ListingType;
 
+      let effectiveLat = latitude;
+      let effectiveLng = longitude;
+      if ((effectiveLat === null || effectiveLng === null) && address.trim()) {
+        try {
+          const resolved = await geocodeAddress(address.trim());
+          if (resolved) {
+            effectiveLat = resolved.latitude;
+            effectiveLng = resolved.longitude;
+            setLatitude(resolved.latitude);
+            setLongitude(resolved.longitude);
+          }
+        } catch (e) {
+          console.warn('Geocode resolution failed during submit:', e);
+        }
+      }
+
       const propertyData = {
         owner_id: session.user.id,
         title,
@@ -150,6 +197,8 @@ export default function CreatePropertyScreen() {
         bedrooms: bedrooms ? parseInt(bedrooms) : null,
         bathrooms: bathrooms ? parseFloat(bathrooms) : null,
         address,
+        latitude: effectiveLat,
+        longitude: effectiveLng,
         status: submitStatus,
         is_approved: false,
       };
@@ -316,6 +365,27 @@ export default function CreatePropertyScreen() {
             placeholder="e.g. Bandra West, Mumbai"
             placeholderTextColor="#94a3b8"
           />
+
+          {/* Location Preview Box */}
+          {latitude !== null && longitude !== null ? (
+            <View style={styles.locationPreviewBox}>
+              <View style={styles.coordsInfoRow}>
+                <Ionicons name="location-sharp" size={16} color="#059669" />
+                <Text style={styles.coordsText}>
+                  📍 Coordinates: {latitude.toFixed(4)}, {longitude.toFixed(4)}
+                </Text>
+              </View>
+              <View style={styles.verifiedBadge}>
+                <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                <Text style={styles.verifiedBadgeText}>Verified</Text>
+              </View>
+            </View>
+          ) : isGeocoding ? (
+            <View style={styles.locationLoadingBox}>
+              <ActivityIndicator size="small" color="#059669" />
+              <Text style={styles.locationLoadingText}>Resolving coordinates...</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Photos Section */}
@@ -687,5 +757,53 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  locationPreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  coordsInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  coordsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065f46',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  verifiedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  locationLoadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  locationLoadingText: {
+    fontSize: 12,
+    color: '#64748b',
   },
 });

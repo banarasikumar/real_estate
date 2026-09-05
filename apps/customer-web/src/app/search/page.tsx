@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useTransition, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useRef, useTransition, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -23,7 +23,11 @@ import { searchProperties, Property } from "@repo/api";
 import SearchFiltersBar, {
   SearchFiltersState,
 } from "../../components/SearchFiltersBar";
-import GoogleMapView, { MapProperty } from "../../components/GoogleMapView";
+import GoogleMapView, {
+  MapProperty,
+  MapBounds,
+  getDeterministicCoords,
+} from "../../components/GoogleMapView";
 import { formatPricePill, formatPriceLabel } from "../../utils/formatters";
 import SafeImage from "../../components/SafeImage";
 import SavePropertyButton from "../../components/SavePropertyButton";
@@ -232,80 +236,181 @@ function SearchContent() {
   // Mobile View Mode Switcher: "list" | "map"
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
 
-  // Fetch properties from Supabase API / Fallback
-  const fetchProperties = useCallback(async (currentFilters: SearchFiltersState, currentSort: string) => {
-    setIsLoading(true);
-    try {
-      const dbParams = {
-        query: currentFilters.query,
-        list_type: currentFilters.listType,
-        prop_type: currentFilters.propType,
-        min_price: currentFilters.minPrice,
-        max_price: currentFilters.maxPrice,
-        bedrooms: currentFilters.bedrooms,
-        bathrooms: currentFilters.bathrooms,
-        sortBy: currentSort as any,
-      };
+  // Dynamic Bounding Box & "Search as I move the map" state
+  const [searchAsMapMoves, setSearchAsMapMoves] = useState<boolean>(true);
+  const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
 
-      const fetched = await searchProperties(dbParams);
+  // Synchronized refs for fresh callback closures
+  const searchAsMapMovesRef = useRef(searchAsMapMoves);
+  searchAsMapMovesRef.current = searchAsMapMoves;
 
-      if (fetched && fetched.length > 0) {
-        setResults(fetched as MapProperty[]);
-      } else {
-        // Fallback filter over SEED_PROPERTIES
-        let filtered = [...SEED_PROPERTIES];
+  const mapBoundsRef = useRef(mapBounds);
+  mapBoundsRef.current = mapBounds;
 
-        if (currentFilters.listType && currentFilters.listType !== "ALL") {
-          filtered = filtered.filter((p) => p.list_type === currentFilters.listType);
-        }
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
-        if (currentFilters.propType && currentFilters.propType !== "ALL") {
-          filtered = filtered.filter((p) => p.prop_type === currentFilters.propType);
-        }
+  const sortByRef = useRef(sortBy);
+  sortByRef.current = sortBy;
 
-        if (currentFilters.minPrice) {
-          filtered = filtered.filter((p) => Number(p.price) >= currentFilters.minPrice!);
-        }
-
-        if (currentFilters.maxPrice) {
-          filtered = filtered.filter((p) => Number(p.price) <= currentFilters.maxPrice!);
-        }
-
-        if (currentFilters.bedrooms && currentFilters.bedrooms !== "any") {
-          filtered = filtered.filter((p) => (p.bedrooms || 0) >= Number(currentFilters.bedrooms));
-        }
-
-        if (currentFilters.bathrooms && currentFilters.bathrooms !== "any") {
-          filtered = filtered.filter((p) => (p.bathrooms || 0) >= Number(currentFilters.bathrooms));
-        }
-
-        if (currentFilters.query && currentFilters.query.trim()) {
-          const q = currentFilters.query.toLowerCase().trim();
-          filtered = filtered.filter(
-            (p) =>
-              p.title?.toLowerCase().includes(q) ||
-              p.address?.toLowerCase().includes(q) ||
-              p.description?.toLowerCase().includes(q)
-          );
-        }
-
-        // Apply sort
-        if (currentSort === "price_asc") {
-          filtered.sort((a, b) => Number(a.price) - Number(b.price));
-        } else if (currentSort === "price_desc") {
-          filtered.sort((a, b) => Number(b.price) - Number(a.price));
-        } else if (currentSort === "area_desc") {
-          filtered.sort((a, b) => (b.area_sqft || 0) - (a.area_sqft || 0));
-        }
-
-        setResults(filtered);
-      }
-    } catch (err) {
-      console.error("Error fetching properties for search page:", err);
-    } finally {
-      setIsLoading(false);
+  // Two-way hover & click sync: scroll listing card into view in the results list
+  const scrollCardIntoView = useCallback((propertyId: string) => {
+    const cardEl = document.getElementById(`property-card-${propertyId}`);
+    if (cardEl) {
+      cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, []);
+
+  const handleMarkerHover = useCallback(
+    (propertyId: string | null) => {
+      setHoveredPropertyId(propertyId);
+      if (propertyId) {
+        scrollCardIntoView(propertyId);
+      }
+    },
+    [scrollCardIntoView]
+  );
+
+  const handleMarkerSelect = useCallback(
+    (property: MapProperty | null) => {
+      setSelectedPropertyId(property?.id || null);
+      if (property?.id) {
+        scrollCardIntoView(property.id);
+      }
+    },
+    [scrollCardIntoView]
+  );
+
+  // Fetch properties from Supabase API / Fallback
+  const fetchProperties = useCallback(
+    async (
+      currentFilters: SearchFiltersState,
+      currentSort: string,
+      currentBounds?: MapBounds | null,
+      moveSearchActive?: boolean
+    ) => {
+      setIsLoading(true);
+      try {
+        const isMoveEnabled =
+          moveSearchActive !== undefined ? moveSearchActive : searchAsMapMovesRef.current;
+        const boundsToUse = isMoveEnabled && currentBounds ? currentBounds : undefined;
+
+        const dbParams = {
+          query: currentFilters.query,
+          list_type: currentFilters.listType,
+          prop_type: currentFilters.propType,
+          min_price: currentFilters.minPrice,
+          max_price: currentFilters.maxPrice,
+          bedrooms: currentFilters.bedrooms,
+          bathrooms: currentFilters.bathrooms,
+          sortBy: currentSort as any,
+          bounds: boundsToUse,
+        };
+
+        const fetched = await searchProperties(dbParams);
+
+        if (fetched && fetched.length > 0) {
+          setResults(fetched as MapProperty[]);
+        } else {
+          // Fallback filter over SEED_PROPERTIES
+          let filtered = [...SEED_PROPERTIES];
+
+          if (boundsToUse) {
+            filtered = filtered.filter((p, idx) => {
+              const coords = getDeterministicCoords(p, idx);
+              const lat =
+                typeof p.latitude === "number" && p.latitude !== 0 ? p.latitude : coords.lat;
+              const lng =
+                typeof p.longitude === "number" && p.longitude !== 0 ? p.longitude : coords.lng;
+              return (
+                lat >= boundsToUse.south &&
+                lat <= boundsToUse.north &&
+                lng >= boundsToUse.west &&
+                lng <= boundsToUse.east
+              );
+            });
+          }
+
+          if (currentFilters.listType && currentFilters.listType !== "ALL") {
+            filtered = filtered.filter((p) => p.list_type === currentFilters.listType);
+          }
+
+          if (currentFilters.propType && currentFilters.propType !== "ALL") {
+            filtered = filtered.filter((p) => p.prop_type === currentFilters.propType);
+          }
+
+          if (currentFilters.minPrice) {
+            filtered = filtered.filter((p) => Number(p.price) >= currentFilters.minPrice!);
+          }
+
+          if (currentFilters.maxPrice) {
+            filtered = filtered.filter((p) => Number(p.price) <= currentFilters.maxPrice!);
+          }
+
+          if (currentFilters.bedrooms && currentFilters.bedrooms !== "any") {
+            filtered = filtered.filter((p) => (p.bedrooms || 0) >= Number(currentFilters.bedrooms));
+          }
+
+          if (currentFilters.bathrooms && currentFilters.bathrooms !== "any") {
+            filtered = filtered.filter((p) => (p.bathrooms || 0) >= Number(currentFilters.bathrooms));
+          }
+
+          if (currentFilters.query && currentFilters.query.trim()) {
+            const q = currentFilters.query.toLowerCase().trim();
+            filtered = filtered.filter(
+              (p) =>
+                p.title?.toLowerCase().includes(q) ||
+                p.address?.toLowerCase().includes(q) ||
+                p.description?.toLowerCase().includes(q)
+            );
+          }
+
+          // Apply sort
+          if (currentSort === "price_asc") {
+            filtered.sort((a, b) => Number(a.price) - Number(b.price));
+          } else if (currentSort === "price_desc") {
+            filtered.sort((a, b) => Number(b.price) - Number(a.price));
+          } else if (currentSort === "area_desc") {
+            filtered.sort((a, b) => (b.area_sqft || 0) - (a.area_sqft || 0));
+          }
+
+          setResults(filtered);
+        }
+      } catch (err) {
+        console.error("Error fetching properties for search page:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
+  // Dynamic Bounding Box change handler from Map
+  const handleBoundsChange = useCallback(
+    (bounds: MapBounds) => {
+      setMapBounds(bounds);
+      mapBoundsRef.current = bounds;
+      if (searchAsMapMovesRef.current) {
+        fetchProperties(filtersRef.current, sortByRef.current, bounds, true);
+      }
+    },
+    [fetchProperties]
+  );
+
+  // Toggle "Search as I move the map"
+  const handleToggleSearchAsMapMoves = useCallback(
+    (enabled: boolean) => {
+      setSearchAsMapMoves(enabled);
+      searchAsMapMovesRef.current = enabled;
+      fetchProperties(
+        filtersRef.current,
+        sortByRef.current,
+        mapBoundsRef.current,
+        enabled
+      );
+    },
+    [fetchProperties]
+  );
 
   // Update URL and trigger search on filter changes
   const handleFilterChange = (newFilters: SearchFiltersState) => {
@@ -325,13 +430,13 @@ function SearchContent() {
     const targetUrl = newQuery ? `/search?${newQuery}` : "/search";
     router.replace(targetUrl, { scroll: false });
 
-    fetchProperties(newFilters, sortBy);
+    fetchProperties(newFilters, sortBy, mapBoundsRef.current, searchAsMapMovesRef.current);
   };
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value as any;
     setSortBy(val);
-    fetchProperties(filters, val);
+    fetchProperties(filters, val, mapBoundsRef.current, searchAsMapMovesRef.current);
   };
 
   useEffect(() => {
@@ -422,6 +527,7 @@ function SearchContent() {
 
                 return (
                   <div
+                    id={`property-card-${property.id}`}
                     key={property.id}
                     onMouseEnter={() => setHoveredPropertyId(property.id)}
                     onMouseLeave={() => setHoveredPropertyId(null)}
@@ -545,8 +651,11 @@ function SearchContent() {
             properties={results}
             selectedPropertyId={selectedPropertyId}
             hoveredPropertyId={hoveredPropertyId}
-            onSelectProperty={(prop) => setSelectedPropertyId(prop?.id || null)}
-            onHoverProperty={(id) => setHoveredPropertyId(id)}
+            onSelectProperty={handleMarkerSelect}
+            onHoverProperty={handleMarkerHover}
+            onBoundsChange={handleBoundsChange}
+            searchAsMapMoves={searchAsMapMoves}
+            onToggleSearchAsMapMoves={handleToggleSearchAsMapMoves}
             className="w-full h-full"
           />
         </div>

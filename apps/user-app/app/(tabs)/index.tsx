@@ -16,7 +16,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE, PROVIDER_DEFAULT, MapType } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, PROVIDER_DEFAULT, MapType, Region } from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -46,6 +46,13 @@ interface PropertyItem {
   latitude?: number | null;
   longitude?: number | null;
   property_media?: { url: string }[];
+}
+
+interface MapBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
 }
 
 const FALLBACK_PROPERTIES: PropertyItem[] = [
@@ -160,7 +167,7 @@ const INITIAL_REGION = {
   longitudeDelta: 0.08,
 };
 
-function formatPricePill(price: number, isRent: boolean): string {
+function formatPricePill(price: number, isRent: boolean = false): string {
   if (isRent) {
     if (price >= 1000) {
       const k = (price / 1000).toFixed(price % 1000 === 0 ? 0 : 1);
@@ -194,6 +201,8 @@ export default function ExploreScreen() {
 
   const mapRef = useRef<MapView | null>(null);
   const flatListRef = useRef<FlatList | null>(null);
+  const mapBoundsRef = useRef<MapBounds | null>(null);
+  const regionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const sheetHeight = useRef(new Animated.Value(SNAP_HALF)).current;
   const currentSheetHeight = useRef(SNAP_HALF);
@@ -234,57 +243,104 @@ export default function ExploreScreen() {
     })
   ).current;
 
-  const loadProperties = useCallback(async (filterId = activeFilterId, query = searchQuery) => {
-    try {
-      const activeFilter = QUICK_FILTERS.find((f) => f.id === filterId);
-      const searchParams: any = {};
+  const loadProperties = useCallback(
+    async (
+      filterId = activeFilterId,
+      query = searchQuery,
+      bounds: MapBounds | null = mapBoundsRef.current
+    ) => {
+      try {
+        const activeFilter = QUICK_FILTERS.find((f) => f.id === filterId);
+        const searchParams: any = {};
 
-      if (activeFilter?.list_type) {
-        searchParams.list_type = activeFilter.list_type;
-      }
-      if (activeFilter?.prop_type) {
-        searchParams.prop_type = activeFilter.prop_type;
-      }
-      if (activeFilter?.minBeds) {
-        searchParams.bedrooms = activeFilter.minBeds;
-      }
-      if (query.trim()) {
-        searchParams.query = query.trim();
-      }
+        if (activeFilter?.list_type) {
+          searchParams.list_type = activeFilter.list_type;
+        }
+        if (activeFilter?.prop_type) {
+          searchParams.prop_type = activeFilter.prop_type;
+        }
+        if (activeFilter?.minBeds) {
+          searchParams.bedrooms = activeFilter.minBeds;
+        }
+        if (query.trim()) {
+          searchParams.query = query.trim();
+        }
+        if (bounds) {
+          searchParams.bounds = bounds;
+        }
 
-      let data = await searchProperties(searchParams);
+        let data = await searchProperties(searchParams);
 
-      if (!data || data.length === 0) {
-        data = await getPublishedProperties();
-      }
-
-      if (data && data.length > 0) {
-        const withCoords = data.map((item: any, idx: number) => {
-          let lat = item.latitude;
-          let lng = item.longitude;
-          if (!lat || !lng) {
-            const fallbackItem = FALLBACK_PROPERTIES[idx % FALLBACK_PROPERTIES.length];
-            lat = fallbackItem.latitude;
-            lng = fallbackItem.longitude;
+        if (!data || data.length === 0) {
+          if (!bounds) {
+            data = await getPublishedProperties();
           }
-          return {
-            ...item,
-            latitude: lat,
-            longitude: lng,
-          };
-        });
-        setProperties(withCoords as PropertyItem[]);
-      } else {
+        }
+
+        if (data && data.length > 0) {
+          const withCoords = data.map((item: any, idx: number) => {
+            let lat = item.latitude;
+            let lng = item.longitude;
+            if (!lat || !lng) {
+              const fallbackItem = FALLBACK_PROPERTIES[idx % FALLBACK_PROPERTIES.length];
+              lat = fallbackItem.latitude;
+              lng = fallbackItem.longitude;
+            }
+            return {
+              ...item,
+              latitude: lat,
+              longitude: lng,
+            };
+          });
+          setProperties(withCoords as PropertyItem[]);
+        } else {
+          if (bounds) {
+            const { north, south, east, west } = bounds;
+            const filteredFallbacks = FALLBACK_PROPERTIES.filter(
+              (p) =>
+                typeof p.latitude === 'number' &&
+                typeof p.longitude === 'number' &&
+                p.latitude >= south &&
+                p.latitude <= north &&
+                p.longitude >= west &&
+                p.longitude <= east
+            );
+            setProperties(filteredFallbacks);
+          } else {
+            setProperties(FALLBACK_PROPERTIES);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading properties with search/fallback:', err);
         setProperties(FALLBACK_PROPERTIES);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-    } catch (err) {
-      console.error('Error loading properties with search/fallback:', err);
-      setProperties(FALLBACK_PROPERTIES);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [activeFilterId, searchQuery]);
+    },
+    [activeFilterId, searchQuery]
+  );
+
+  const handleRegionChangeComplete = useCallback(
+    (region: Region) => {
+      const bounds: MapBounds = {
+        north: region.latitude + region.latitudeDelta / 2,
+        south: region.latitude - region.latitudeDelta / 2,
+        east: region.longitude + region.longitudeDelta / 2,
+        west: region.longitude - region.longitudeDelta / 2,
+      };
+      mapBoundsRef.current = bounds;
+
+      if (regionTimeoutRef.current) {
+        clearTimeout(regionTimeoutRef.current);
+      }
+
+      regionTimeoutRef.current = setTimeout(() => {
+        loadProperties(activeFilterId, searchQuery, bounds);
+      }, 350);
+    },
+    [activeFilterId, searchQuery, loadProperties]
+  );
 
   useEffect(() => {
     loadProperties();
@@ -292,18 +348,18 @@ export default function ExploreScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadProperties();
+    loadProperties(activeFilterId, searchQuery, mapBoundsRef.current);
   };
 
   const handleFilterSelect = (filter: QuickFilter) => {
     setActiveFilterId(filter.id);
     setLoading(true);
-    loadProperties(filter.id, searchQuery);
+    loadProperties(filter.id, searchQuery, mapBoundsRef.current);
   };
 
   const handleSearchSubmit = () => {
     setLoading(true);
-    loadProperties(activeFilterId, searchQuery);
+    loadProperties(activeFilterId, searchQuery, mapBoundsRef.current);
   };
 
   const toggleHeart = async (id: string) => {
@@ -532,6 +588,7 @@ export default function ExploreScreen() {
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
+        onRegionChangeComplete={handleRegionChangeComplete}
       >
         {displayedProperties.map((property) => {
           if (!property.latitude || !property.longitude) return null;
@@ -599,7 +656,7 @@ export default function ExploreScreen() {
               <TouchableOpacity
                 onPress={() => {
                   setSearchQuery('');
-                  loadProperties(activeFilterId, '');
+                  loadProperties(activeFilterId, '', mapBoundsRef.current);
                 }}
               >
                 <Ionicons name="close-circle" size={18} color="#94a3b8" />

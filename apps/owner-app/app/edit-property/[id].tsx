@@ -22,6 +22,7 @@ import {
   uploadPropertyImage,
   deletePropertyImageFromStorage,
   addPropertyMedia,
+  geocodeAddress,
   PropertyType,
   ListingType,
 } from '@repo/api';
@@ -61,6 +62,9 @@ export default function EditPropertyScreen() {
   const [bedrooms, setBedrooms] = useState('');
   const [bathrooms, setBathrooms] = useState('');
   const [address, setAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
 
   // Media Management States
   const [existingMedia, setExistingMedia] = useState<
@@ -125,6 +129,8 @@ export default function EditPropertyScreen() {
       setBedrooms(data.bedrooms != null ? String(data.bedrooms) : '');
       setBathrooms(data.bathrooms != null ? String(data.bathrooms) : '');
       setAddress(data.address || '');
+      setLatitude(typeof data.latitude === 'number' ? data.latitude : null);
+      setLongitude(typeof data.longitude === 'number' ? data.longitude : null);
 
       // Existing Media
       const rawMedia: { id: string; url: string; is_featured: boolean; display_order: number }[] =
@@ -160,6 +166,39 @@ export default function EditPropertyScreen() {
   useEffect(() => {
     fetchProperty();
   }, [fetchProperty]);
+
+  // Automatically re-geocode coordinates when address changes
+  useEffect(() => {
+    if (!address.trim()) {
+      return;
+    }
+    // If address hasn't changed from original and coordinates exist, skip re-geocoding
+    if (
+      property &&
+      address.trim() === (property.address || '').trim() &&
+      latitude !== null &&
+      longitude !== null
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsGeocoding(true);
+      try {
+        const coords = await geocodeAddress(address);
+        if (coords) {
+          setLatitude(coords.latitude);
+          setLongitude(coords.longitude);
+        }
+      } catch (err) {
+        console.error('Error geocoding address in edit:', err);
+      } finally {
+        setIsGeocoding(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [address, property]);
 
   // Image Picker & Cropper launcher
   const pickImages = async () => {
@@ -338,6 +377,22 @@ export default function EditPropertyScreen() {
       const propTypeMapped = propertyType.toUpperCase() as PropertyType;
       const listTypeMapped = listingType.toUpperCase() as ListingType;
 
+      let effectiveLat = latitude;
+      let effectiveLng = longitude;
+      if ((effectiveLat === null || effectiveLng === null) && address.trim()) {
+        try {
+          const resolved = await geocodeAddress(address.trim());
+          if (resolved) {
+            effectiveLat = resolved.latitude;
+            effectiveLng = resolved.longitude;
+            setLatitude(resolved.latitude);
+            setLongitude(resolved.longitude);
+          }
+        } catch (e) {
+          console.warn('Geocoding on update failed:', e);
+        }
+      }
+
       const updatePayload = {
         title: title.trim(),
         description: description.trim() || null,
@@ -348,6 +403,8 @@ export default function EditPropertyScreen() {
         bedrooms: bedrooms ? parseInt(bedrooms, 10) : null,
         bathrooms: bathrooms ? parseFloat(bathrooms) : null,
         address: address.trim(),
+        latitude: effectiveLat,
+        longitude: effectiveLng,
       };
 
       const isPublished = property?.status === 'PUBLISHED';
@@ -566,6 +623,27 @@ export default function EditPropertyScreen() {
             placeholderTextColor="#94a3b8"
             editable={!isSaving}
           />
+
+          {/* Location Preview Box */}
+          {latitude !== null && longitude !== null ? (
+            <View style={styles.locationPreviewBox}>
+              <View style={styles.coordsInfoRow}>
+                <Ionicons name="location-sharp" size={16} color="#059669" />
+                <Text style={styles.coordsText}>
+                  📍 Coordinates: {latitude.toFixed(4)}, {longitude.toFixed(4)}
+                </Text>
+              </View>
+              <View style={styles.verifiedBadge}>
+                <Ionicons name="checkmark-circle" size={14} color="#059669" />
+                <Text style={styles.verifiedBadgeText}>Verified</Text>
+              </View>
+            </View>
+          ) : isGeocoding ? (
+            <View style={styles.locationLoadingBox}>
+              <ActivityIndicator size="small" color="#059669" />
+              <Text style={styles.locationLoadingText}>Resolving coordinates...</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Media Management Section */}
@@ -1126,5 +1204,53 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#ffffff',
+  },
+  locationPreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  coordsInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  coordsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065f46',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  verifiedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  locationLoadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  locationLoadingText: {
+    fontSize: 12,
+    color: '#64748b',
   },
 });

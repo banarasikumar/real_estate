@@ -2,7 +2,14 @@ import { supabase } from './client';
 import { Property } from './database.types';
 import { deletePropertyStorageFolder } from './storage';
 
-export interface PropertySearchParams {
+export interface SearchBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+export interface SearchPropertiesParams {
   query?: string;
   minPrice?: number;
   maxPrice?: number;
@@ -16,15 +23,145 @@ export interface PropertySearchParams {
   list_type?: string;
   status?: string;
   sortBy?: 'newest' | 'price_asc' | 'price_desc' | 'area_desc' | string;
-  bounds?: {
-    north: number;
-    south: number;
-    east: number;
-    west: number;
-  };
+  bounds?: SearchBounds;
 }
 
-export const searchProperties = async (params: PropertySearchParams = {}): Promise<Property[]> => {
+export type PropertySearchParams = SearchPropertiesParams;
+
+export interface GeocodeResult {
+  lat: number;
+  lng: number;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Geocode an address string to coordinates { lat, lng }.
+ * Parses common city and neighborhood keywords (Mumbai, Delhi/NCR, Bangalore, Pune, Hyderabad, Miami)
+ * and falls back to a realistic coordinate or Mumbai center.
+ */
+export const geocodeAddress = async (address: string): Promise<GeocodeResult | null> => {
+  if (!address || typeof address !== 'string' || !address.trim()) {
+    return null;
+  }
+
+  const text = address.trim().toLowerCase();
+
+  const toResult = (lat: number, lng: number): GeocodeResult => ({
+    lat: parseFloat(lat.toFixed(6)),
+    lng: parseFloat(lng.toFixed(6)),
+    latitude: parseFloat(lat.toFixed(6)),
+    longitude: parseFloat(lng.toFixed(6)),
+  });
+
+  // Miami / Florida
+  if (
+    text.includes('miami') ||
+    text.includes('florida') ||
+    text.includes('brickell') ||
+    text.includes('south beach') ||
+    text.includes('biscayne')
+  ) {
+    return toResult(25.7617, -80.1918);
+  }
+
+  // Delhi / Noida / Gurgaon
+  if (
+    text.includes('delhi') ||
+    text.includes('noida') ||
+    text.includes('gurgaon') ||
+    text.includes('gurugram') ||
+    text.includes('ncr')
+  ) {
+    if (text.includes('noida')) {
+      return toResult(28.5355, 77.3910);
+    }
+    if (text.includes('gurgaon') || text.includes('gurugram')) {
+      return toResult(28.4595, 77.0266);
+    }
+    return toResult(28.6139, 77.2090);
+  }
+
+  // Bangalore (Whitefield / Indiranagar / Koramangala)
+  if (
+    text.includes('bangalore') ||
+    text.includes('bengaluru') ||
+    text.includes('whitefield') ||
+    text.includes('indiranagar') ||
+    text.includes('koramangala') ||
+    text.includes('electronic city') ||
+    text.includes('hsr')
+  ) {
+    if (text.includes('whitefield')) {
+      return toResult(12.9698, 77.7499);
+    }
+    if (text.includes('indiranagar')) {
+      return toResult(12.9784, 77.6408);
+    }
+    if (text.includes('koramangala')) {
+      return toResult(12.9352, 77.6245);
+    }
+    return toResult(12.9716, 77.5946);
+  }
+
+  // Pune
+  if (
+    text.includes('pune') ||
+    text.includes('hinjewadi') ||
+    text.includes('wakad') ||
+    text.includes('koregaon') ||
+    text.includes('baner') ||
+    text.includes('kothrud')
+  ) {
+    return toResult(18.5204, 73.8567);
+  }
+
+  // Hyderabad
+  if (
+    text.includes('hyderabad') ||
+    text.includes('secunderabad') ||
+    text.includes('hitec') ||
+    text.includes('gachibowli') ||
+    text.includes('jubilee hills') ||
+    text.includes('banjara hills')
+  ) {
+    return toResult(17.3850, 78.4867);
+  }
+
+  // Mumbai (Bandstand / Bandra / Lower Parel / etc.)
+  if (
+    text.includes('mumbai') ||
+    text.includes('bombay') ||
+    text.includes('bandra') ||
+    text.includes('bandstand') ||
+    text.includes('lower parel') ||
+    text.includes('worli') ||
+    text.includes('juhu') ||
+    text.includes('andheri') ||
+    text.includes('powai') ||
+    text.includes('colaba') ||
+    text.includes('dadar')
+  ) {
+    if (text.includes('bandstand') || text.includes('bandra')) {
+      return toResult(19.0596, 72.8295);
+    }
+    if (text.includes('lower parel') || text.includes('worli')) {
+      return toResult(18.9986, 72.8306);
+    }
+    if (text.includes('juhu')) {
+      return toResult(19.1075, 72.8263);
+    }
+    if (text.includes('powai')) {
+      return toResult(19.1176, 72.9060);
+    }
+    return toResult(19.0760, 72.8777);
+  }
+
+  // Default fallback: Mumbai center
+  return toResult(19.0760, 72.8777);
+};
+
+export const searchProperties = async (params: SearchPropertiesParams = {}): Promise<Property[]> => {
   try {
     const listType = params.listType || params.list_type;
     const propType = params.propType || params.prop_type;
@@ -40,6 +177,14 @@ export const searchProperties = async (params: PropertySearchParams = {}): Promi
       .select('*, property_media(url)')
       .eq('status', status)
       .is('deleted_at', null);
+
+    if (params.bounds) {
+      queryBuilder = queryBuilder
+        .gte('latitude', params.bounds.south)
+        .lte('latitude', params.bounds.north)
+        .gte('longitude', params.bounds.west)
+        .lte('longitude', params.bounds.east);
+    }
 
     if (minPrice !== undefined && minPrice !== null && minPrice > 0) {
       queryBuilder = queryBuilder.gte('price', minPrice);
@@ -663,5 +808,8 @@ export const getSavedProperties = async (userId: string) => {
     return [];
   }
 };
+
+
+
 
 
