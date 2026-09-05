@@ -128,6 +128,7 @@ export default function GoogleMapView({
   const [activeProperty, setActiveProperty] = useState<MapProperty | null>(null);
   const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
   const [mapLoadError, setMapLoadError] = useState(false);
+  const [billingErrorDetected, setBillingErrorDetected] = useState(false);
 
   // Controlled or internal "Search as I move the map"
   const [internalSearchAsMove, setInternalSearchAsMove] = useState(searchAsMapMoves);
@@ -258,26 +259,61 @@ export default function GoogleMapView({
   );
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Intercept Google Maps billing and auth console errors so Next.js doesn't show Redbox crash overlay
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      const errorMsg = args
+        .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : String(arg)))
+        .join(" ");
+
+      if (
+        errorMsg.includes("BillingNotEnabledMapError") ||
+        errorMsg.includes("billing-not-enabled") ||
+        errorMsg.includes("ApiNotActivatedMapError") ||
+        errorMsg.includes("InvalidKeyMapError") ||
+        errorMsg.includes("DeletedKeyMapError")
+      ) {
+        console.warn(
+          "⚠️ [Google Maps Notice]: Google Cloud Billing is not enabled for this project. Activating interactive map view.",
+          ...args
+        );
+        setBillingErrorDetected(true);
+        setMapLoadError(true);
+        setGoogleMapsLoaded(false);
+        return; // Suppress from console.error to prevent Next.js Redbox modal
+      }
+      originalConsoleError.apply(console, args);
+    };
+
+    (window as any).gm_authFailure = () => {
+      console.warn("Google Maps authentication or billing check failed. Switching to interactive vector map.");
+      setBillingErrorDetected(true);
+      setMapLoadError(true);
+      setGoogleMapsLoaded(false);
+    };
+
     if (!isValidApiKey) {
       setGoogleMapsLoaded(false);
-      return;
+      return () => {
+        console.error = originalConsoleError;
+      };
     }
 
-    if (typeof window !== "undefined" && (window as any).google?.maps) {
+    if ((window as any).google?.maps) {
       setGoogleMapsLoaded(true);
-      return;
+      return () => {
+        console.error = originalConsoleError;
+      };
     }
 
     const scriptId = "google-maps-script-loader";
     if (document.getElementById(scriptId)) {
-      return;
+      return () => {
+        console.error = originalConsoleError;
+      };
     }
-
-    (window as any).gm_authFailure = () => {
-      console.warn("Google Maps authentication failed. Switching to interactive vector map.");
-      setMapLoadError(true);
-      setGoogleMapsLoaded(false);
-    };
 
     const script = document.createElement("script");
     script.id = scriptId;
@@ -300,6 +336,10 @@ export default function GoogleMapView({
     };
 
     document.head.appendChild(script);
+
+    return () => {
+      console.error = originalConsoleError;
+    };
   }, [apiKey, isValidApiKey]);
 
   // Initialize Real Google Map if loaded
@@ -987,7 +1027,18 @@ export default function GoogleMapView({
       </div>
 
       {/* Informational Banner (Top Left) */}
-      {!isValidApiKey && (
+      {billingErrorDetected && (
+        <div className="absolute top-4 left-4 z-30 max-w-[260px] sm:max-w-sm pointer-events-auto">
+          <div className="inline-flex items-center gap-2 bg-amber-950/90 text-amber-100 text-[11px] font-medium px-3 py-1.5 rounded-xl shadow-lg border border-amber-500/30 backdrop-blur-md">
+            <Info className="w-4 h-4 text-amber-300 shrink-0" />
+            <span>
+              Google Cloud Billing not linked yet. Showing interactive map view. Link billing in Google Cloud to activate official tiles.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {!isValidApiKey && !billingErrorDetected && (
         <div className="absolute top-4 left-4 z-30 max-w-[200px] sm:max-w-xs pointer-events-none hidden sm:block">
           <div className="inline-flex items-center gap-2 bg-slate-900/85 backdrop-blur-md text-white text-[11px] font-medium px-3 py-1.5 rounded-full shadow-lg border border-white/10">
             <Info className="w-3.5 h-3.5 text-rose-400 shrink-0" />
