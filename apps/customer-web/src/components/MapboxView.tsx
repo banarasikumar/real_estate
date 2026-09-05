@@ -190,6 +190,7 @@ export const LIGHT_CANVAS_STYLE: any = {
       ],
       tileSize: 256,
       attribution: "Tiles © Esri",
+      maxzoom: 16,
     },
     "esri-light-gray-ref": {
       type: "raster",
@@ -198,6 +199,7 @@ export const LIGHT_CANVAS_STYLE: any = {
       ],
       tileSize: 256,
       attribution: "Tiles © Esri",
+      maxzoom: 16,
     },
   },
   layers: [
@@ -206,14 +208,14 @@ export const LIGHT_CANVAS_STYLE: any = {
       type: "raster",
       source: "esri-light-gray-base",
       minzoom: 0,
-      maxzoom: 19,
+      maxzoom: 22,
     },
     {
       id: "esri-light-gray-ref-layer",
       type: "raster",
       source: "esri-light-gray-ref",
       minzoom: 0,
-      maxzoom: 19,
+      maxzoom: 22,
       paint: {
         "raster-opacity": 0.85,
       },
@@ -417,16 +419,22 @@ export function MapboxView({
     );
   }, [mappedProperties, activePolygon]);
 
-  // Center calculation
+  // Center calculation (clustered to local region to avoid transatlantic averaging)
   const averageCenter = useMemo(() => {
     if (defaultCenter) return defaultCenter;
     const listToAvg = visibleProperties.length > 0 ? visibleProperties : mappedProperties;
     if (listToAvg.length === 0) return { lat: 19.076, lng: 72.8777 };
-    const totalLat = listToAvg.reduce((acc, p) => acc + p.lat, 0);
-    const totalLng = listToAvg.reduce((acc, p) => acc + p.lng, 0);
+
+    const indiaProps = listToAvg.filter(
+      (p) => p.lat >= 8 && p.lat <= 36 && p.lng >= 68 && p.lng <= 92
+    );
+    const targetList = indiaProps.length > 0 ? indiaProps : listToAvg;
+
+    const totalLat = targetList.reduce((acc, p) => acc + p.lat, 0);
+    const totalLng = targetList.reduce((acc, p) => acc + p.lng, 0);
     return {
-      lat: totalLat / listToAvg.length,
-      lng: totalLng / listToAvg.length,
+      lat: totalLat / targetList.length,
+      lng: totalLng / targetList.length,
     };
   }, [visibleProperties, mappedProperties, defaultCenter]);
 
@@ -448,11 +456,18 @@ export function MapboxView({
     if (!hasAutoCenteredRef.current && mappedProperties.length > 0 && mapInstanceRef.current) {
       hasAutoCenteredRef.current = true;
       const bounds = new maplibregl.LngLatBounds();
-      mappedProperties.forEach((p) => {
+
+      const indiaProps = mappedProperties.filter(
+        (p) => p.lat >= 8 && p.lat <= 36 && p.lng >= 68 && p.lng <= 92
+      );
+      const propsToFit = indiaProps.length > 0 ? indiaProps : mappedProperties;
+
+      propsToFit.forEach((p) => {
         bounds.extend([p.lng, p.lat]);
       });
       mapInstanceRef.current.fitBounds(bounds, {
         padding: 80,
+        minZoom: 6,
         maxZoom: 14,
         duration: 800,
       });
@@ -572,6 +587,8 @@ export function MapboxView({
       style: MAP_STYLES[mapStyleKey] as any,
       center: initialCenter,
       zoom: defaultZoom,
+      minZoom: 3,
+      maxZoom: mapStyleKey === "satellite" ? 18.5 : 16.5,
       pitch: defaultPitch,
       attributionControl: false,
     });
@@ -655,6 +672,7 @@ export function MapboxView({
     currentStyleRef.current = key;
     const map = mapInstanceRef.current;
     if (map) {
+      map.setMaxZoom(key === "satellite" ? 18.5 : 16.5);
       map.setStyle(MAP_STYLES[key] as any);
       setTimeout(() => mapInstanceRef.current?.resize(), 100);
     }
@@ -690,11 +708,17 @@ export function MapboxView({
     if (listToFit.length === 0 || !mapInstanceRef.current) return;
 
     const bounds = new maplibregl.LngLatBounds();
-    listToFit.forEach((p) => {
+    const indiaProps = listToFit.filter(
+      (p) => p.lat >= 8 && p.lat <= 36 && p.lng >= 68 && p.lng <= 92
+    );
+    const propsToFit = indiaProps.length > 0 ? indiaProps : listToFit;
+
+    propsToFit.forEach((p) => {
       bounds.extend([p.lng, p.lat]);
     });
     mapInstanceRef.current.fitBounds(bounds, {
       padding: 80,
+      minZoom: 6,
       maxZoom: 15,
       duration: 800,
     });
@@ -906,7 +930,7 @@ export function MapboxView({
         const pillBtn = document.createElement("button");
         pillBtn.type = "button";
         pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-600 text-white";
 
         const textSpan = document.createElement("span");
         textSpan.innerText = property.pricePill;
@@ -915,7 +939,7 @@ export function MapboxView({
         // Pointer caret beneath pill
         const pointerCaret = document.createElement("div");
         pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 transition-colors duration-200";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 transition-colors duration-200 bg-rose-600";
         pillBtn.appendChild(pointerCaret);
 
         el.appendChild(pillBtn);
@@ -958,26 +982,26 @@ export function MapboxView({
 
       if (isHighlighted) {
         markerItem.pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-4 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 scale-110 shadow-2xl bg-rose-600 text-white ring-2 ring-white";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-4 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 scale-110 shadow-2xl bg-rose-700 text-white ring-2 ring-white";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-600";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-700";
       } else if (isViewed) {
-        // Subtle muted slate indicating user has already inspected this property
+        // Subtle soft rose-slate indicating user has already inspected this property
         markerItem.pillBtn.className =
-          "relative inline-flex items-center justify-center font-bold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-slate-100 text-slate-500 border border-slate-300 shadow-xs hover:scale-105 hover:bg-slate-200 hover:text-slate-800";
+          "relative inline-flex items-center justify-center font-bold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-50 text-rose-800 border border-rose-200 shadow-xs hover:scale-105 hover:bg-rose-100 hover:text-rose-900";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-100 border-r border-b border-slate-300";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-50 border-r border-b border-rose-200";
       } else if (mapStyleKey === "satellite") {
         markerItem.pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-slate-900/95 text-white border border-white/25 shadow-lg hover:scale-105 hover:bg-black";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-600 text-white border border-rose-700 shadow-lg hover:scale-105 hover:bg-rose-700";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-600";
       } else {
-        // Default: Crisp pure-white background, deep charcoal bold text, elevated shadow, pointer caret (Pop like Airbnb)
+        // Default: Solid Brand Rose (#e11d48) with crisp white text, subtle border & radiant pop
         markerItem.pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-white text-slate-900 border border-slate-200/90 shadow-[0_3px_12px_rgba(0,0,0,0.18)] hover:scale-105 hover:shadow-xl hover:bg-slate-50";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-600 text-white border border-rose-700 shadow-[0_3px_12px_rgba(225,29,72,0.38)] hover:scale-105 hover:bg-rose-700 hover:shadow-xl";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-white border-r border-b border-slate-200/90";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-600";
       }
     });
   }, [

@@ -1120,15 +1120,15 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   pricePillInactive: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
+    backgroundColor: '#e11d48',
+    borderColor: '#be123c',
   },
   pricePillViewed: {
-    backgroundColor: '#f1f5f9',
-    borderColor: '#cbd5e1',
+    backgroundColor: '#ffe4e6',
+    borderColor: '#fecdd3',
   },
   pricePillActive: {
-    backgroundColor: '#0f172a',
+    backgroundColor: '#be123c',
     borderColor: '#ffffff',
     transform: [{ scale: 1.12 }],
     shadowOpacity: 0.35,
@@ -1139,10 +1139,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   pricePillTextInactive: {
-    color: '#0f172a',
+    color: '#ffffff',
   },
   pricePillTextViewed: {
-    color: '#94a3b8',
+    color: '#9f1239',
     fontWeight: '700',
   },
   pricePillTextActive: {
@@ -1160,13 +1160,13 @@ const styles = StyleSheet.create({
     borderRightColor: 'transparent',
   },
   markerArrowInactive: {
-    borderTopColor: '#ffffff',
+    borderTopColor: '#e11d48',
   },
   markerArrowViewed: {
-    borderTopColor: '#f1f5f9',
+    borderTopColor: '#ffe4e6',
   },
   markerArrowActive: {
-    borderTopColor: '#0f172a',
+    borderTopColor: '#be123c',
   },
 
   // Bottom Sheet
