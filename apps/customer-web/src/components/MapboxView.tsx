@@ -4,6 +4,15 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import Link from "next/link";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+
+// Configure MapLibre GL JS v6 Web Worker for Next.js client environment
+if (typeof window !== "undefined") {
+  try {
+    maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
+  } catch (err) {
+    console.warn("[MapLibre Worker URL]:", err);
+  }
+}
 import {
   Plus,
   Minus,
@@ -170,11 +179,54 @@ export const SATELLITE_STYLE: any = {
   ],
 };
 
+// High-Res 3D Topographic & Shaded Relief Map Style (100% free forever, zero keys, enterprise CDN)
+export const TOPO_3D_STYLE: any = {
+  version: 8,
+  sources: {
+    "esri-topo": {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      attribution: "Tiles © Esri",
+    },
+    "esri-hillshade": {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      attribution: "Tiles © Esri",
+    },
+  },
+  layers: [
+    {
+      id: "esri-topo-layer",
+      type: "raster",
+      source: "esri-topo",
+      minzoom: 0,
+      maxzoom: 19,
+    },
+    {
+      id: "esri-hillshade-layer",
+      type: "raster",
+      source: "esri-hillshade",
+      minzoom: 0,
+      maxzoom: 19,
+      paint: {
+        "raster-opacity": 0.4,
+      },
+    },
+  ],
+};
+
 // 100% Free 3-Map System
 export const MAP_STYLES = {
   streets: OSM_STYLE,
   satellite: SATELLITE_STYLE,
-  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  liberty: TOPO_3D_STYLE,
+  topo: TOPO_3D_STYLE,
   // Aliases for compatibility
   osm: OSM_STYLE,
 } as const;
@@ -560,6 +612,9 @@ export function MapboxView({
     });
 
     mapInstanceRef.current = map;
+    if (typeof window !== "undefined") {
+      (window as any).__map = map;
+    }
 
     return () => {
       resizeObserver.disconnect();
@@ -1097,9 +1152,9 @@ export function MapboxView({
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="3D Vector (OpenFreeMap Liberty 3D Buildings)"
+            title="3D Terrain (High-Res Topo & Shaded Relief with 55° Perspective)"
           >
-            <span>🏙️</span>
+            <span>🏔️</span>
             <span className="hidden sm:inline">3D</span>
           </button>
         </div>
