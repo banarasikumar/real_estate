@@ -6,12 +6,14 @@ export interface MessageStatusTicksProps {
   status?: 'sending' | 'sent' | 'delivered' | 'failed';
   deliveredAt?: string | null;
   isRead?: boolean;
+  color?: string;
   onRetry?: () => void;
 }
 
 export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
   status,
   deliveredAt,
+  color = 'rgba(255, 255, 255, 0.95)',
   onRetry,
 }) => {
   // If failed: red alert circle with TouchableOpacity calling onRetry
@@ -24,33 +26,33 @@ export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
         style={styles.container}
         testID="message-status-failed"
       >
-        <Ionicons name="alert-circle" size={14} color="#ef4444" />
+        <Ionicons name="alert-circle" size={15} color="#fca5a5" />
       </TouchableOpacity>
     );
   }
 
-  // If sending: Clock icon
+  // If sending: Clock icon (high-contrast crisp white)
   if (status === 'sending') {
     return (
       <View style={styles.container} testID="message-status-sending">
-        <Ionicons name="time-outline" size={13} color="#94a3b8" />
+        <Ionicons name="time-outline" size={14} color={color} />
       </View>
     );
   }
 
-  // If delivered: Double Gray Ticks
+  // If delivered: Double High-Contrast Ticks
   if (deliveredAt || status === 'delivered') {
     return (
       <View style={styles.container} testID="message-status-delivered">
-        <Ionicons name="checkmark-done" size={15} color="#94a3b8" />
+        <Ionicons name="checkmark-done" size={16} color={color} />
       </View>
     );
   }
 
-  // Else (status === 'sent' or default): Single Gray Tick
+  // Else (status === 'sent' or default): Single High-Contrast Tick
   return (
     <View style={styles.container} testID="message-status-sent">
-      <Ionicons name="checkmark" size={14} color="#94a3b8" />
+      <Ionicons name="checkmark" size={15} color={color} />
     </View>
   );
 };
@@ -61,6 +63,6 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 4,
+    marginLeft: 5,
   },
 });

@@ -10,9 +10,11 @@ import {
   sendChatMessage,
   subscribeToConversationMessages,
   subscribeToUserConversations,
+  markMessagesAsDelivered,
   Conversation,
   ChatMessage,
 } from "@repo/api";
+import MessageStatusTicks from "../../components/MessageStatusTicks";
 
 const QUICK_REPLIES = [
   "Is this property still available?",
@@ -86,6 +88,10 @@ function MessagesContent() {
     let isMounted = true;
     setLoadingMessages(true);
 
+    if (session?.user?.id) {
+      markMessagesAsDelivered(activeConvId, session.user.id).catch(console.error);
+    }
+
     getConversationMessages(activeConvId)
       .then((msgs) => {
         if (isMounted) {
@@ -100,33 +106,57 @@ function MessagesContent() {
         if (isMounted) setLoadingMessages(false);
       });
 
-    // Realtime subscription for incoming messages
-    const unsubscribe = subscribeToConversationMessages(activeConvId, (newMsg) => {
-      if (isMounted) {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === newMsg.id)) return prev;
+    // Realtime subscription for incoming and updated messages
+    const unsubscribe = subscribeToConversationMessages(
+      activeConvId,
+      (newMsg) => {
+        if (isMounted) {
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
 
-          // Match pending optimistic message
-          const optIdx = prev.findIndex(
-            (m) => m.id.startsWith("temp-") && m.sender_id === newMsg.sender_id && m.text === newMsg.text
-          );
-          if (optIdx !== -1) {
-            const updated = [...prev];
-            updated[optIdx] = newMsg;
-            return updated;
+            // Match pending optimistic message
+            const optIdx = prev.findIndex(
+              (m) => m.id.startsWith("temp-") && m.sender_id === newMsg.sender_id && m.text === newMsg.text
+            );
+            if (optIdx !== -1) {
+              const updated = [...prev];
+              updated[optIdx] = { ...newMsg, status: newMsg.delivered_at ? "delivered" : "sent" };
+              return updated;
+            }
+
+            return [...prev, { ...newMsg, status: newMsg.delivered_at ? "delivered" : "sent" }];
+          });
+
+          // If new incoming message from counterpart, mark as delivered
+          if (session?.user?.id && newMsg.sender_id !== session.user.id) {
+            markMessagesAsDelivered(activeConvId, session.user.id).catch(console.error);
           }
 
-          return [...prev, newMsg];
-        });
-        setTimeout(scrollToBottom, 50);
+          setTimeout(scrollToBottom, 50);
+        }
+      },
+      (updatedMsg) => {
+        if (isMounted) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === updatedMsg.id
+                ? {
+                    ...m,
+                    ...updatedMsg,
+                    status: updatedMsg.delivered_at ? "delivered" : m.status || "sent",
+                  }
+                : m
+            )
+          );
+        }
       }
-    });
+    );
 
     return () => {
       isMounted = false;
       unsubscribe();
     };
-  }, [activeConvId]);
+  }, [activeConvId, session?.user?.id]);
 
   // Handle Send Message
   const handleSendMessage = async (textToSend?: string) => {
@@ -136,13 +166,14 @@ function MessagesContent() {
     setSending(true);
     setInputMessage("");
 
-    // Optimistic message
+    // Optimistic message with 'sending' status
     const tempId = "temp-" + Date.now();
     const optimisticMsg: ChatMessage = {
       id: tempId,
       conversation_id: activeConvId,
       sender_id: session.user.id,
       text: text.trim(),
+      status: "sending",
       created_at: new Date().toISOString(),
     };
 
@@ -157,7 +188,14 @@ function MessagesContent() {
           if (prev.some((m) => m.id === realMsg.id)) {
             return prev.filter((m) => m.id !== tempId);
           }
-          return prev.map((m) => (m.id === tempId ? realMsg : m));
+          return prev.map((m) =>
+            m.id === tempId
+              ? {
+                  ...realMsg,
+                  status: realMsg.delivered_at ? "delivered" : "sent",
+                }
+              : m
+          );
         });
         // Update conversation's last message in local state
         setConversations((prev) =>
@@ -168,11 +206,15 @@ function MessagesContent() {
           )
         );
       } else {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m))
+        );
       }
     } catch (err) {
       console.error("Error sending message:", err);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m))
+      );
     } finally {
       setSending(false);
     }
@@ -445,13 +487,22 @@ function MessagesContent() {
                           }`}
                         >
                           <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-                          <span
-                            className={`block text-[10px] mt-1 text-right ${
-                              isUser ? "text-rose-200" : "text-slate-400"
-                            }`}
-                          >
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            <span
+                              className={`text-[10px] ${
+                                isUser ? "text-rose-200" : "text-slate-400"
+                              }`}
+                            >
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            {isUser && (
+                              <MessageStatusTicks
+                                status={msg.status}
+                                deliveredAt={msg.delivered_at}
+                                onRetry={() => handleSendMessage(msg.text)}
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
