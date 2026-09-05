@@ -179,22 +179,22 @@ export const SATELLITE_STYLE: any = {
   ],
 };
 
-// High-Res 3D Topographic & Shaded Relief Map Style (100% free forever, zero keys, enterprise CDN)
-export const TOPO_3D_STYLE: any = {
+// Airbnb-Style Luxury Light Canvas Basemap (100% Free, Zero Keys, Uncluttered & High Contrast for Price Markers)
+export const LIGHT_CANVAS_STYLE: any = {
   version: 8,
   sources: {
-    "esri-topo": {
+    "esri-light-gray-base": {
       type: "raster",
       tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
       ],
       tileSize: 256,
       attribution: "Tiles © Esri",
     },
-    "esri-hillshade": {
+    "esri-light-gray-ref": {
       type: "raster",
       tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
       ],
       tileSize: 256,
       attribution: "Tiles © Esri",
@@ -202,36 +202,37 @@ export const TOPO_3D_STYLE: any = {
   },
   layers: [
     {
-      id: "esri-topo-layer",
+      id: "esri-light-gray-base-layer",
       type: "raster",
-      source: "esri-topo",
+      source: "esri-light-gray-base",
       minzoom: 0,
       maxzoom: 19,
     },
     {
-      id: "esri-hillshade-layer",
+      id: "esri-light-gray-ref-layer",
       type: "raster",
-      source: "esri-hillshade",
+      source: "esri-light-gray-ref",
       minzoom: 0,
       maxzoom: 19,
       paint: {
-        "raster-opacity": 0.4,
+        "raster-opacity": 0.85,
       },
     },
   ],
 };
 
-// 100% Free 3-Map System
+// 100% Free 2-Map System (Minimalist Streets + High-Res Satellite)
 export const MAP_STYLES = {
-  streets: OSM_STYLE,
+  streets: LIGHT_CANVAS_STYLE,
   satellite: SATELLITE_STYLE,
-  liberty: TOPO_3D_STYLE,
-  topo: TOPO_3D_STYLE,
-  // Aliases for compatibility
+  // Backwards compatibility aliases
   osm: OSM_STYLE,
+  canvas: LIGHT_CANVAS_STYLE,
+  liberty: LIGHT_CANVAS_STYLE,
+  topo: LIGHT_CANVAS_STYLE,
 } as const;
 
-export type MapStyleKey = "streets" | "satellite" | "liberty";
+export type MapStyleKey = "streets" | "satellite";
 
 // Aliases for backwards compatibility
 export const MAPBOX_STYLES = MAP_STYLES;
@@ -441,6 +442,23 @@ export function MapboxView({
     }
   }, [selectedPropertyId, mappedProperties]);
 
+  // Auto-fit bounds on properties when first loaded into view
+  const hasAutoCenteredRef = useRef(false);
+  useEffect(() => {
+    if (!hasAutoCenteredRef.current && mappedProperties.length > 0 && mapInstanceRef.current) {
+      hasAutoCenteredRef.current = true;
+      const bounds = new maplibregl.LngLatBounds();
+      mappedProperties.forEach((p) => {
+        bounds.extend([p.lng, p.lat]);
+      });
+      mapInstanceRef.current.fitBounds(bounds, {
+        padding: 80,
+        maxZoom: 14,
+        duration: 800,
+      });
+    }
+  }, [mappedProperties]);
+
   // Debounced bounds dispatch function
   const triggerDebouncedBoundsChange = useCallback((newBounds: MapBounds) => {
     if (!searchAsMoveRef.current) return;
@@ -631,29 +649,13 @@ export function MapboxView({
     };
   }, []);
 
-  // Switch Map Style dynamically with Smart 3D Camera Fly-In
+  // Switch Map Style dynamically between Streets & Satellite
   const handleMapStyleChange = (key: MapStyleKey) => {
     setMapStyleKey(key);
     currentStyleRef.current = key;
     const map = mapInstanceRef.current;
     if (map) {
       map.setStyle(MAP_STYLES[key] as any);
-
-      if (key === "liberty") {
-        // Smart 3D Camera Fly-In
-        map.easeTo({
-          pitch: 55,
-          zoom: Math.max(map.getZoom(), 14.5),
-          duration: 800,
-        });
-        map.dragRotate.enable();
-        setIs3D(true);
-      } else {
-        // Smoothly level camera back to top-down
-        map.easeTo({ pitch: 0, duration: 600 });
-        setIs3D(false);
-      }
-
       setTimeout(() => mapInstanceRef.current?.resize(), 100);
     }
   };
@@ -663,8 +665,8 @@ export function MapboxView({
     if (mapInstanceRef.current) {
       mapInstanceRef.current.easeTo({
         bearing: 0,
-        pitch: mapStyleKey === "liberty" ? 55 : 0,
-        duration: 500,
+        pitch: 0,
+        duration: 400,
       });
     }
   };
@@ -904,7 +906,7 @@ export function MapboxView({
         const pillBtn = document.createElement("button");
         pillBtn.type = "button";
         pillBtn.className =
-          "relative flex items-center justify-center font-bold px-3 py-1.5 rounded-full text-xs transition-all duration-200";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200";
 
         const textSpan = document.createElement("span");
         textSpan.innerText = property.pricePill;
@@ -956,26 +958,26 @@ export function MapboxView({
 
       if (isHighlighted) {
         markerItem.pillBtn.className =
-          "relative flex items-center justify-center font-bold px-3.5 py-1.5 rounded-full text-xs transition-all duration-200 scale-110 shadow-xl bg-rose-600 text-white ring-2 ring-white";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-4 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 scale-110 shadow-2xl bg-rose-600 text-white ring-2 ring-white";
         markerItem.pointerCaret.className =
           "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-600";
       } else if (isViewed) {
         // Subtle muted slate indicating user has already inspected this property
         markerItem.pillBtn.className =
-          "relative flex items-center justify-center font-bold px-3 py-1.5 rounded-full text-xs transition-all duration-200 bg-slate-200 text-slate-600 border border-slate-300 shadow-sm hover:scale-105 hover:bg-slate-300 hover:text-slate-800";
+          "relative inline-flex items-center justify-center font-bold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-slate-100 text-slate-500 border border-slate-300 shadow-xs hover:scale-105 hover:bg-slate-200 hover:text-slate-800";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-200 border-r border-b border-slate-300";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-100 border-r border-b border-slate-300";
       } else if (mapStyleKey === "satellite") {
         markerItem.pillBtn.className =
-          "relative flex items-center justify-center font-bold px-3 py-1.5 rounded-full text-xs transition-all duration-200 bg-slate-900/90 text-white border border-slate-700 shadow-md hover:scale-105 hover:bg-slate-800 backdrop-blur-sm";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-slate-900/95 text-white border border-white/25 shadow-lg hover:scale-105 hover:bg-black";
         markerItem.pointerCaret.className =
           "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900";
       } else {
-        // Default: Crisp white background, charcoal bold text, subtle shadow, pointer caret
+        // Default: Crisp pure-white background, deep charcoal bold text, elevated shadow, pointer caret (Pop like Airbnb)
         markerItem.pillBtn.className =
-          "relative flex items-center justify-center font-bold px-3 py-1.5 rounded-full text-xs transition-all duration-200 bg-white text-slate-900 border border-slate-300/90 shadow-md hover:scale-105 hover:bg-slate-50";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-white text-slate-900 border border-slate-200/90 shadow-[0_3px_12px_rgba(0,0,0,0.18)] hover:scale-105 hover:shadow-xl hover:bg-slate-50";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-white border-r border-b border-slate-300";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-white border-r border-b border-slate-200/90";
       }
     });
   }, [
@@ -1107,26 +1109,18 @@ export function MapboxView({
         </div>
       )}
 
-      {/* Top-Left Badge: OpenStreetMap & Esri • 100% Free */}
-      <div className="absolute top-4 left-4 z-30 max-w-[280px] pointer-events-auto hidden sm:block">
-        <div className="inline-flex items-center gap-2 bg-slate-900/85 backdrop-blur-md text-white text-[11px] font-medium px-3.5 py-2 rounded-xl shadow-lg border border-white/10">
-          <Info className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span className="leading-tight">OpenStreetMap &amp; Esri • 100% Free</span>
-        </div>
-      </div>
-
-      {/* Top-Right: Segmented Pill [ 🗺️ Streets | 🛰️ Satellite | 🏙️ 3D ] */}
+      {/* Top-Right: Segmented Pill [ 🗺️ Streets | 🛰️ Satellite ] */}
       <div className="absolute top-4 right-4 z-30 pointer-events-auto">
         <div className="bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 p-1 flex items-center gap-1">
           <button
             type="button"
             onClick={() => handleMapStyleChange("streets")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
               mapStyleKey === "streets"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Streets (OpenStreetMap Standard)"
+            title="Streets (Clean Minimalist Light Basemap • Airbnb Style)"
           >
             <span>🗺️</span>
             <span className="hidden sm:inline">Streets</span>
@@ -1134,28 +1128,15 @@ export function MapboxView({
           <button
             type="button"
             onClick={() => handleMapStyleChange("satellite")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
               mapStyleKey === "satellite"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Satellite (Esri World Imagery)"
+            title="Satellite (High-Resolution Aerial Imagery)"
           >
             <span>🛰️</span>
             <span className="hidden sm:inline">Satellite</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleMapStyleChange("liberty")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
-              mapStyleKey === "liberty"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="3D Terrain (High-Res Topo & Shaded Relief with 55° Perspective)"
-          >
-            <span>🏔️</span>
-            <span className="hidden sm:inline">3D</span>
           </button>
         </div>
       </div>
