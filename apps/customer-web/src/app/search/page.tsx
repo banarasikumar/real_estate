@@ -19,15 +19,15 @@ import {
   Sparkles,
   Search,
 } from "lucide-react";
-import { searchProperties, Property } from "@repo/api";
+import { searchProperties, Property, useAuth, toggleSavedProperty } from "@repo/api";
 import SearchFiltersBar, {
   SearchFiltersState,
 } from "../../components/SearchFiltersBar";
-import GoogleMapView, {
+import MapboxView, {
   MapProperty,
   MapBounds,
   getDeterministicCoords,
-} from "../../components/GoogleMapView";
+} from "../../components/MapboxView";
 import { formatPricePill, formatPriceLabel } from "../../utils/formatters";
 import SafeImage from "../../components/SafeImage";
 import SavePropertyButton from "../../components/SavePropertyButton";
@@ -194,6 +194,7 @@ const SEED_PROPERTIES: MapProperty[] = [
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { session } = useAuth();
   const [isPending, startTransition] = useTransition();
 
   // Parse Initial Filters from URL Query Params
@@ -232,6 +233,9 @@ function SearchContent() {
   // Sync state between List & Map
   const [hoveredPropertyId, setHoveredPropertyId] = useState<string | null>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+
+  // Track "Already Viewed" listings
+  const [viewedPropertyIds, setViewedPropertyIds] = useState<Set<string>>(new Set());
 
   // Mobile View Mode Switcher: "list" | "map"
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
@@ -275,10 +279,27 @@ function SearchContent() {
     (property: MapProperty | null) => {
       setSelectedPropertyId(property?.id || null);
       if (property?.id) {
+        setViewedPropertyIds((prev) => new Set(prev).add(property.id));
         scrollCardIntoView(property.id);
       }
     },
     [scrollCardIntoView]
+  );
+
+  // Handle Save / Favorite toggle from map popup preview
+  const handleToggleSave = useCallback(
+    async (propertyId: string) => {
+      if (!session?.user?.id) {
+        router.push("/login");
+        return;
+      }
+      try {
+        await toggleSavedProperty(session.user.id, propertyId);
+      } catch (err) {
+        console.error("Error toggling saved property from map preview:", err);
+      }
+    },
+    [session?.user?.id, router]
   );
 
   // Fetch properties from Supabase API / Fallback
@@ -531,7 +552,10 @@ function SearchContent() {
                     key={property.id}
                     onMouseEnter={() => setHoveredPropertyId(property.id)}
                     onMouseLeave={() => setHoveredPropertyId(null)}
-                    onClick={() => setSelectedPropertyId(property.id)}
+                    onClick={() => {
+                      setSelectedPropertyId(property.id);
+                      setViewedPropertyIds((prev) => new Set(prev).add(property.id));
+                    }}
                     className={`group relative flex flex-col bg-white rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden ${
                       isHovered || isSelected
                         ? "border-rose-500 ring-2 ring-rose-500/20 shadow-xl -translate-y-0.5"
@@ -639,7 +663,7 @@ function SearchContent() {
           )}
         </div>
 
-        {/* Right Side: Full-Height Interactive Google Map */}
+        {/* Right Side: Full-Height Interactive Mapbox Map */}
         <div
           className={`h-full sticky top-0 transition-all ${
             mobileView === "map"
@@ -647,13 +671,15 @@ function SearchContent() {
               : "hidden md:block md:w-1/2 lg:w-2/5"
           }`}
         >
-          <GoogleMapView
+          <MapboxView
             properties={results}
             selectedPropertyId={selectedPropertyId}
             hoveredPropertyId={hoveredPropertyId}
+            viewedPropertyIds={viewedPropertyIds}
             onSelectProperty={handleMarkerSelect}
             onHoverProperty={handleMarkerHover}
             onBoundsChange={handleBoundsChange}
+            onToggleSave={handleToggleSave}
             searchAsMapMoves={searchAsMapMoves}
             onToggleSearchAsMapMoves={handleToggleSearchAsMapMoves}
             className="w-full h-full"

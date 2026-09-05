@@ -24,6 +24,8 @@ import {
   getPublishedProperties,
   useAuth,
   toggleSavedProperty,
+  SearchBounds,
+  SearchPropertiesParams,
 } from '@repo/api';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -48,12 +50,7 @@ interface PropertyItem {
   property_media?: { url: string }[];
 }
 
-interface MapBounds {
-  north: number;
-  south: number;
-  east: number;
-  west: number;
-}
+type MapBounds = SearchBounds;
 
 const FALLBACK_PROPERTIES: PropertyItem[] = [
   {
@@ -197,12 +194,27 @@ export default function ExploreScreen() {
   const [activeFilterId, setActiveFilterId] = useState('all');
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set(['1', '3']));
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [viewedPropertyIds, setViewedPropertyIds] = useState<Set<string>>(new Set());
   const [mapType, setMapType] = useState<MapType>('standard');
 
   const mapRef = useRef<MapView | null>(null);
   const flatListRef = useRef<FlatList | null>(null);
   const mapBoundsRef = useRef<MapBounds | null>(null);
   const regionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const activeFilterIdRef = useRef(activeFilterId);
+  activeFilterIdRef.current = activeFilterId;
+  const searchQueryRef = useRef(searchQuery);
+  searchQueryRef.current = searchQuery;
+
+  const markAsViewed = useCallback((id: string) => {
+    setViewedPropertyIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
 
   const sheetHeight = useRef(new Animated.Value(SNAP_HALF)).current;
   const currentSheetHeight = useRef(SNAP_HALF);
@@ -245,13 +257,13 @@ export default function ExploreScreen() {
 
   const loadProperties = useCallback(
     async (
-      filterId = activeFilterId,
-      query = searchQuery,
+      filterId = activeFilterIdRef.current,
+      query = searchQueryRef.current,
       bounds: MapBounds | null = mapBoundsRef.current
     ) => {
       try {
         const activeFilter = QUICK_FILTERS.find((f) => f.id === filterId);
-        const searchParams: any = {};
+        const searchParams: SearchPropertiesParams = {};
 
         if (activeFilter?.list_type) {
           searchParams.list_type = activeFilter.list_type;
@@ -318,7 +330,7 @@ export default function ExploreScreen() {
         setRefreshing(false);
       }
     },
-    [activeFilterId, searchQuery]
+    []
   );
 
   const handleRegionChangeComplete = useCallback(
@@ -336,11 +348,19 @@ export default function ExploreScreen() {
       }
 
       regionTimeoutRef.current = setTimeout(() => {
-        loadProperties(activeFilterId, searchQuery, bounds);
+        loadProperties(activeFilterIdRef.current, searchQueryRef.current, bounds);
       }, 350);
     },
-    [activeFilterId, searchQuery, loadProperties]
+    [loadProperties]
   );
+
+  useEffect(() => {
+    return () => {
+      if (regionTimeoutRef.current) {
+        clearTimeout(regionTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     loadProperties();
@@ -398,6 +418,7 @@ export default function ExploreScreen() {
 
   const handleMarkerPress = (property: PropertyItem) => {
     setSelectedPropertyId(property.id);
+    markAsViewed(property.id);
 
     if (property.latitude && property.longitude && mapRef.current) {
       mapRef.current.animateToRegion(
@@ -462,6 +483,7 @@ export default function ExploreScreen() {
   const renderPropertyCard = ({ item }: { item: PropertyItem }) => {
     const isSaved = savedIds.has(item.id);
     const isSelected = selectedPropertyId === item.id;
+    const isViewed = viewedPropertyIds.has(item.id);
     const imageUrl =
       item.property_media?.[0]?.url ||
       'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267';
@@ -476,6 +498,7 @@ export default function ExploreScreen() {
         activeOpacity={0.9}
         onPress={() => {
           setSelectedPropertyId(item.id);
+          markAsViewed(item.id);
           router.push('/property/' + item.id);
         }}
       >
@@ -508,12 +531,19 @@ export default function ExploreScreen() {
         <View style={styles.cardContent}>
           <View style={styles.priceRow}>
             <Text style={styles.priceText}>{priceFormatted}</Text>
-            {isSelected && (
-              <View style={styles.activePillTag}>
-                <Ionicons name="location" size={12} color="#e11d48" />
-                <Text style={styles.activePillTagText}>Selected</Text>
-              </View>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {isViewed && !isSelected && (
+                <View style={styles.viewedTag}>
+                  <Text style={styles.viewedTagText}>Viewed</Text>
+                </View>
+              )}
+              {isSelected && (
+                <View style={styles.activePillTag}>
+                  <Ionicons name="location" size={12} color="#e11d48" />
+                  <Text style={styles.activePillTagText}>Selected</Text>
+                </View>
+              )}
+            </View>
           </View>
 
           <Text style={styles.titleText} numberOfLines={1}>
@@ -593,18 +623,19 @@ export default function ExploreScreen() {
         {displayedProperties.map((property) => {
           if (!property.latitude || !property.longitude) return null;
           const isSelected = selectedPropertyId === property.id;
+          const isViewed = viewedPropertyIds.has(property.id);
           const isRent = property.list_type === 'RENT';
           const priceLabel = formatPricePill(property.price, isRent);
 
           return (
             <Marker
-              key={property.id}
+              key={`${property.id}-${isSelected ? 'selected' : isViewed ? 'viewed' : 'default'}`}
               coordinate={{
                 latitude: property.latitude,
                 longitude: property.longitude,
               }}
               onPress={() => handleMarkerPress(property)}
-              zIndex={isSelected ? 999 : 1}
+              zIndex={isSelected ? 999 : isViewed ? 2 : 10}
               tracksViewChanges={false}
             >
               {/* Custom Price Pill Marker */}
@@ -612,13 +643,21 @@ export default function ExploreScreen() {
                 <View
                   style={[
                     styles.pricePill,
-                    isSelected ? styles.pricePillActive : styles.pricePillInactive,
+                    isSelected
+                      ? styles.pricePillActive
+                      : isViewed
+                      ? styles.pricePillViewed
+                      : styles.pricePillInactive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.pricePillText,
-                      isSelected ? styles.pricePillTextActive : styles.pricePillTextInactive,
+                      isSelected
+                        ? styles.pricePillTextActive
+                        : isViewed
+                        ? styles.pricePillTextViewed
+                        : styles.pricePillTextInactive,
                     ]}
                   >
                     {priceLabel}
@@ -628,7 +667,11 @@ export default function ExploreScreen() {
                 <View
                   style={[
                     styles.markerArrow,
-                    isSelected ? styles.markerArrowActive : styles.markerArrowInactive,
+                    isSelected
+                      ? styles.markerArrowActive
+                      : isViewed
+                      ? styles.markerArrowViewed
+                      : styles.markerArrowInactive,
                   ]}
                 />
               </View>
@@ -902,7 +945,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     shadowColor: '#000',
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 6,
@@ -911,10 +954,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderColor: '#cbd5e1',
   },
+  pricePillViewed: {
+    backgroundColor: '#f1f5f9',
+    borderColor: '#cbd5e1',
+  },
   pricePillActive: {
-    backgroundColor: '#e11d48',
+    backgroundColor: '#0f172a',
     borderColor: '#ffffff',
-    transform: [{ scale: 1.1 }],
+    transform: [{ scale: 1.12 }],
+    shadowOpacity: 0.35,
+    elevation: 8,
   },
   pricePillText: {
     fontWeight: '800',
@@ -922,6 +971,10 @@ const styles = StyleSheet.create({
   },
   pricePillTextInactive: {
     color: '#0f172a',
+  },
+  pricePillTextViewed: {
+    color: '#94a3b8',
+    fontWeight: '700',
   },
   pricePillTextActive: {
     color: '#ffffff',
@@ -940,8 +993,11 @@ const styles = StyleSheet.create({
   markerArrowInactive: {
     borderTopColor: '#ffffff',
   },
+  markerArrowViewed: {
+    borderTopColor: '#f1f5f9',
+  },
   markerArrowActive: {
-    borderTopColor: '#e11d48',
+    borderTopColor: '#0f172a',
   },
 
   // Bottom Sheet
@@ -1106,6 +1162,21 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#0f172a',
+  },
+  viewedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  viewedTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94a3b8',
   },
   activePillTag: {
     flexDirection: 'row',
