@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
+import * as maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import {
   Layers,
   Plus,
@@ -22,6 +22,7 @@ import {
   ChevronRight,
   MapPin,
   Info,
+  Mountain,
 } from "lucide-react";
 import SafeImage from "./SafeImage";
 import { formatPricePill, formatPriceLabel } from "../utils/formatters";
@@ -125,13 +126,42 @@ export function getDeterministicCoords(
   };
 }
 
-export const MAPBOX_STYLES = {
-  light: "mapbox://styles/mapbox/light-v11",
-  satellite: "mapbox://styles/mapbox/satellite-streets-v12",
-  streets: "mapbox://styles/mapbox/streets-v12",
+// High-Res Esri Satellite pure MapLibre style JSON (zero keys required)
+export const SATELLITE_STYLE: any = {
+  version: 8,
+  sources: {
+    "esri-satellite": {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      attribution: "Tiles © Esri",
+    },
+  },
+  layers: [
+    {
+      id: "esri-satellite-layer",
+      type: "raster",
+      source: "esri-satellite",
+      minzoom: 0,
+      maxzoom: 19,
+    },
+  ],
+};
+
+// MapLibre Styles: Positron (Default Airbnb minimalist), Liberty (Detailed Street), Esri Satellite
+export const MAP_STYLES = {
+  positron: "https://tiles.openfreemap.org/styles/positron",
+  liberty: "https://tiles.openfreemap.org/styles/liberty",
+  satellite: SATELLITE_STYLE,
 } as const;
 
-export type MapboxStyleKey = keyof typeof MAPBOX_STYLES;
+export type MapStyleKey = keyof typeof MAP_STYLES;
+
+// Aliases for backwards compatibility
+export const MAPBOX_STYLES = MAP_STYLES;
+export type MapboxStyleKey = MapStyleKey;
 
 export function MapboxView({
   properties,
@@ -150,17 +180,8 @@ export function MapboxView({
   pitch: defaultPitch = 0,
   className = "",
 }: MapboxViewProps) {
-  // Token validation
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
-  const isValidToken = Boolean(
-    mapboxToken &&
-    mapboxToken.trim() !== "" &&
-    mapboxToken.startsWith("pk.") &&
-    mapboxToken.length > 20
-  );
-
-  // States
-  const [mapStyleKey, setMapStyleKey] = useState<MapboxStyleKey>("light");
+  // Styles and camera state
+  const [mapStyleKey, setMapStyleKey] = useState<MapStyleKey>("positron");
   const [is3D, setIs3D] = useState(defaultPitch > 20);
   const [activeProperty, setActiveProperty] = useState<MapProperty | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -177,22 +198,17 @@ export function MapboxView({
     onToggleSearchAsMapMoves?.(val);
   };
 
-  // Fallback map simulation state (when token is missing or invalid)
-  const [simCenter, setSimCenter] = useState<{ lat: number; lng: number }>(
-    defaultCenter || { lat: 19.076, lng: 72.8777 }
-  );
-  const [simZoom, setSimZoom] = useState(defaultZoom);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-
-  // DOM and Mapbox refs
+  // DOM and MapLibre refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
+  const mapInstanceRef = useRef<maplibregl.Map | null>(null);
+  const currentStyleRef = useRef<MapStyleKey>(mapStyleKey);
+  currentStyleRef.current = mapStyleKey;
+
   const markersRef = useRef<
     Map<
       string,
       {
-        marker: mapboxgl.Marker;
+        marker: maplibregl.Marker;
         element: HTMLDivElement;
         pillBtn: HTMLButtonElement;
         pointerCaret: HTMLDivElement;
@@ -278,13 +294,6 @@ export function MapboxView({
     };
   }, [mappedProperties, defaultCenter]);
 
-  // Keep fallback center aligned
-  useEffect(() => {
-    if (!isValidToken && mappedProperties.length > 0) {
-      setSimCenter(averageCenter);
-    }
-  }, [isValidToken, averageCenter, mappedProperties.length]);
-
   // Sync active property from prop
   useEffect(() => {
     if (selectedPropertyId) {
@@ -324,65 +333,55 @@ export function MapboxView({
     }, 300);
   }, []);
 
-  // Helper to add 3D building layer
-  const add3DBuildingsLayer = useCallback((map: mapboxgl.Map) => {
+  // Helper to add 3D building extrusion layer on Positron/Liberty
+  const add3DBuildingsLayer = useCallback((map: maplibregl.Map, currentStyle: string) => {
     try {
-      const style = map.getStyle();
-      if (!style || !style.layers) return;
-      const layers = style.layers;
-      const labelLayerId = layers.find(
-        (l) => l.type === "symbol" && (l.layout as any)?.["text-field"]
-      )?.id;
-
-      if (!map.getLayer("3d-buildings")) {
-        map.addLayer(
-          {
+      if (currentStyle !== "satellite" && !map.getLayer("3d-buildings")) {
+        if (map.getSource("openmaptiles")) {
+          map.addLayer({
             id: "3d-buildings",
-            source: "composite",
+            source: "openmaptiles",
             "source-layer": "building",
             filter: ["==", "extrude", "true"],
             type: "fill-extrusion",
             minzoom: 14,
             paint: {
               "fill-extrusion-color": "#e2e8f0",
-              "fill-extrusion-height": ["get", "height"],
-              "fill-extrusion-base": ["get", "min_height"],
-              "fill-extrusion-opacity": 0.6,
+              "fill-extrusion-height": ["get", "render_height"],
+              "fill-extrusion-base": ["get", "render_min_height"],
+              "fill-extrusion-opacity": 0.65,
             },
-          },
-          labelLayerId
-        );
+          });
+        }
       }
     } catch (err) {
       console.warn("Could not inject 3D buildings layer:", err);
     }
   }, []);
 
-  // Initialize Mapbox instance
+  // Initialize MapLibre GL instance
   useEffect(() => {
-    if (!isValidToken || !mapContainerRef.current) return;
-
-    mapboxgl.accessToken = mapboxToken;
+    if (!mapContainerRef.current) return;
 
     const initialCenter: [number, number] = [averageCenter.lng, averageCenter.lat];
 
-    const map = new mapboxgl.Map({
+    const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: MAPBOX_STYLES[mapStyleKey],
+      style: MAP_STYLES[mapStyleKey] as any,
       center: initialCenter,
       zoom: defaultZoom,
       pitch: defaultPitch,
       attributionControl: false,
     });
 
-    map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-right");
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
 
     map.on("load", () => {
-      add3DBuildingsLayer(map);
+      add3DBuildingsLayer(map, currentStyleRef.current);
     });
 
     map.on("style.load", () => {
-      add3DBuildingsLayer(map);
+      add3DBuildingsLayer(map, currentStyleRef.current);
     });
 
     map.on("moveend", () => {
@@ -400,28 +399,37 @@ export function MapboxView({
     });
 
     map.on("pitch", () => {
-      setIs3D(map.getPitch() > 25);
+      setIs3D(map.getPitch() > 20);
+    });
+
+    map.on("click", () => {
+      setActiveProperty(null);
+      onSelectPropertyRef.current?.(null);
     });
 
     mapInstanceRef.current = map;
 
     return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
       markersRef.current.forEach(({ marker }) => marker.remove());
       markersRef.current.clear();
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, [isValidToken, mapboxToken]);
+  }, []);
 
   // Switch Map Style dynamically
-  const handleMapStyleChange = (key: MapboxStyleKey) => {
+  const handleMapStyleChange = (key: MapStyleKey) => {
     setMapStyleKey(key);
+    currentStyleRef.current = key;
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.setStyle(MAPBOX_STYLES[key]);
+      mapInstanceRef.current.setStyle(MAP_STYLES[key] as any);
     }
   };
 
-  // Toggle 3D pitch
+  // Toggle 3D pitch camera between 0° and 50°
   const handleToggle3D = () => {
     if (mapInstanceRef.current) {
       const targetPitch = is3D ? 0 : 50;
@@ -450,56 +458,40 @@ export function MapboxView({
   const handleZoomIn = () => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.zoomIn({ duration: 300 });
-    } else {
-      setSimZoom((prev) => Math.min(prev + 0.6, 18));
-      triggerFallbackBounds(simCenter, simZoom + 0.6);
     }
   };
 
   const handleZoomOut = () => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.zoomOut({ duration: 300 });
-    } else {
-      setSimZoom((prev) => Math.max(prev - 0.6, 8));
-      triggerFallbackBounds(simCenter, simZoom - 0.6);
     }
   };
 
   // Fit all properties
   const handleFitAll = () => {
-    if (mappedProperties.length === 0) return;
+    if (mappedProperties.length === 0 || !mapInstanceRef.current) return;
 
-    if (mapInstanceRef.current) {
-      const bounds = new mapboxgl.LngLatBounds();
-      mappedProperties.forEach((p) => {
-        bounds.extend([p.lng, p.lat]);
-      });
-      mapInstanceRef.current.fitBounds(bounds, {
-        padding: 80,
-        maxZoom: 15,
-        duration: 800,
-      });
-    } else {
-      setSimCenter(averageCenter);
-      setSimZoom(12.5);
-      triggerFallbackBounds(averageCenter, 12.5);
-    }
+    const bounds = new maplibregl.LngLatBounds();
+    mappedProperties.forEach((p) => {
+      bounds.extend([p.lng, p.lat]);
+    });
+    mapInstanceRef.current.fitBounds(bounds, {
+      padding: 80,
+      maxZoom: 15,
+      duration: 800,
+    });
   };
 
   // Pan to hovered or selected property
   useEffect(() => {
     const targetId = hoveredPropertyId || selectedPropertyId;
-    if (targetId) {
+    if (targetId && mapInstanceRef.current) {
       const target = mappedProperties.find((p) => p.id === targetId);
       if (target) {
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.easeTo({
-            center: [target.lng, target.lat],
-            duration: 600,
-          });
-        } else {
-          setSimCenter({ lat: target.lat, lng: target.lng });
-        }
+        mapInstanceRef.current.easeTo({
+          center: [target.lng, target.lat],
+          duration: 600,
+        });
       }
     }
   }, [hoveredPropertyId, selectedPropertyId, mappedProperties]);
@@ -542,9 +534,9 @@ export function MapboxView({
     onToggleSave?.(propId);
   };
 
-  // Update or Create Mapbox Markers
+  // Update or Create Custom Airbnb-Style Price Pill Markers
   useEffect(() => {
-    if (!isValidToken || !mapInstanceRef.current) return;
+    if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
     const currentPropIds = new Set(mappedProperties.map((p) => p.id));
@@ -564,7 +556,7 @@ export function MapboxView({
       if (!markerItem) {
         // Container element
         const el = document.createElement("div");
-        el.className = "mapbox-marker-container cursor-pointer select-none transition-transform duration-200";
+        el.className = "maplibre-marker-container cursor-pointer select-none transition-transform duration-200";
 
         // Price Pill Button
         const pillBtn = document.createElement("button");
@@ -598,7 +590,7 @@ export function MapboxView({
           handlePropertyClick(property);
         });
 
-        const marker = new mapboxgl.Marker({
+        const marker = new maplibregl.Marker({
           element: el,
           anchor: "bottom",
         })
@@ -607,6 +599,8 @@ export function MapboxView({
 
         markerItem = { marker, element: el, pillBtn, pointerCaret };
         markersRef.current.set(property.id, markerItem);
+      } else {
+        markerItem.marker.setLngLat([property.lng, property.lat]);
       }
 
       // Dynamic Styling state calculation
@@ -643,7 +637,6 @@ export function MapboxView({
       }
     });
   }, [
-    isValidToken,
     mappedProperties,
     selectedPropertyId,
     hoveredPropertyId,
@@ -652,69 +645,6 @@ export function MapboxView({
     mapStyleKey,
     handlePropertyClick,
   ]);
-
-  // Fallback map bounds calculator
-  const triggerFallbackBounds = useCallback(
-    (centerCoord: { lat: number; lng: number }, currentZoom: number) => {
-      const latDelta = 0.08 * Math.pow(2, 12 - currentZoom);
-      const lngDelta = 0.12 * Math.pow(2, 12 - currentZoom);
-      triggerDebouncedBoundsChange({
-        north: centerCoord.lat + latDelta,
-        south: centerCoord.lat - latDelta,
-        east: centerCoord.lng + lngDelta,
-        west: centerCoord.lng - lngDelta,
-      });
-    },
-    [triggerDebouncedBoundsChange]
-  );
-
-  // Fallback drag handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (isValidToken) return;
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isValidToken || !isDragging || !dragStart) return;
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
-
-    const scaleFactor = 0.00008 * Math.pow(2, 13 - simZoom);
-    const newCenter = {
-      lat: simCenter.lat + dy * scaleFactor,
-      lng: simCenter.lng - dx * scaleFactor,
-    };
-    setSimCenter(newCenter);
-    setDragStart({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleMouseUp = () => {
-    if (!isValidToken && isDragging) {
-      setIsDragging(false);
-      setDragStart(null);
-      triggerFallbackBounds(simCenter, simZoom);
-    }
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (isValidToken) return;
-    e.preventDefault();
-    const newZoom = e.deltaY < 0 ? Math.min(simZoom + 0.5, 18) : Math.max(simZoom - 0.5, 8);
-    setSimZoom(newZoom);
-    triggerFallbackBounds(simCenter, newZoom);
-  };
-
-  // Coordinate Projector for Fallback Map
-  const projectCoords = useCallback(
-    (lat: number, lng: number, width: number, height: number) => {
-      const scale = Math.pow(2, simZoom) * 45;
-      const x = width / 2 + (lng - simCenter.lng) * scale;
-      const y = height / 2 - (lat - simCenter.lat) * scale;
-      return { x, y };
-    },
-    [simCenter, simZoom]
-  );
 
   // Images for current active preview popup
   const activeImages = activeProperty?.displayImages || [
@@ -737,225 +667,8 @@ export function MapboxView({
     <div
       ref={mapContainerRef}
       className={`relative w-full h-full bg-slate-100 overflow-hidden select-none ${className}`}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onWheel={handleWheel}
-      style={{ cursor: !isValidToken ? (isDragging ? "grabbing" : "grab") : undefined }}
     >
-      {/* 1. Graceful Interactive Fallback Canvas (when Token is missing or invalid) */}
-      {!isValidToken && (
-        <div
-          className="absolute inset-0 w-full h-full z-0 overflow-hidden"
-          onClick={() => {
-            setActiveProperty(null);
-            onSelectProperty?.(null);
-          }}
-        >
-          {/* Base Vector Canvas */}
-          <div
-            className={`absolute inset-0 transition-colors duration-500 ${
-              mapStyleKey === "satellite"
-                ? "bg-[#0a1526]"
-                : mapStyleKey === "streets"
-                ? "bg-[#e5ecf4]"
-                : "bg-[#f8fafc]"
-            }`}
-            style={{
-              transform: is3D ? "perspective(900px) rotateX(25deg) scale(1.05)" : "none",
-              transformOrigin: "center bottom",
-              transition: "transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)",
-            }}
-          >
-            <svg
-              className="absolute inset-0 w-full h-full opacity-70"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <defs>
-                <pattern
-                  id={`mapbox-grid-${mapStyleKey}`}
-                  width={mapStyleKey === "satellite" ? "80" : "60"}
-                  height={mapStyleKey === "satellite" ? "80" : "60"}
-                  patternUnits="userSpaceOnUse"
-                >
-                  {mapStyleKey === "satellite" ? (
-                    <>
-                      <path
-                        d="M 80 0 L 0 0 0 80"
-                        fill="none"
-                        stroke="rgba(255,255,255,0.06)"
-                        strokeWidth="1"
-                      />
-                      <circle cx="40" cy="40" r="1.5" fill="rgba(255,255,255,0.15)" />
-                    </>
-                  ) : (
-                    <>
-                      <path
-                        d="M 60 0 L 0 0 0 60"
-                        fill="none"
-                        stroke="rgba(203,213,225,0.4)"
-                        strokeWidth="1"
-                      />
-                      <circle cx="30" cy="30" r="1" fill="rgba(148,163,184,0.35)" />
-                    </>
-                  )}
-                </pattern>
-
-                <pattern
-                  id="mapbox-roads"
-                  width="240"
-                  height="240"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <path
-                    d="M 0 60 Q 120 40 240 60 M 60 0 Q 80 120 60 240 M 0 180 Q 120 200 240 180"
-                    fill="none"
-                    stroke={
-                      mapStyleKey === "satellite"
-                        ? "rgba(255,255,255,0.12)"
-                        : "rgba(255,255,255,0.9)"
-                    }
-                    strokeWidth={mapStyleKey === "satellite" ? "2" : "5"}
-                  />
-                  <path
-                    d="M 0 120 Q 120 140 240 120"
-                    fill="none"
-                    stroke={
-                      mapStyleKey === "satellite"
-                        ? "rgba(251,191,36,0.3)"
-                        : "rgba(254,240,138,0.7)"
-                    }
-                    strokeWidth="3"
-                  />
-                </pattern>
-              </defs>
-
-              {/* Water body simulation */}
-              <path
-                d="M -100 320 C 150 240, 300 460, 600 390 C 850 330, 1100 510, 1400 430 L 1400 900 L -100 900 Z"
-                fill={mapStyleKey === "satellite" ? "#061320" : "#dbeafe"}
-                opacity={mapStyleKey === "satellite" ? "0.95" : "0.75"}
-              />
-
-              {/* Parks / Green areas */}
-              <rect
-                x="15%"
-                y="20%"
-                width="140"
-                height="110"
-                rx="20"
-                fill={mapStyleKey === "satellite" ? "#0e2918" : "#dcfce7"}
-                opacity="0.85"
-              />
-              <rect
-                x="65%"
-                y="55%"
-                width="180"
-                height="130"
-                rx="30"
-                fill={mapStyleKey === "satellite" ? "#0e2918" : "#dcfce7"}
-                opacity="0.85"
-              />
-
-              {/* Grid overlay */}
-              <rect width="100%" height="100%" fill={`url(#mapbox-grid-${mapStyleKey})`} />
-              <rect width="100%" height="100%" fill="url(#mapbox-roads)" />
-            </svg>
-
-            {/* City landmark badges */}
-            <div className="absolute top-14 left-1/4 pointer-events-none opacity-40">
-              <span
-                className={`text-[11px] font-bold tracking-wider uppercase ${
-                  mapStyleKey === "satellite" ? "text-slate-400" : "text-slate-500"
-                }`}
-              >
-                Central District
-              </span>
-            </div>
-            <div className="absolute bottom-24 right-1/3 pointer-events-none opacity-40">
-              <span
-                className={`text-[11px] font-bold tracking-wider uppercase ${
-                  mapStyleKey === "satellite" ? "text-slate-400" : "text-slate-500"
-                }`}
-              >
-                Bayfront & Promenade
-              </span>
-            </div>
-          </div>
-
-          {/* Fallback Plotted Markers */}
-          <div className="absolute inset-0 pointer-events-none">
-            {mapContainerRef.current &&
-              mappedProperties.map((property) => {
-                const width = mapContainerRef.current?.clientWidth || 800;
-                const height = mapContainerRef.current?.clientHeight || 600;
-                const { x, y } = projectCoords(property.lat, property.lng, width, height);
-
-                // Filter out-of-bounds markers
-                if (x < -100 || x > width + 100 || y < -100 || y > height + 100) {
-                  return null;
-                }
-
-                const isHovered = hoveredPropertyId === property.id;
-                const isSelected =
-                  selectedPropertyId === property.id || activeProperty?.id === property.id;
-                const isHighlighted = isHovered || isSelected;
-                const isViewed = isPropertyViewed(property.id);
-
-                return (
-                  <div
-                    key={property.id}
-                    className="absolute pointer-events-auto transition-transform duration-200"
-                    style={{
-                      left: `${x}px`,
-                      top: `${y}px`,
-                      transform: "translate(-50%, -100%)",
-                      zIndex: isHighlighted ? 50 : 10,
-                    }}
-                    onMouseEnter={() => onHoverPropertyRef.current?.(property.id)}
-                    onMouseLeave={() => onHoverPropertyRef.current?.(null)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePropertyClick(property);
-                    }}
-                  >
-                    {/* Custom HTML Price Pill Marker */}
-                    <button
-                      type="button"
-                      className={`relative flex items-center justify-center font-bold px-3 py-1.5 rounded-full text-xs transition-all duration-200 cursor-pointer ${
-                        isHighlighted
-                          ? "bg-rose-600 text-white shadow-xl scale-110 ring-2 ring-white"
-                          : isViewed
-                          ? "bg-slate-200 text-slate-600 border border-slate-300 shadow-sm hover:scale-105 hover:bg-slate-300"
-                          : mapStyleKey === "satellite"
-                          ? "bg-slate-900/90 text-white border border-slate-700 shadow-md hover:scale-105 hover:bg-slate-800 backdrop-blur-sm"
-                          : "bg-white text-slate-900 border border-slate-300/90 shadow-md hover:scale-105 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span>{property.pricePill}</span>
-
-                      {/* Marker pin pointer dot */}
-                      <div
-                        className={`absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 transition-colors ${
-                          isHighlighted
-                            ? "bg-rose-600"
-                            : isViewed
-                            ? "bg-slate-200 border-r border-b border-slate-300"
-                            : mapStyleKey === "satellite"
-                            ? "bg-slate-900"
-                            : "bg-white border-r border-b border-slate-300"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
-      )}
-
-      {/* 2. Floating Toggle Switch: "Search as I move the map" (Top Center) */}
+      {/* 1. Floating Toggle Switch: "Search as I move the map" (Top Center) */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
         <div className="bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-lg border border-slate-200/90 flex items-center gap-2 transition-all hover:shadow-xl">
           <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -972,35 +685,45 @@ export function MapboxView({
         </div>
       </div>
 
-      {/* 3. Top-Left Badge: Graceful Fallback Warning / Mapbox Info */}
-      {!isValidToken && (
-        <div className="absolute top-4 left-4 z-30 max-w-[240px] sm:max-w-xs pointer-events-auto">
-          <div className="inline-flex items-center gap-2 bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-medium px-3.5 py-2 rounded-xl shadow-lg border border-white/10">
-            <Info className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>
-              Tip: Add NEXT_PUBLIC_MAPBOX_TOKEN in .env.local to activate official Mapbox
-              vector tiles (Free 50k loads at mapbox.com)
-            </span>
-          </div>
+      {/* 2. Top-Left Badge: MapLibre Engine Info Badge */}
+      <div className="absolute top-4 left-4 z-30 max-w-[260px] pointer-events-auto hidden sm:block">
+        <div className="inline-flex items-center gap-2 bg-slate-900/85 backdrop-blur-md text-white text-[11px] font-medium px-3.5 py-2 rounded-xl shadow-lg border border-white/10">
+          <Info className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="leading-tight">
+            MapLibre GL • OpenFreeMap & Esri
+          </span>
         </div>
-      )}
+      </div>
 
-      {/* 4. Top-Right Map Controls: Style Switcher, 3D Tilt, Reset North, Zoom In/Out, Fit All */}
+      {/* 3. Top-Right Map Controls: Style Switcher, 3D Tilt, Reset North, Zoom In/Out, Fit All */}
       <div className="absolute top-4 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
-        {/* Style Switcher */}
+        {/* Style Switcher: Positron (Default), Liberty, Satellite */}
         <div className="bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 p-1 flex items-center gap-0.5">
           <button
             type="button"
-            onClick={() => handleMapStyleChange("light")}
+            onClick={() => handleMapStyleChange("positron")}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "light"
+              mapStyleKey === "positron"
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Luxury Light Map View"
+            title="Positron (Clean Minimalist View)"
           >
             <Layers className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Light</span>
+            <span className="hidden sm:inline">Positron</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMapStyleChange("liberty")}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              mapStyleKey === "liberty"
+                ? "bg-slate-900 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+            title="Liberty (Detailed Street View)"
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Liberty</span>
           </button>
           <button
             type="button"
@@ -1010,23 +733,10 @@ export function MapboxView({
                 ? "bg-slate-900 text-white shadow-xs"
                 : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
             }`}
-            title="Satellite Streets View"
+            title="Esri Satellite (High-Res Aerial View)"
           >
             <Eye className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Satellite</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleMapStyleChange("streets")}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-              mapStyleKey === "streets"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="Streets View"
-          >
-            <Navigation className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Streets</span>
           </button>
         </div>
 
@@ -1042,6 +752,7 @@ export function MapboxView({
             }`}
             title={is3D ? "Switch to 2D Top-Down View" : "Switch to 3D Extruded Buildings View"}
           >
+            <Mountain className="w-3.5 h-3.5" />
             <span className="text-[10px] uppercase tracking-wider font-extrabold">3D</span>
             <Compass className={`w-3.5 h-3.5 transition-transform ${is3D ? "rotate-45" : ""}`} />
           </button>
@@ -1085,7 +796,7 @@ export function MapboxView({
         </div>
       </div>
 
-      {/* 5. Interactive Photo Carousel Popup Preview Card */}
+      {/* 4. Interactive Photo Carousel Popup Preview Card */}
       {activeProperty && (
         <div
           className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[92%] sm:w-84 md:w-92 max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-40 animate-in fade-in slide-in-from-bottom-3 duration-200"
@@ -1096,7 +807,7 @@ export function MapboxView({
             type="button"
             onClick={() => {
               setActiveProperty(null);
-              onSelectProperty?.(null);
+              onSelectPropertyRef.current?.(null);
             }}
             className="absolute top-2.5 right-2.5 z-30 p-1.5 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md transition-colors cursor-pointer"
             title="Close preview"

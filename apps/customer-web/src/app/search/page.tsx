@@ -19,7 +19,7 @@ import {
   Sparkles,
   Search,
 } from "lucide-react";
-import { searchProperties, Property, useAuth, toggleSavedProperty } from "@repo/api";
+import { searchProperties, Property, useAuth, toggleSavedProperty, getSavedProperties } from "@repo/api";
 import SearchFiltersBar, {
   SearchFiltersState,
 } from "../../components/SearchFiltersBar";
@@ -234,8 +234,60 @@ function SearchContent() {
   const [hoveredPropertyId, setHoveredPropertyId] = useState<string | null>(null);
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
 
-  // Track "Already Viewed" listings
+  // Track "Already Viewed" listings (persisted across sessions/pages)
   const [viewedPropertyIds, setViewedPropertyIds] = useState<Set<string>>(new Set());
+
+  // Track user saved/favorited properties
+  const [savedPropertyIds, setSavedPropertyIds] = useState<string[]>([]);
+
+  // Load viewed property IDs from sessionStorage on client
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("agy_viewed_property_ids");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setViewedPropertyIds(new Set(parsed));
+        }
+      }
+    } catch {
+      // Ignore sessionStorage availability errors
+    }
+  }, []);
+
+  // Helper to mark a property as viewed and store it
+  const markPropertyAsViewed = useCallback((propertyId: string) => {
+    setViewedPropertyIds((prev) => {
+      if (prev.has(propertyId)) return prev;
+      const updated = new Set(prev).add(propertyId);
+      try {
+        sessionStorage.setItem("agy_viewed_property_ids", JSON.stringify(Array.from(updated)));
+      } catch {
+        // Ignore quota errors
+      }
+      return updated;
+    });
+  }, []);
+
+  // Fetch saved property IDs for the authenticated user
+  useEffect(() => {
+    if (session?.user?.id) {
+      getSavedProperties(session.user.id)
+        .then((savedProps) => {
+          if (Array.isArray(savedProps)) {
+            const ids = savedProps
+              .map((p: any) => p?.id)
+              .filter((id): id is string => typeof id === "string" && Boolean(id));
+            setSavedPropertyIds(ids);
+          }
+        })
+        .catch((err) => {
+          console.error("Error loading saved properties for user:", err);
+        });
+    } else {
+      setSavedPropertyIds([]);
+    }
+  }, [session?.user?.id]);
 
   // Mobile View Mode Switcher: "list" | "map"
   const [mobileView, setMobileView] = useState<"list" | "map">("list");
@@ -279,11 +331,11 @@ function SearchContent() {
     (property: MapProperty | null) => {
       setSelectedPropertyId(property?.id || null);
       if (property?.id) {
-        setViewedPropertyIds((prev) => new Set(prev).add(property.id));
+        markPropertyAsViewed(property.id);
         scrollCardIntoView(property.id);
       }
     },
-    [scrollCardIntoView]
+    [scrollCardIntoView, markPropertyAsViewed]
   );
 
   // Handle Save / Favorite toggle from map popup preview
@@ -293,8 +345,19 @@ function SearchContent() {
         router.push("/login");
         return;
       }
+      // Optimistic update for immediate visual feedback
+      setSavedPropertyIds((prev) =>
+        prev.includes(propertyId) ? prev.filter((id) => id !== propertyId) : [...prev, propertyId]
+      );
       try {
-        await toggleSavedProperty(session.user.id, propertyId);
+        const result = await toggleSavedProperty(session.user.id, propertyId);
+        if (result && typeof result.isSaved === "boolean") {
+          setSavedPropertyIds((prev) =>
+            result.isSaved
+              ? Array.from(new Set([...prev, propertyId]))
+              : prev.filter((id) => id !== propertyId)
+          );
+        }
       } catch (err) {
         console.error("Error toggling saved property from map preview:", err);
       }
@@ -554,7 +617,7 @@ function SearchContent() {
                     onMouseLeave={() => setHoveredPropertyId(null)}
                     onClick={() => {
                       setSelectedPropertyId(property.id);
-                      setViewedPropertyIds((prev) => new Set(prev).add(property.id));
+                      markPropertyAsViewed(property.id);
                     }}
                     className={`group relative flex flex-col bg-white rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden ${
                       isHovered || isSelected
@@ -595,6 +658,7 @@ function SearchContent() {
                     {/* Property Card Content */}
                     <Link
                       href={`/property/${property.id}`}
+                      onClick={() => markPropertyAsViewed(property.id)}
                       className="p-4 flex-1 flex flex-col justify-between"
                     >
                       <div>
@@ -676,6 +740,7 @@ function SearchContent() {
             selectedPropertyId={selectedPropertyId}
             hoveredPropertyId={hoveredPropertyId}
             viewedPropertyIds={viewedPropertyIds}
+            savedPropertyIds={savedPropertyIds}
             onSelectProperty={handleMarkerSelect}
             onHoverProperty={handleMarkerHover}
             onBoundsChange={handleBoundsChange}

@@ -16,7 +16,15 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, PROVIDER_GOOGLE, PROVIDER_DEFAULT, MapType, Region } from 'react-native-maps';
+import MapView, {
+  Marker,
+  UrlTile,
+  PROVIDER_GOOGLE,
+  PROVIDER_DEFAULT,
+  MapType,
+  Region,
+  MapStyleElement,
+} from 'react-native-maps';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -164,6 +172,95 @@ const INITIAL_REGION = {
   longitudeDelta: 0.08,
 };
 
+const MINIMALIST_MAP_STYLE: MapStyleElement[] = [
+  {
+    elementType: 'geometry',
+    stylers: [{ color: '#f5f5f5' }],
+  },
+  {
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#616161' }],
+  },
+  {
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#f5f5f5' }],
+  },
+  {
+    featureType: 'administrative.land_parcel',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#bdbdbd' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'geometry',
+    stylers: [{ color: '#eeeeee' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#757575' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [{ color: '#e5e5e5' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#9e9e9e' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#ffffff' }],
+  },
+  {
+    featureType: 'road.arterial',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#757575' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry',
+    stylers: [{ color: '#dadada' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#616161' }],
+  },
+  {
+    featureType: 'road.local',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#9e9e9e' }],
+  },
+  {
+    featureType: 'transit.line',
+    elementType: 'geometry',
+    stylers: [{ color: '#e5e5e5' }],
+  },
+  {
+    featureType: 'transit.station',
+    elementType: 'geometry',
+    stylers: [{ color: '#eeeeee' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#c9c9c9' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#9e9e9e' }],
+  },
+];
+
 function formatPricePill(price: number, isRent: boolean = false): string {
   if (isRent) {
     if (price >= 1000) {
@@ -196,6 +293,27 @@ export default function ExploreScreen() {
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [viewedPropertyIds, setViewedPropertyIds] = useState<Set<string>>(new Set());
   const [mapType, setMapType] = useState<MapType>('standard');
+  const [positronEnabled, setPositronEnabled] = useState(true);
+  const [tileOffline, setTileOffline] = useState(false);
+
+  const checkTileConnectivity = useCallback(async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch('https://tiles.openfreemap.org/styles/positron', {
+        method: 'HEAD',
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      setTileOffline(!res.ok);
+    } catch {
+      setTileOffline(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkTileConnectivity();
+  }, [checkTileConnectivity]);
 
   const mapRef = useRef<MapView | null>(null);
   const flatListRef = useRef<FlatList | null>(null);
@@ -368,6 +486,7 @@ export default function ExploreScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
+    checkTileConnectivity();
     loadProperties(activeFilterId, searchQuery, mapBoundsRef.current);
   };
 
@@ -608,18 +727,32 @@ export default function ExploreScreen() {
         translucent
       />
 
-      {/* Full Screen Google Map */}
+      {/* Full Screen Google Map with Positron / Minimalist Styling */}
       <MapView
         ref={mapRef}
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
         style={styles.map}
         initialRegion={INITIAL_REGION}
         mapType={mapType}
+        customMapStyle={mapType === 'standard' ? MINIMALIST_MAP_STYLE : undefined}
         showsUserLocation
         showsMyLocationButton={false}
         showsCompass={false}
         onRegionChangeComplete={handleRegionChangeComplete}
       >
+        {/* OpenFreeMap Positron tile overlay with graceful fallback to native map if offline */}
+        {mapType === 'standard' && positronEnabled && !tileOffline && (
+          <UrlTile
+            urlTemplate="https://tiles.openfreemap.org/styles/positron/{z}/{x}/{y}.png"
+            maximumZ={19}
+            maximumNativeZ={19}
+            minimumZ={0}
+            zIndex={1}
+            flipY={false}
+            shouldReplaceMapContent={false}
+          />
+        )}
+
         {displayedProperties.map((property) => {
           if (!property.latitude || !property.longitude) return null;
           const isSelected = selectedPropertyId === property.id;
@@ -729,11 +862,35 @@ export default function ExploreScreen() {
             }}
             contentContainerStyle={styles.filterList}
           />
+
+          {/* Offline notice indicator */}
+          {tileOffline && mapType === 'standard' && (
+            <View style={styles.offlineNotice}>
+              <Ionicons name="cloud-offline-outline" size={12} color="#64748b" style={{ marginRight: 4 }} />
+              <Text style={styles.offlineNoticeText}>Offline: Using native minimalist map</Text>
+            </View>
+          )}
         </View>
       </SafeAreaView>
 
       {/* Map Control Floating Action Buttons */}
       <View style={styles.mapControls}>
+        {/* Positron Tile Overlay Toggle */}
+        <TouchableOpacity
+          style={[
+            styles.mapControlButton,
+            positronEnabled && !tileOffline && styles.mapControlButtonActive,
+          ]}
+          onPress={() => setPositronEnabled((prev) => !prev)}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name="layers-outline"
+            size={20}
+            color={positronEnabled && !tileOffline ? '#ffffff' : '#0f172a'}
+          />
+        </TouchableOpacity>
+
         {/* Satellite Toggle */}
         <TouchableOpacity
           style={[styles.mapControlButton, mapType === 'satellite' && styles.mapControlButtonActive]}
@@ -904,6 +1061,18 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: '#ffffff',
+  },
+  offlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    paddingBottom: 2,
+  },
+  offlineNoticeText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
   },
 
   // Map Controls
