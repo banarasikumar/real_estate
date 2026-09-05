@@ -10,7 +10,8 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "db:push": "node scripts/db-push.mjs"
+    "db:push": "node scripts/db-push.mjs",
+    "test:e2e": "node scripts/verify-e2e-publishing.mjs"
   },
   "devDependencies": {
     "prettier": "^3.0.0",

@@ -3,16 +3,18 @@ import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface MessageStatusTicksProps {
-  status?: 'sending' | 'sent' | 'read' | 'failed';
+  status?: 'sending' | 'sent' | 'delivered' | 'failed';
+  deliveredAt?: string | null;
   isRead?: boolean;
   onRetry?: () => void;
 }
 
 export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
   status,
-  isRead,
+  deliveredAt,
   onRetry,
 }) => {
+  // If failed: red alert circle with TouchableOpacity calling onRetry
   if (status === 'failed') {
     return (
       <TouchableOpacity
@@ -27,21 +29,28 @@ export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
     );
   }
 
+  // If sending: Clock icon
   if (status === 'sending') {
     return (
       <View style={styles.container} testID="message-status-sending">
-        <Ionicons name="checkmark" size={14} color="#94a3b8" />
+        <Ionicons name="time-outline" size={13} color="#94a3b8" />
       </View>
     );
   }
 
-  const isDoubleBlue = isRead === true || status === 'read';
-  const tickColor = isDoubleBlue ? '#0284c7' : '#94a3b8';
+  // If delivered: Double Gray Ticks
+  if (deliveredAt || status === 'delivered') {
+    return (
+      <View style={styles.container} testID="message-status-delivered">
+        <Ionicons name="checkmark-done" size={15} color="#94a3b8" />
+      </View>
+    );
+  }
 
+  // Else (status === 'sent' or default): Single Gray Tick
   return (
-    <View style={styles.container} testID={isDoubleBlue ? 'message-status-read' : 'message-status-sent'}>
-      <Ionicons name="checkmark" size={14} color={tickColor} />
-      <Ionicons name="checkmark" size={14} color={tickColor} style={styles.overlappingTick} />
+    <View style={styles.container} testID="message-status-sent">
+      <Ionicons name="checkmark" size={14} color="#94a3b8" />
     </View>
   );
 };
@@ -53,8 +62,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 4,
-  },
-  overlappingTick: {
-    marginLeft: -8,
   },
 });

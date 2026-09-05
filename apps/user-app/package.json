@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "private": true,
   "scripts": {
+    "dev": "expo start --port 8081",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

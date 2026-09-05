@@ -25,6 +25,7 @@ import {
   subscribeToConversationMessages,
   subscribeToUserConversations,
   markConversationMessagesAsRead,
+  markMessagesAsDelivered,
   getConversationUnreadCounts,
   Conversation,
   ChatMessage,
@@ -100,7 +101,8 @@ export default function MessagesScreen() {
     let isMounted = true;
     setLoadingMessages(true);
 
-    // On selecting thread, immediately mark conversation messages as read
+    // On selecting thread, immediately mark conversation messages as delivered and read
+    markMessagesAsDelivered(selectedThread.id, user.id).catch(console.error);
     markConversationMessagesAsRead(selectedThread.id, user.id)
       .then(() => {
         if (isMounted) {
@@ -117,7 +119,7 @@ export default function MessagesScreen() {
           setMessages(
             unique.map((m) => ({
               ...m,
-              status: m.status || (m.is_read ? 'read' : 'sent'),
+              status: m.status || (m.delivered_at ? 'delivered' : 'sent'),
             }))
           );
           setLoadingMessages(false);
@@ -137,8 +139,9 @@ export default function MessagesScreen() {
       // onMessage: appends new incoming message
       (newMsg) => {
         if (isMounted) {
-          // If counterpart sent this while viewing thread, mark as read immediately
+          // If counterpart sent this while viewing thread, mark as delivered and read immediately
           if (newMsg.sender_id !== user.id) {
+            markMessagesAsDelivered(selectedThread.id, user.id).catch(console.error);
             markConversationMessagesAsRead(selectedThread.id, user.id)
               .then(() => {
                 setUnreadCounts((prev) => ({ ...prev, [selectedThread.id]: 0 }));
@@ -161,12 +164,23 @@ export default function MessagesScreen() {
               const updated = [...prev];
               updated[optIdx] = {
                 ...newMsg,
-                status: newMsg.is_read ? 'read' : 'sent',
+                status: newMsg.delivered_at ? 'delivered' : 'sent',
               };
               return updated;
             }
 
-            return [...prev, { ...newMsg, status: newMsg.is_read ? 'read' : 'sent' }];
+            return [
+              ...prev,
+              {
+                ...newMsg,
+                status:
+                  newMsg.sender_id === user.id
+                    ? newMsg.delivered_at
+                      ? 'delivered'
+                      : 'sent'
+                    : undefined,
+              },
+            ];
           });
 
           setTimeout(() => {
@@ -174,7 +188,7 @@ export default function MessagesScreen() {
           }, 50);
         }
       },
-      // onMessageUpdate: updates message read status so ticks turn sky blue live when owner reads
+      // onMessageUpdate: updates message when delivered_at arrives, turning single tick to double gray tick in real time
       (updatedMsg) => {
         if (isMounted) {
           setMessages((prev) =>
@@ -183,7 +197,9 @@ export default function MessagesScreen() {
                 ? {
                     ...m,
                     ...updatedMsg,
-                    status: updatedMsg.is_read ? 'read' : (updatedMsg.status || m.status),
+                    status: updatedMsg.delivered_at
+                      ? ('delivered' as const)
+                      : (updatedMsg.status || m.status || 'sent'),
                   }
                 : m
             )
@@ -209,6 +225,7 @@ export default function MessagesScreen() {
 
     if (user?.id) {
       try {
+        markMessagesAsDelivered(thread.id, user.id).catch(console.error);
         await markConversationMessagesAsRead(thread.id, user.id);
         setUnreadCounts((prev) => ({ ...prev, [thread.id]: 0 }));
         refreshCounts();
@@ -253,7 +270,7 @@ export default function MessagesScreen() {
           }
           return prev.map((m) =>
             m.id === tempId
-              ? { ...realMsg, status: realMsg.is_read ? 'read' : 'sent' }
+              ? { ...realMsg, status: realMsg.delivered_at ? 'delivered' : 'sent' }
               : m
           );
         });
@@ -301,7 +318,7 @@ export default function MessagesScreen() {
           }
           return prev.map((m) =>
             m.id === failedMsg.id
-              ? { ...realMsg, status: realMsg.is_read ? 'read' : 'sent' }
+              ? { ...realMsg, status: realMsg.delivered_at ? 'delivered' : 'sent' }
               : m
           );
         });
@@ -638,7 +655,7 @@ export default function MessagesScreen() {
                               <View style={styles.ticksWrapper}>
                                 <MessageStatusTicks
                                   status={msg.status}
-                                  isRead={msg.is_read}
+                                  deliveredAt={msg.delivered_at}
                                   onRetry={() => resendMessage(msg)}
                                 />
                               </View>

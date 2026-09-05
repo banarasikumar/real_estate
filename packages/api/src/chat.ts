@@ -277,6 +277,40 @@ export const subscribeToUserConversations = (
 };
 
 /**
+ * Marks undelivered messages in a conversation as delivered (sent by other users).
+ */
+export const markMessagesAsDelivered = async (
+  conversationId: string,
+  recipientUserId: string
+): Promise<{ success: boolean; count?: number; error?: any }> => {
+  if (!conversationId || !recipientUserId) {
+    return { success: false, error: 'Missing required parameters' };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .update({
+        delivered_at: new Date().toISOString(),
+      })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', recipientUserId)
+      .is('delivered_at', null)
+      .select('id');
+
+    if (error) {
+      console.error('Error marking messages as delivered:', error);
+      return { success: false, error };
+    }
+
+    return { success: true, count: data ? data.length : 0 };
+  } catch (err: any) {
+    console.error('Unexpected error in markMessagesAsDelivered:', err);
+    return { success: false, error: err };
+  }
+};
+
+/**
  * Marks unread messages in a conversation as read (sent by other users).
  */
 export const markConversationMessagesAsRead = async (

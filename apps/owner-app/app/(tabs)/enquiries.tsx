@@ -21,6 +21,7 @@ import {
   subscribeToConversationMessages,
   subscribeToUserConversations,
   markConversationMessagesAsRead,
+  markMessagesAsDelivered,
   markEnquiryAsRead,
   Conversation,
   ChatMessage,
@@ -76,8 +77,9 @@ export default function EnquiriesScreen() {
       return;
     }
 
-    // Immediately mark conversation messages and enquiry as read
+    // Immediately mark conversation messages as delivered & read, and enquiry as read
     if (session?.user?.id) {
+      markMessagesAsDelivered(selectedConv.id, session.user.id).catch(console.error);
       markConversationMessagesAsRead(selectedConv.id, session.user.id)
         .then(() => refreshCounts())
         .catch((err) => console.error('Error marking messages as read:', err));
@@ -94,7 +96,7 @@ export default function EnquiriesScreen() {
         if (isMounted) {
           const mapped: ChatMessage[] = (data || []).map((m) => ({
             ...m,
-            status: m.is_read ? ('read' as const) : ('sent' as const),
+            status: m.delivered_at ? ('delivered' as const) : ('sent' as const),
           }));
           const unique = Array.from(new Map(mapped.map((m) => [m.id, m])).values());
           setMessages(unique);
@@ -128,7 +130,10 @@ export default function EnquiriesScreen() {
             );
             if (optIdx !== -1) {
               const updated = [...prev];
-              updated[optIdx] = { ...newMsg, status: 'sent' };
+              updated[optIdx] = {
+                ...newMsg,
+                status: newMsg.delivered_at ? 'delivered' : 'sent',
+              };
               return updated;
             }
 
@@ -136,13 +141,19 @@ export default function EnquiriesScreen() {
               ...prev,
               {
                 ...newMsg,
-                status: newMsg.sender_id === session?.user?.id ? 'sent' : undefined,
+                status:
+                  newMsg.sender_id === session?.user?.id
+                    ? newMsg.delivered_at
+                      ? 'delivered'
+                      : 'sent'
+                    : undefined,
               },
             ];
           });
 
-          // If incoming message from counterpart while modal is open, mark as read
+          // If incoming message from counterpart while modal is open, mark as delivered and read
           if (session?.user?.id && newMsg.sender_id !== session.user.id) {
+            markMessagesAsDelivered(selectedConv.id, session.user.id).catch(console.error);
             markConversationMessagesAsRead(selectedConv.id, session.user.id)
               .then(() => refreshCounts())
               .catch(console.error);
@@ -154,7 +165,7 @@ export default function EnquiriesScreen() {
         }
       },
       (updatedMsg) => {
-        // onMessageUpdate: when updated message arrives (e.g. is_read = true), ticks turn sky blue
+        // onMessageUpdate: if updated message has delivered_at, update message in state to display double gray ticks
         if (isMounted) {
           setMessages((prev) =>
             prev.map((m) => {
@@ -162,7 +173,7 @@ export default function EnquiriesScreen() {
                 return {
                   ...m,
                   ...updatedMsg,
-                  status: updatedMsg.is_read ? ('read' as const) : m.status || ('sent' as const),
+                  status: updatedMsg.delivered_at ? ('delivered' as const) : m.status || ('sent' as const),
                 };
               }
               return m;
@@ -189,6 +200,7 @@ export default function EnquiriesScreen() {
     setChatModalVisible(true);
 
     if (session?.user?.id) {
+      markMessagesAsDelivered(conv.id, session.user.id).catch(console.error);
       markConversationMessagesAsRead(conv.id, session.user.id)
         .then(() => refreshCounts())
         .catch((err) => console.error('Error marking messages as read on open:', err));
@@ -440,7 +452,7 @@ export default function EnquiriesScreen() {
                           {isOwner && (
                             <MessageStatusTicks
                               status={msg.status}
-                              isRead={msg.is_read}
+                              deliveredAt={msg.delivered_at}
                               onRetry={() => resendMessage(msg)}
                             />
                           )}

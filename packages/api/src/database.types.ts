@@ -77,7 +77,8 @@ export interface ChatMessage {
   text: string;
   is_read?: boolean;
   read_at?: string | null;
-  status?: 'sending' | 'sent' | 'read' | 'failed';
+  delivered_at?: string | null;
+  status?: 'sending' | 'sent' | 'delivered' | 'failed';
   created_at: string;
 }
 
