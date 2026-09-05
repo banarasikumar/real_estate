@@ -166,6 +166,7 @@ export const SATELLITE_STYLE: any = {
       ],
       tileSize: 256,
       attribution: "Tiles © Esri",
+      maxzoom: 23,
     },
   },
   layers: [
@@ -174,7 +175,7 @@ export const SATELLITE_STYLE: any = {
       type: "raster",
       source: "esri-satellite",
       minzoom: 0,
-      maxzoom: 19,
+      maxzoom: 23,
     },
   ],
 };
@@ -208,14 +209,14 @@ export const LIGHT_CANVAS_STYLE: any = {
       type: "raster",
       source: "esri-light-gray-base",
       minzoom: 0,
-      maxzoom: 22,
+      maxzoom: 23,
     },
     {
       id: "esri-light-gray-ref-layer",
       type: "raster",
       source: "esri-light-gray-ref",
       minzoom: 0,
-      maxzoom: 22,
+      maxzoom: 23,
       paint: {
         "raster-opacity": 0.85,
       },
@@ -588,7 +589,7 @@ export function MapboxView({
       center: initialCenter,
       zoom: defaultZoom,
       minZoom: 3,
-      maxZoom: mapStyleKey === "satellite" ? 18.5 : 16.5,
+      maxZoom: 23,
       pitch: defaultPitch,
       attributionControl: false,
     });
@@ -672,7 +673,6 @@ export function MapboxView({
     currentStyleRef.current = key;
     const map = mapInstanceRef.current;
     if (map) {
-      map.setMaxZoom(key === "satellite" ? 18.5 : 16.5);
       map.setStyle(MAP_STYLES[key] as any);
       setTimeout(() => mapInstanceRef.current?.resize(), 100);
     }
