@@ -1,57 +1,43 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import Link from "next/link";
-import * as maplibregl from "maplibre-gl";
-import "maplibre-gl/dist/maplibre-gl.css";
-
-// Configure MapLibre GL JS v6 Web Worker for Next.js client environment
-if (typeof window !== "undefined") {
-  try {
-    maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
-  } catch (err) {
-    console.warn("[MapLibre Worker URL]:", err);
-  }
-}
-import {
-  Plus,
-  Minus,
-  Maximize2,
-  X,
-  Bed,
-  Bath,
-  Square,
-  ShieldCheck,
-  Heart,
-  Compass,
-  ChevronLeft,
-  ChevronRight,
-  MapPin,
-  Info,
-} from "lucide-react";
-import SafeImage from "./SafeImage";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { MapPin } from "lucide-react";
 import { formatPricePill, formatPriceLabel } from "../utils/formatters";
+import {
+  MAPBOX_TOKEN,
+  MAPBOX_STYLES,
+  MAP_STYLES,
+  MapStyleKey,
+  MapboxStyleKey,
+  DEFAULT_CAMERA_CONFIG,
+  PITCH_3D,
+  configureStandardStyle,
+  logMissingTokenWarning,
+  OSM_STYLE,
+  SATELLITE_STYLE,
+  LIGHT_CANVAS_STYLE,
+} from "./map/mapboxConfig";
+import { MapControlsOverlay } from "./map/MapControlsOverlay";
+import { MapPropertyPopup, MapProperty } from "./map/MapPropertyPopup";
 
-export { formatPricePill, formatPriceLabel };
-
-export interface MapProperty {
-  id: string;
-  title: string;
-  price: number | string;
-  address?: string | null;
-  bedrooms?: number | null;
-  bathrooms?: number | null;
-  area_sqft?: number | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  prop_type?: string;
-  list_type?: string;
-  status?: string;
-  isVerified?: boolean;
-  property_media?: Array<{ url: string }>;
-  images?: string[];
-  [key: string]: any;
+// Safe client-side setup for Mapbox Access Token
+if (typeof window !== "undefined") {
+  mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || MAPBOX_TOKEN || "";
 }
+
+// Re-export formatters and types for backwards compatibility
+export {
+  formatPricePill,
+  formatPriceLabel,
+  MAP_STYLES,
+  MAPBOX_STYLES,
+  OSM_STYLE,
+  SATELLITE_STYLE,
+  LIGHT_CANVAS_STYLE,
+};
+export type { MapStyleKey, MapboxStyleKey, MapProperty };
 
 export interface MapBounds {
   north: number;
@@ -133,114 +119,6 @@ export function getDeterministicCoords(
   };
 }
 
-// OpenStreetMap Classic Standard pure MapLibre style JSON (100% free forever)
-export const OSM_STYLE: any = {
-  version: 8,
-  sources: {
-    "osm-tiles": {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
-    },
-  },
-  layers: [
-    {
-      id: "osm-layer",
-      type: "raster",
-      source: "osm-tiles",
-      minzoom: 0,
-      maxzoom: 19,
-    },
-  ],
-};
-
-// High-Res Esri Satellite pure MapLibre style JSON (zero keys required)
-export const SATELLITE_STYLE: any = {
-  version: 8,
-  sources: {
-    "esri-satellite": {
-      type: "raster",
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      ],
-      tileSize: 256,
-      attribution: "Tiles © Esri",
-      maxzoom: 19,
-    },
-  },
-  layers: [
-    {
-      id: "esri-satellite-layer",
-      type: "raster",
-      source: "esri-satellite",
-      minzoom: 0,
-      maxzoom: 24,
-    },
-  ],
-};
-
-// Airbnb-Style Luxury Light Canvas Basemap (100% Free, Zero Keys, Uncluttered & High Contrast for Price Markers)
-export const LIGHT_CANVAS_STYLE: any = {
-  version: 8,
-  sources: {
-    "esri-light-gray-base": {
-      type: "raster",
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-      ],
-      tileSize: 256,
-      attribution: "Tiles © Esri",
-      maxzoom: 16,
-    },
-    "esri-light-gray-ref": {
-      type: "raster",
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
-      ],
-      tileSize: 256,
-      attribution: "Tiles © Esri",
-      maxzoom: 16,
-    },
-  },
-  layers: [
-    {
-      id: "esri-light-gray-base-layer",
-      type: "raster",
-      source: "esri-light-gray-base",
-      minzoom: 0,
-      maxzoom: 24,
-    },
-    {
-      id: "esri-light-gray-ref-layer",
-      type: "raster",
-      source: "esri-light-gray-ref",
-      minzoom: 0,
-      maxzoom: 24,
-      paint: {
-        "raster-opacity": 0.85,
-      },
-    },
-  ],
-};
-
-// 100% Free 2-Map System (Minimalist Streets + High-Res Satellite)
-export const MAP_STYLES = {
-  streets: LIGHT_CANVAS_STYLE,
-  satellite: SATELLITE_STYLE,
-  // Backwards compatibility aliases
-  osm: OSM_STYLE,
-  canvas: LIGHT_CANVAS_STYLE,
-  liberty: LIGHT_CANVAS_STYLE,
-  topo: LIGHT_CANVAS_STYLE,
-} as const;
-
-export type MapStyleKey = "streets" | "satellite";
-
-// Aliases for backwards compatibility
-export const MAPBOX_STYLES = MAP_STYLES;
-export type MapboxStyleKey = MapStyleKey;
-
 // Point-in-Polygon Ray-Casting Algorithm
 export function isPointInPolygon(
   point: [number, number], // [lng, lat]
@@ -277,11 +155,44 @@ export function MapboxView({
   pitch: defaultPitch = 0,
   className = "",
 }: MapboxViewProps) {
-  // Styles and camera state: Default to streets
+  // Token validation state
+  const [tokenConfigured, setTokenConfigured] = useState<boolean>(() => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || MAPBOX_TOKEN;
+    return Boolean(token && token.trim().length > 0);
+  });
+
+  // Diagnostics check on mount
+  useEffect(() => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || MAPBOX_TOKEN;
+    if (!token || token.trim().length === 0) {
+      logMissingTokenWarning();
+      setTokenConfigured(false);
+    } else {
+      if (typeof window !== "undefined") {
+        mapboxgl.accessToken = token;
+      }
+      setTokenConfigured(true);
+    }
+  }, []);
+
+  const handleRetryToken = useCallback(() => {
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || MAPBOX_TOKEN;
+    if (token && token.trim().length > 0) {
+      if (typeof window !== "undefined") {
+        mapboxgl.accessToken = token;
+      }
+      setTokenConfigured(true);
+    } else {
+      logMissingTokenWarning();
+    }
+  }, []);
+
+  // Styles and camera state: Default to streets (Mapbox Standard 3D)
   const [mapStyleKey, setMapStyleKey] = useState<MapStyleKey>("streets");
-  const [is3D, setIs3D] = useState(defaultPitch > 20);
+  const [is3D, setIs3D] = useState<boolean>(defaultPitch > 20);
+  const [bearing, setBearing] = useState<number>(0);
   const [activeProperty, setActiveProperty] = useState<MapProperty | null>(null);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [internalViewedIds, setInternalViewedIds] = useState<Set<string>>(new Set());
   const [toggledSavedIds, setToggledSavedIds] = useState<Record<string, boolean>>({});
 
@@ -310,7 +221,10 @@ export function MapboxView({
   const onDrawnPolygonChangeRef = useRef(onDrawnPolygonChange);
   onDrawnPolygonChangeRef.current = onDrawnPolygonChange;
 
-  // Check if a property is saved (respecting optimistic toggles and external props)
+  // Camera state recorded before starting freehand drawing
+  const preDrawCameraRef = useRef<{ pitch: number; bearing: number } | null>(null);
+
+  // Check if a property is saved
   const isPropertySaved = useCallback(
     (id: string) => {
       if (toggledSavedIds[id] !== undefined) {
@@ -331,9 +245,9 @@ export function MapboxView({
     onToggleSearchAsMapMoves?.(val);
   };
 
-  // DOM and MapLibre refs
+  // DOM and Mapbox refs
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<maplibregl.Map | null>(null);
+  const mapInstanceRef = useRef<mapboxgl.Map | null>(null);
   const currentStyleRef = useRef<MapStyleKey>(mapStyleKey);
   currentStyleRef.current = mapStyleKey;
 
@@ -341,7 +255,7 @@ export function MapboxView({
     Map<
       string,
       {
-        marker: maplibregl.Marker;
+        marker: mapboxgl.Marker;
         element: HTMLDivElement;
         pillBtn: HTMLButtonElement;
         pointerCaret: HTMLDivElement;
@@ -439,24 +353,12 @@ export function MapboxView({
     };
   }, [visibleProperties, mappedProperties, defaultCenter]);
 
-  // Sync active property from prop
-  useEffect(() => {
-    if (selectedPropertyId) {
-      const found = mappedProperties.find((p) => p.id === selectedPropertyId);
-      if (found) {
-        setActiveProperty(found);
-        setActiveImageIndex(0);
-        setInternalViewedIds((prev) => new Set(prev).add(selectedPropertyId));
-      }
-    }
-  }, [selectedPropertyId, mappedProperties]);
-
   // Auto-fit bounds on properties when first loaded into view
   const hasAutoCenteredRef = useRef(false);
   useEffect(() => {
     if (!hasAutoCenteredRef.current && mappedProperties.length > 0 && mapInstanceRef.current) {
       hasAutoCenteredRef.current = true;
-      const bounds = new maplibregl.LngLatBounds();
+      const bounds = new mapboxgl.LngLatBounds();
 
       const indiaProps = mappedProperties.filter(
         (p) => p.lat >= 8 && p.lat <= 36 && p.lng >= 68 && p.lng <= 92
@@ -502,9 +404,9 @@ export function MapboxView({
     }, 300);
   }, []);
 
-  // Sync boundary GeoJSON source and layers on MapLibre
+  // Sync boundary GeoJSON source and layers on Mapbox
   const syncBoundaryLayer = useCallback(
-    (map: maplibregl.Map, polygon: [number, number][] | null | undefined) => {
+    (map: mapboxgl.Map, polygon: [number, number][] | null | undefined) => {
       if (!map || !map.isStyleLoaded()) return;
 
       const sourceId = "drawn-boundary-source";
@@ -526,7 +428,7 @@ export function MapboxView({
               features: [],
             };
 
-      const existingSource = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+      const existingSource = map.getSource(sourceId) as mapboxgl.GeoJSONSource | undefined;
 
       if (!existingSource) {
         try {
@@ -560,7 +462,7 @@ export function MapboxView({
             });
           }
         } catch (err) {
-          console.warn("[MapLibre Boundary Layer]:", err);
+          console.warn("[Mapbox Boundary Layer]:", err);
         }
       } else {
         existingSource.setData(data);
@@ -577,24 +479,101 @@ export function MapboxView({
     }
   }, [activePolygon, syncBoundaryLayer]);
 
-  // Initialize MapLibre GL instance
+  // Context-Aware Property Fly-To / Pan-To
+  const flyToProperty = useCallback(
+    (lat: number, lng: number) => {
+      const map = mapInstanceRef.current;
+      if (!map) return;
+
+      const currentPitch = map.getPitch();
+      const is3DActive = is3D || currentPitch > 20;
+
+      if (is3DActive) {
+        map.flyTo({
+          center: [lng, lat],
+          zoom: 16.5,
+          pitch: 45,
+          duration: 900,
+        });
+      } else {
+        map.panTo([lng, lat], {
+          duration: 600,
+        });
+      }
+    },
+    [is3D]
+  );
+
+  // Property Selection Handler
+  const handlePropertyClick = useCallback(
+    (property: MapProperty) => {
+      setActiveProperty(property);
+      setActiveImageIndex(0);
+      setInternalViewedIds((prev) => new Set(prev).add(property.id));
+      onSelectPropertyRef.current?.(property);
+
+      const lat = property.lat;
+      const lng = property.lng;
+      if (lat && lng) {
+        flyToProperty(lat, lng);
+      }
+    },
+    [flyToProperty]
+  );
+
+  // Sync active property from prop and fly-to
   useEffect(() => {
-    if (!mapContainerRef.current) return;
+    if (selectedPropertyId) {
+      const found = mappedProperties.find((p) => p.id === selectedPropertyId);
+      if (found) {
+        setActiveProperty(found);
+        setActiveImageIndex(0);
+        setInternalViewedIds((prev) => new Set(prev).add(selectedPropertyId));
+        if (found.lat && found.lng) {
+          flyToProperty(found.lat, found.lng);
+        }
+      }
+    }
+  }, [selectedPropertyId, mappedProperties, flyToProperty]);
+
+  // Pan to hovered property when not actively selecting
+  useEffect(() => {
+    if (hoveredPropertyId && !selectedPropertyId) {
+      const target = mappedProperties.find((p) => p.id === hoveredPropertyId);
+      if (target && target.lat && target.lng && mapInstanceRef.current) {
+        mapInstanceRef.current.easeTo({
+          center: [target.lng, target.lat],
+          duration: 400,
+        });
+      }
+    }
+  }, [hoveredPropertyId, selectedPropertyId, mappedProperties]);
+
+  // Initialize Mapbox GL instance
+  useEffect(() => {
+    if (!tokenConfigured || !mapContainerRef.current) return;
 
     const initialCenter: [number, number] = [averageCenter.lng, averageCenter.lat];
 
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: MAP_STYLES[mapStyleKey] as any,
-      center: initialCenter,
-      zoom: defaultZoom,
-      minZoom: 3,
-      maxZoom: mapStyleKey === "satellite" ? 19 : 16,
-      pitch: defaultPitch,
-      attributionControl: false,
-    });
+    let map: mapboxgl.Map;
+    try {
+      map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: MAPBOX_STYLES[mapStyleKey] || "mapbox://styles/mapbox/standard",
+        center: initialCenter,
+        zoom: defaultZoom,
+        minZoom: DEFAULT_CAMERA_CONFIG.minZoom,
+        maxZoom: DEFAULT_CAMERA_CONFIG.maxZoom,
+        pitch: DEFAULT_CAMERA_CONFIG.pitch,
+        maxPitch: DEFAULT_CAMERA_CONFIG.maxPitch,
+        attributionControl: false,
+      });
+    } catch (err) {
+      console.warn("[Mapbox Initialization Exception]:", err);
+      return;
+    }
 
-    // 1. Observe container resize (handles flexbox dynamic layout calculations)
+    // Observe container resize
     const resizeObserver = new ResizeObserver(() => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.resize();
@@ -602,13 +581,13 @@ export function MapboxView({
     });
     resizeObserver.observe(mapContainerRef.current);
 
-    // 2. Multi-stage resize triggers ensuring zero 0x0 canvas blank states
+    // Multi-stage resize triggers ensuring zero blank canvas states
     requestAnimationFrame(() => map.resize());
     const t1 = setTimeout(() => map.resize(), 100);
     const t2 = setTimeout(() => map.resize(), 400);
     const t3 = setTimeout(() => map.resize(), 1000);
 
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-right");
 
     map.on("load", () => {
       map.resize();
@@ -616,12 +595,25 @@ export function MapboxView({
     });
 
     map.on("style.load", () => {
+      configureStandardStyle(map);
       map.resize();
       syncBoundaryLayer(map, activePolygonRef.current);
     });
 
     map.on("error", (e) => {
-      console.warn("[MapLibre GL Notice]:", e?.error?.message || e);
+      const errMsg = e?.error?.message || "";
+      const errStatus = (e?.error as any)?.status;
+      if (
+        errStatus === 401 ||
+        errStatus === 403 ||
+        errMsg.toLowerCase().includes("unauthorized") ||
+        errMsg.toLowerCase().includes("token")
+      ) {
+        logMissingTokenWarning();
+        setTokenConfigured(false);
+      } else {
+        console.warn("[Mapbox GL Notice]:", errMsg || e);
+      }
     });
 
     map.on("moveend", () => {
@@ -640,6 +632,10 @@ export function MapboxView({
 
     map.on("pitch", () => {
       setIs3D(map.getPitch() > 20);
+    });
+
+    map.on("rotate", () => {
+      setBearing(Math.round(map.getBearing()));
     });
 
     map.on("click", () => {
@@ -665,7 +661,7 @@ export function MapboxView({
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, []);
+  }, [tokenConfigured]);
 
   // Switch Map Style dynamically between Streets & Satellite
   const handleMapStyleChange = (key: MapStyleKey) => {
@@ -673,22 +669,32 @@ export function MapboxView({
     currentStyleRef.current = key;
     const map = mapInstanceRef.current;
     if (map) {
-      map.setMaxZoom(key === "satellite" ? 19 : 16);
-      map.setStyle(MAP_STYLES[key] as any);
+      map.setStyle(MAPBOX_STYLES[key] || "mapbox://styles/mapbox/standard");
       setTimeout(() => mapInstanceRef.current?.resize(), 100);
     }
   };
 
+  // 3D Perspective Toggle with smooth camera easing
+  const handleToggle3D = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.easeTo({
+      pitch: is3D ? 0 : PITCH_3D,
+      duration: 800,
+    });
+  }, [is3D]);
+
   // Reset Bearing / North
-  const handleResetNorth = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.easeTo({
+  const handleResetNorth = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.easeTo({
         bearing: 0,
         pitch: 0,
         duration: 400,
       });
     }
-  };
+  }, []);
 
   // Zoom controls
   const handleZoomIn = () => {
@@ -708,7 +714,7 @@ export function MapboxView({
     const listToFit = visibleProperties.length > 0 ? visibleProperties : mappedProperties;
     if (listToFit.length === 0 || !mapInstanceRef.current) return;
 
-    const bounds = new maplibregl.LngLatBounds();
+    const bounds = new mapboxgl.LngLatBounds();
     const indiaProps = listToFit.filter(
       (p) => p.lat >= 8 && p.lat <= 36 && p.lng >= 68 && p.lng <= 92
     );
@@ -725,40 +731,6 @@ export function MapboxView({
     });
   };
 
-  // Pan to hovered or selected property
-  useEffect(() => {
-    const targetId = hoveredPropertyId || selectedPropertyId;
-    if (targetId && mapInstanceRef.current) {
-      const target = mappedProperties.find((p) => p.id === targetId);
-      if (target) {
-        mapInstanceRef.current.easeTo({
-          center: [target.lng, target.lat],
-          duration: 600,
-        });
-      }
-    }
-  }, [hoveredPropertyId, selectedPropertyId, mappedProperties]);
-
-  // Property Selection Handler
-  const handlePropertyClick = useCallback(
-    (property: MapProperty) => {
-      setActiveProperty(property);
-      setActiveImageIndex(0);
-      setInternalViewedIds((prev) => new Set(prev).add(property.id));
-      onSelectPropertyRef.current?.(property);
-
-      const lat = property.lat;
-      const lng = property.lng;
-      if (lat && lng && mapInstanceRef.current) {
-        mapInstanceRef.current.easeTo({
-          center: [lng, lat],
-          duration: 500,
-        });
-      }
-    },
-    []
-  );
-
   // Favorite / Save toggle handler
   const handleToggleFavorite = (e: React.MouseEvent, propId: string) => {
     e.preventDefault();
@@ -773,35 +745,72 @@ export function MapboxView({
     onToggleSave?.(propId);
   };
 
-  // Freehand Drawing Event Handlers
-  const handleStartDraw = () => {
-    // Clear any existing boundary and re-arm lasso
-    setInternalPolygon(null);
-    onDrawnPolygonChangeRef.current?.(null);
-    screenPointsRef.current = [];
-    setScreenPoints([]);
-    setIsMouseDown(false);
-    isMouseDownRef.current = false;
-    setIsDrawingMode(true);
+  // Freehand Drawing Event Handlers with Smart Auto-Level
+  const handleStartDraw = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
 
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.dragPan.disable();
-      mapInstanceRef.current.doubleClickZoom.disable();
+    const currentPitch = map.getPitch();
+    const currentBearing = map.getBearing();
+    preDrawCameraRef.current = { pitch: currentPitch, bearing: currentBearing };
+
+    const activateOverlay = () => {
+      setInternalPolygon(null);
+      onDrawnPolygonChangeRef.current?.(null);
+      screenPointsRef.current = [];
+      setScreenPoints([]);
+      setIsMouseDown(false);
+      isMouseDownRef.current = false;
+      setIsDrawingMode(true);
+
+      map.dragPan.disable();
+      map.doubleClickZoom.disable();
+    };
+
+    // If camera is tilted or rotated, auto-level to pitch 0, bearing 0 smoothly first
+    if (currentPitch > 5 || Math.abs(currentBearing) > 2) {
+      map.easeTo({
+        pitch: 0,
+        bearing: 0,
+        duration: 350,
+      });
+      setTimeout(() => {
+        activateOverlay();
+      }, 360);
+    } else {
+      activateOverlay();
     }
-  };
+  }, []);
 
-  const handleCancelDraw = () => {
+  const restoreCameraAfterDraw = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (map && preDrawCameraRef.current) {
+      const { pitch: prevPitch, bearing: prevBearing } = preDrawCameraRef.current;
+      if (prevPitch > 5 || Math.abs(prevBearing) > 2) {
+        map.easeTo({
+          pitch: prevPitch,
+          bearing: prevBearing,
+          duration: 500,
+        });
+      }
+      preDrawCameraRef.current = null;
+    }
+  }, []);
+
+  const handleCancelDraw = useCallback(() => {
     setIsDrawingMode(false);
     setIsMouseDown(false);
     isMouseDownRef.current = false;
     screenPointsRef.current = [];
     setScreenPoints([]);
 
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.dragPan.enable();
-      mapInstanceRef.current.doubleClickZoom.enable();
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.dragPan.enable();
+      map.doubleClickZoom.enable();
     }
-  };
+    restoreCameraAfterDraw();
+  }, [restoreCameraAfterDraw]);
 
   const handleClearBoundary = () => {
     setInternalPolygon(null);
@@ -851,58 +860,59 @@ export function MapboxView({
 
     const last = pts[pts.length - 1];
     const distSq = (pt.x - last.x) ** 2 + (pt.y - last.y) ** 2;
-    // Append current point if distance from last point > 4px (16px^2)
     if (distSq > 16) {
       pts.push(pt);
       setScreenPoints([...pts]);
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
 
-    try {
-      (e.target as Element).releasePointerCapture(e.pointerId);
-    } catch {}
+      try {
+        (e.target as Element).releasePointerCapture(e.pointerId);
+      } catch {}
 
-    setIsMouseDown(false);
-    isMouseDownRef.current = false;
+      setIsMouseDown(false);
+      isMouseDownRef.current = false;
 
-    const map = mapInstanceRef.current;
-    const pts = screenPointsRef.current;
+      const map = mapInstanceRef.current;
+      const pts = screenPointsRef.current;
 
-    if (map && pts.length > 5) {
-      // Convert screen coordinates to [lng, lat]
-      const geoPoints: [number, number][] = pts.map((p) => {
-        const ll = map.unproject([p.x, p.y]);
-        return [ll.lng, ll.lat];
-      });
+      if (map && pts.length > 5) {
+        const geoPoints: [number, number][] = pts.map((p) => {
+          const ll = map.unproject([p.x, p.y]);
+          return [ll.lng, ll.lat];
+        });
 
-      // Connect last point to first point to close polygon
-      if (geoPoints.length > 0) {
-        const first = geoPoints[0];
-        const last = geoPoints[geoPoints.length - 1];
-        if (first[0] !== last[0] || first[1] !== last[1]) {
-          geoPoints.push([first[0], first[1]]);
+        if (geoPoints.length > 0) {
+          const first = geoPoints[0];
+          const last = geoPoints[geoPoints.length - 1];
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            geoPoints.push([first[0], first[1]]);
+          }
         }
+
+        setInternalPolygon(geoPoints);
+        onDrawnPolygonChangeRef.current?.(geoPoints);
       }
 
-      setInternalPolygon(geoPoints);
-      onDrawnPolygonChangeRef.current?.(geoPoints);
-    }
+      screenPointsRef.current = [];
+      setScreenPoints([]);
 
-    screenPointsRef.current = [];
-    setScreenPoints([]);
+      if (map) {
+        map.dragPan.enable();
+        map.doubleClickZoom.enable();
+      }
+      setIsDrawingMode(false);
+      restoreCameraAfterDraw();
+    },
+    [restoreCameraAfterDraw]
+  );
 
-    if (map) {
-      map.dragPan.enable();
-      map.doubleClickZoom.enable();
-    }
-    setIsDrawingMode(false);
-  };
-
-  // Update or Create Custom Airbnb-Style Price Pill Markers
+  // Update or Create Custom Airbnb-Style Price Pill Markers using Brand Rose (#e11d48)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -925,13 +935,13 @@ export function MapboxView({
         // Container element
         const el = document.createElement("div");
         el.className =
-          "maplibre-marker-container cursor-pointer select-none transition-transform duration-200";
+          "mapbox-marker-container cursor-pointer select-none transition-transform duration-200";
 
-        // Price Pill Button
+        // Price Pill Button with Brand Rose (#e11d48)
         const pillBtn = document.createElement("button");
         pillBtn.type = "button";
         pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-600 text-white";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-[#e11d48] text-white";
 
         const textSpan = document.createElement("span");
         textSpan.innerText = property.pricePill;
@@ -940,7 +950,7 @@ export function MapboxView({
         // Pointer caret beneath pill
         const pointerCaret = document.createElement("div");
         pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 transition-colors duration-200 bg-rose-600";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 transition-colors duration-200 bg-[#e11d48]";
         pillBtn.appendChild(pointerCaret);
 
         el.appendChild(pillBtn);
@@ -959,7 +969,7 @@ export function MapboxView({
           handlePropertyClick(property);
         });
 
-        const marker = new maplibregl.Marker({
+        const marker = new mapboxgl.Marker({
           element: el,
           anchor: "bottom",
         })
@@ -987,22 +997,22 @@ export function MapboxView({
         markerItem.pointerCaret.className =
           "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-700";
       } else if (isViewed) {
-        // Subtle soft rose-slate indicating user has already inspected this property
+        // Soft rose-slate indicating user has inspected this property
         markerItem.pillBtn.className =
           "relative inline-flex items-center justify-center font-bold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-50 text-rose-800 border border-rose-200 shadow-xs hover:scale-105 hover:bg-rose-100 hover:text-rose-900";
         markerItem.pointerCaret.className =
           "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-50 border-r border-b border-rose-200";
       } else if (mapStyleKey === "satellite") {
         markerItem.pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-600 text-white border border-rose-700 shadow-lg hover:scale-105 hover:bg-rose-700";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-[#e11d48] text-white border border-rose-700 shadow-lg hover:scale-105 hover:bg-rose-700";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-600";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#e11d48]";
       } else {
-        // Default: Solid Brand Rose (#e11d48) with crisp white text, subtle border & radiant pop
+        // Default: Solid Brand Rose (#e11d48) with crisp text, subtle border & radiant pop
         markerItem.pillBtn.className =
-          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-rose-600 text-white border border-rose-700 shadow-[0_3px_12px_rgba(225,29,72,0.38)] hover:scale-105 hover:bg-rose-700 hover:shadow-xl";
+          "relative inline-flex items-center justify-center font-extrabold whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs tracking-tight transition-all duration-200 bg-[#e11d48] text-white border border-rose-700 shadow-[0_3px_12px_rgba(225,29,72,0.38)] hover:scale-105 hover:bg-rose-700 hover:shadow-xl";
         markerItem.pointerCaret.className =
-          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-rose-600";
+          "absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-[#e11d48]";
       }
     });
   }, [
@@ -1032,6 +1042,36 @@ export function MapboxView({
     setActiveImageIndex((prev) => (prev < activeImages.length - 1 ? prev + 1 : 0));
   };
 
+  // If token is missing, display friendly user card without crashing
+  if (!tokenConfigured) {
+    return (
+      <div
+        className={`relative w-full h-full bg-slate-100 flex items-center justify-center p-6 select-none ${className}`}
+      >
+        <div className="max-w-md w-full bg-white rounded-2xl p-6 shadow-xl border border-slate-200/80 text-center flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600">
+            <MapPin className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-800 mb-1">
+              Map temporarily unavailable. Please check back shortly.
+            </h3>
+            <p className="text-xs text-slate-500">
+              We encountered an issue loading map services. Please check back shortly.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleRetryToken}
+            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={mapContainerRef}
@@ -1060,279 +1100,40 @@ export function MapboxView({
         </svg>
       )}
 
-      {/* Drawing Instructions Banner (Top Center while drawing) */}
-      {isDrawingMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
-          <div className="bg-slate-900/90 text-white backdrop-blur-md px-4 py-2 rounded-full shadow-xl border border-white/10 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
-              <span className="text-xs font-semibold">
-                Draw a shape around the area you want to search
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleCancelDraw}
-              className="text-xs font-bold text-slate-300 hover:text-white px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Top-Center Floating Pill Container: Draw Tool | Search as I move | Clear Badge */}
-      {!isDrawingMode && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-          <div className="bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-lg border border-slate-200/90 flex items-center gap-2.5 transition-all hover:shadow-xl">
-            {/* ✏️ Draw Button */}
-            <button
-              type="button"
-              onClick={handleStartDraw}
-              className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full transition-all cursor-pointer ${
-                isDrawingMode
-                  ? "bg-rose-600 text-white shadow-xs"
-                  : "text-slate-700 hover:text-rose-600 hover:bg-rose-50"
-              }`}
-              title="Draw a custom boundary on the map"
-            >
-              <span>✏️</span>
-              <span>Draw</span>
-            </button>
-
-            <span className="text-slate-300 font-light select-none">|</span>
-
-            {/* "Search as I move the map" Checkbox Toggle */}
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isSearchAsMapMoves}
-                onChange={(e) => handleToggleSearchAsMapMoves(e.target.checked)}
-                className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 border-slate-300 cursor-pointer accent-rose-600"
-              />
-              <span className="text-xs font-semibold text-slate-800 whitespace-nowrap">
-                Search as I move the map
-              </span>
-            </label>
-
-            {/* If boundary drawn: ✕ Clear Boundary badge */}
-            {activePolygon && activePolygon.length >= 3 && (
-              <>
-                <span className="text-slate-300 font-light select-none">|</span>
-                <button
-                  type="button"
-                  onClick={handleClearBoundary}
-                  className="flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-full transition-all cursor-pointer"
-                  title="Clear drawn boundary"
-                >
-                  <span>Drawn Area active •</span>
-                  <span className="flex items-center gap-0.5 underline">✕ Clear</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Top-Right: Segmented Pill [ 🗺️ Streets | 🛰️ Satellite ] */}
-      <div className="absolute top-4 right-4 z-30 pointer-events-auto">
-        <div className="bg-white/95 backdrop-blur-md rounded-full shadow-lg border border-slate-200/90 p-1 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => handleMapStyleChange("streets")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
-              mapStyleKey === "streets"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="Streets (Clean Minimalist Light Basemap • Airbnb Style)"
-          >
-            <span>🗺️</span>
-            <span className="hidden sm:inline">Streets</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleMapStyleChange("satellite")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all cursor-pointer ${
-              mapStyleKey === "satellite"
-                ? "bg-slate-900 text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-            title="Satellite (High-Resolution Aerial Imagery)"
-          >
-            <span>🛰️</span>
-            <span className="hidden sm:inline">Satellite</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Vertical Floating Controls on right side: Zoom In (+), Zoom Out (−), Compass, Fit All */}
-      <div className="absolute top-16 right-4 flex flex-col gap-2 z-30 pointer-events-auto">
-        <div className="flex flex-col bg-white/95 backdrop-blur-md rounded-xl shadow-md border border-slate-200 overflow-hidden divide-y divide-slate-100">
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            className="p-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
-            title="Zoom in"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            className="p-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
-            title="Zoom out"
-          >
-            <Minus className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleResetNorth}
-            className="p-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
-            title="Reset bearing to North"
-          >
-            <Compass className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleFitAll}
-            className="p-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors flex items-center justify-center cursor-pointer"
-            title="Fit all properties in view"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {/* Floating Map Controls Overlay (Style toggle, Draw, Search as I move, 3D, Bearing Compass, Zoom, Fit) */}
+      <MapControlsOverlay
+        mapStyleKey={mapStyleKey}
+        onMapStyleChange={handleMapStyleChange}
+        is3D={is3D}
+        onToggle3D={handleToggle3D}
+        bearing={bearing}
+        onResetNorth={handleResetNorth}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onFitAll={handleFitAll}
+        isDrawingMode={isDrawingMode}
+        onStartDraw={handleStartDraw}
+        onCancelDraw={handleCancelDraw}
+        hasDrawnPolygon={Boolean(activePolygon && activePolygon.length >= 3)}
+        onClearBoundary={handleClearBoundary}
+        searchAsMapMoves={isSearchAsMapMoves}
+        onToggleSearchAsMapMoves={handleToggleSearchAsMapMoves}
+      />
 
       {/* Interactive Photo Carousel Popup Preview Card */}
-      {activeProperty && (
-        <div
-          className="absolute bottom-5 left-1/2 -translate-x-1/2 w-[92%] sm:w-84 md:w-92 max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-40 animate-in fade-in slide-in-from-bottom-3 duration-200"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Close button (✕) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveProperty(null);
-              onSelectPropertyRef.current?.(null);
-            }}
-            className="absolute top-2.5 right-2.5 z-30 p-1.5 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md transition-colors cursor-pointer"
-            title="Close preview"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Favorite Heart Button */}
-          <button
-            type="button"
-            onClick={(e) => handleToggleFavorite(e, activeProperty.id)}
-            className="absolute top-2.5 left-2.5 z-30 p-1.5 rounded-full bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md transition-all cursor-pointer active:scale-90"
-            title={
-              isPropertySaved(activeProperty.id) ? "Remove from saved" : "Save property"
-            }
-          >
-            <Heart
-              className={`w-4 h-4 transition-colors ${
-                isPropertySaved(activeProperty.id)
-                  ? "fill-rose-500 text-rose-500"
-                  : "text-white hover:text-rose-300"
-              }`}
-            />
-          </button>
-
-          <Link href={`/property/${activeProperty.id}`} className="block group">
-            {/* Interactive Photo Carousel */}
-            <div className="relative w-full h-44 bg-slate-900 overflow-hidden">
-              <SafeImage
-                src={activeImages[activeImageIndex] || activeImages[0]}
-                alt={activeProperty.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-
-              {/* Carousel Left / Right Controls */}
-              {activeImages.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handlePrevImage}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-xs transition-opacity opacity-80 hover:opacity-100 cursor-pointer"
-                    title="Previous image"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleNextImage}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full bg-black/50 hover:bg-black/80 text-white backdrop-blur-xs transition-opacity opacity-80 hover:opacity-100 cursor-pointer"
-                    title="Next image"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-
-                  {/* Image index counter indicator badge */}
-                  <div className="absolute bottom-2 right-2 z-20 bg-slate-900/70 backdrop-blur-md text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
-                    {activeImageIndex + 1} / {activeImages.length}
-                  </div>
-                </>
-              )}
-
-              {/* Verified Badge */}
-              {activeProperty.isVerified && (
-                <div className="absolute bottom-2 left-2 z-20 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" />
-                  <span>Verified</span>
-                </div>
-              )}
-            </div>
-
-            {/* Micro-Card Details */}
-            <div className="p-3.5">
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <div className="text-lg font-black text-slate-900 tracking-tight">
-                  {formatPricePill(activeProperty.price)}
-                </div>
-                {isPropertyViewed(activeProperty.id) && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                    Viewed
-                  </span>
-                )}
-              </div>
-
-              <h4 className="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-rose-600 transition-colors">
-                {activeProperty.title}
-              </h4>
-
-              <p className="text-xs text-slate-500 line-clamp-1 flex items-center mt-1">
-                <MapPin className="w-3.5 h-3.5 mr-1 flex-shrink-0 text-slate-400" />
-                {activeProperty.address || "Prime Location"}
-              </p>
-
-              {/* Amenities pill bar */}
-              <div className="flex items-center gap-3 text-xs text-slate-600 pt-2.5 mt-2.5 border-t border-slate-100">
-                {activeProperty.bedrooms !== undefined && activeProperty.bedrooms !== null && (
-                  <div className="flex items-center gap-1 font-medium">
-                    <Bed className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{activeProperty.bedrooms} bd</span>
-                  </div>
-                )}
-                {activeProperty.bathrooms !== undefined && activeProperty.bathrooms !== null && (
-                  <div className="flex items-center gap-1 font-medium">
-                    <Bath className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{activeProperty.bathrooms} ba</span>
-                  </div>
-                )}
-                {activeProperty.area_sqft && (
-                  <div className="flex items-center gap-1 font-medium">
-                    <Square className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{activeProperty.area_sqft} sqft</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </Link>
-        </div>
-      )}
+      <MapPropertyPopup
+        property={activeProperty}
+        activeImageIndex={activeImageIndex}
+        onPrevImage={handlePrevImage}
+        onNextImage={handleNextImage}
+        onClose={() => {
+          setActiveProperty(null);
+          onSelectPropertyRef.current?.(null);
+        }}
+        onToggleFavorite={handleToggleFavorite}
+        isSaved={Boolean(activeProperty && isPropertySaved(activeProperty.id))}
+        isViewed={Boolean(activeProperty && isPropertyViewed(activeProperty.id))}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,21 +10,18 @@ import {
   RefreshControl,
   ActivityIndicator,
   Dimensions,
-  Animated,
-  PanResponder,
-  Platform,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, {
-  Marker,
-  UrlTile,
-  PROVIDER_GOOGLE,
-  PROVIDER_DEFAULT,
-  MapType,
-  Region,
-  MapStyleElement,
-} from 'react-native-maps';
+import { MobileMapboxView, MobileMapboxViewRef } from '../../components/MobileMapboxView';
+import {
+  clusterPropertiesByBuilding,
+  calculateThumbnailCollision,
+  ClusteredMarker,
+  MultiUnitBuildingMarker,
+} from '../../utils/markerClustering';
+import { MobileBuildingDrawer } from '../../components/MobileBuildingDrawer';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -32,118 +29,254 @@ import {
   getPublishedProperties,
   useAuth,
   toggleSavedProperty,
+  getSavedProperties,
   SearchBounds,
   SearchPropertiesParams,
 } from '@repo/api';
 
+import { MobileFilterModal, MobileFilterState } from '../../components/MobileFilterModal';
+import {
+  MobilePropertyCardCarousel,
+  CarouselProperty,
+  formatPricePill,
+} from '../../components/MobilePropertyCardCarousel';
+import { MobileTouchDrawOverlay } from '../../components/MobileTouchDrawOverlay';
+import {
+  MobileTriStateBottomSheet,
+  SheetSnapState,
+} from '../../components/MobileTriStateBottomSheet';
+import { ZillowFilterIcon } from '../../components/ZillowIcons';
+import { MobileSearchModal } from '../../components/MobileSearchModal';
+import { SearchRegion, SEARCH_REGIONS } from '../../data/searchRegions';
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Bottom sheet snap heights
-const SNAP_COLLAPSED = 100;
-const SNAP_HALF = SCREEN_HEIGHT * 0.45;
-const SNAP_EXPANDED = SCREEN_HEIGHT * 0.82;
-
-interface PropertyItem {
-  id: string;
-  title: string;
-  price: number;
-  prop_type?: string;
-  list_type?: string;
-  bedrooms?: number;
-  bathrooms?: number;
-  area_sqft?: number;
-  address?: string;
-  latitude?: number | null;
-  longitude?: number | null;
-  property_media?: { url: string }[];
+export interface PropertyItem extends CarouselProperty {
+  [key: string]: any;
 }
 
 type MapBounds = SearchBounds;
 
-const FALLBACK_PROPERTIES: PropertyItem[] = [
+// Realistic Indian Luxury Real Estate Seed (Mumbai, Bangalore, Delhi, Pune, Goa)
+const SEED_PROPERTIES: PropertyItem[] = [
+  // 1. Single Unit: Bandra West Luxury Penthouse (SALE)
   {
-    id: '1',
-    title: 'Modern Luxury Penthouse with City Views',
-    price: 850000,
+    id: 'prop-1',
+    title: 'Sea-Facing Luxury Penthouse in Bandra West',
+    price: 65000000,
     prop_type: 'APARTMENT',
-    list_type: 'SALE',
-    bedrooms: 3,
-    bathrooms: 2,
-    area_sqft: 2200,
-    address: '1420 Ocean Avenue, Miami Beach, FL',
-    latitude: 25.7867,
-    longitude: -80.1301,
-    property_media: [{ url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750' }],
-  },
-  {
-    id: '2',
-    title: 'Minimalist Contemporary Bay Villa',
-    price: 1250000,
-    prop_type: 'VILLA',
     list_type: 'SALE',
     bedrooms: 4,
     bathrooms: 4,
-    area_sqft: 3800,
-    address: '742 Biscayne Bay Way, Miami, FL',
-    latitude: 25.7617,
-    longitude: -80.1918,
-    property_media: [{ url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9' }],
+    area_sqft: 3400,
+    address: 'Carter Road, Bandra West, Mumbai',
+    latitude: 19.062,
+    longitude: 72.824,
+    isVerified: true,
+    isNew: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' },
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
+    ],
+  },
+
+  // 2. Multi-Unit Complex (3 Units): Lodha Park Towers, Worli, Mumbai (SALE)
+  {
+    id: 'prop-2a',
+    title: 'Lodha Park • 3 BHK Horizon Suite',
+    price: 32000000,
+    prop_type: 'APARTMENT',
+    list_type: 'SALE',
+    bedrooms: 3,
+    bathrooms: 3,
+    area_sqft: 1850,
+    address: 'Lodha Park, Worli, Mumbai',
+    latitude: 19.001,
+    longitude: 72.829,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80' },
+    ],
   },
   {
-    id: '3',
-    title: 'Charming Coastal Loft near Beach',
-    price: 3400,
+    id: 'prop-2b',
+    title: 'Lodha Park • 2 BHK Sky View Suite',
+    price: 24000000,
+    prop_type: 'APARTMENT',
+    list_type: 'SALE',
+    bedrooms: 2,
+    bathrooms: 2,
+    area_sqft: 1250,
+    address: 'Lodha Park, Worli, Mumbai',
+    latitude: 19.001,
+    longitude: 72.829,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'prop-2c',
+    title: 'Lodha Park • 4 BHK Presidential Duplex',
+    price: 68000000,
+    prop_type: 'APARTMENT',
+    list_type: 'SALE',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 3800,
+    address: 'Lodha Park, Worli, Mumbai',
+    latitude: 19.001,
+    longitude: 72.829,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80' },
+    ],
+  },
+
+  // 3. Multi-Unit Complex (3 Units): Prestige Shantiniketan, Whitefield, Bangalore (RENT)
+  {
+    id: 'prop-3a',
+    title: 'Prestige Shantiniketan • 2 BHK Executive Suite',
+    price: 42000,
     prop_type: 'APARTMENT',
     list_type: 'RENT',
     bedrooms: 2,
-    bathrooms: 1,
-    area_sqft: 1100,
-    address: '88 Collins Avenue, Miami Beach, FL',
-    latitude: 25.7725,
-    longitude: -80.1325,
-    property_media: [{ url: 'https://images.unsplash.com/photo-1502672260266-1c1cd2cb3668' }],
+    bathrooms: 2,
+    area_sqft: 1350,
+    address: 'Prestige Shantiniketan, Whitefield, Bangalore',
+    latitude: 12.989,
+    longitude: 77.728,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80' },
+    ],
   },
   {
-    id: '4',
-    title: 'Spacious Brickell Family House',
-    price: 675000,
-    prop_type: 'HOUSE',
-    list_type: 'SALE',
-    bedrooms: 4,
+    id: 'prop-3b',
+    title: 'Prestige Shantiniketan • 3 BHK Lake View Residence',
+    price: 55000,
+    prop_type: 'APARTMENT',
+    list_type: 'RENT',
+    bedrooms: 3,
     bathrooms: 3,
-    area_sqft: 2850,
-    address: '124 Brickell Ave, Miami, FL',
-    latitude: 25.7580,
-    longitude: -80.1930,
-    property_media: [{ url: 'https://images.unsplash.com/photo-1568605114967-8130f3a36994' }],
+    area_sqft: 1980,
+    address: 'Prestige Shantiniketan, Whitefield, Bangalore',
+    latitude: 12.989,
+    longitude: 77.728,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80' },
+    ],
   },
   {
-    id: '5',
-    title: 'Sunny South Beach Studio Apartment',
-    price: 2200,
+    id: 'prop-3c',
+    title: 'Prestige Shantiniketan • 4 BHK Sky Villa',
+    price: 85000,
+    prop_type: 'APARTMENT',
+    list_type: 'RENT',
+    bedrooms: 4,
+    bathrooms: 4,
+    area_sqft: 3200,
+    address: 'Prestige Shantiniketan, Whitefield, Bangalore',
+    latitude: 12.989,
+    longitude: 77.728,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
+    ],
+  },
+
+  // 4. Single Unit: Palm Meadows Garden Villa, Bangalore (SALE)
+  {
+    id: 'prop-4',
+    title: 'Contemporary Garden Villa with Private Pool',
+    price: 48000000,
+    prop_type: 'VILLA',
+    list_type: 'SALE',
+    bedrooms: 5,
+    bathrooms: 5,
+    area_sqft: 4500,
+    address: 'Palm Meadows, Whitefield, Bangalore',
+    latitude: 12.9698,
+    longitude: 77.75,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1613490908836-e05e54d6d654?w=800&q=80' },
+    ],
+  },
+
+  // 5. Multi-Unit Complex (2 Units): Indiranagar Heights, Bangalore (RENT)
+  {
+    id: 'prop-5a',
+    title: 'Indiranagar Heights • Modern Studio',
+    price: 32000,
     prop_type: 'APARTMENT',
     list_type: 'RENT',
     bedrooms: 1,
     bathrooms: 1,
     area_sqft: 650,
-    address: '420 Lincoln Road, Miami Beach, FL',
-    latitude: 25.7905,
-    longitude: -80.1380,
-    property_media: [{ url: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267' }],
+    address: '100ft Road, Indiranagar, Bangalore',
+    latitude: 12.9784,
+    longitude: 77.6408,
+    isVerified: false,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80' },
+    ],
   },
   {
-    id: '6',
-    title: 'Waterfront Sunset Villa & Yacht Dock',
-    price: 2850000,
-    prop_type: 'VILLA',
+    id: 'prop-5b',
+    title: 'Indiranagar Heights • 2 BHK Furnished Balcony Suite',
+    price: 48000,
+    prop_type: 'APARTMENT',
+    list_type: 'RENT',
+    bedrooms: 2,
+    bathrooms: 2,
+    area_sqft: 1100,
+    address: '100ft Road, Indiranagar, Bangalore',
+    latitude: 12.9784,
+    longitude: 77.6408,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
+    ],
+  },
+
+  // 6. Single Unit: Vasant Vihar Grand Bungalow, New Delhi (SALE)
+  {
+    id: 'prop-6',
+    title: 'Grand Independent Bungalow in Vasant Vihar',
+    price: 95000000,
+    prop_type: 'HOUSE',
     list_type: 'SALE',
-    bedrooms: 5,
-    bathrooms: 5,
-    area_sqft: 5200,
-    address: '12 Star Island Dr, Miami Beach, FL',
-    latitude: 25.7781,
-    longitude: -80.1520,
-    property_media: [{ url: 'https://images.unsplash.com/photo-1613490908836-e05e54d6d654' }],
+    bedrooms: 6,
+    bathrooms: 6,
+    area_sqft: 6200,
+    address: 'Vasant Vihar, New Delhi',
+    latitude: 28.5603,
+    longitude: 77.1611,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
+    ],
+  },
+
+  // 7. Single Unit: Miramar Beach Apartment, Goa (RENT)
+  {
+    id: 'prop-7',
+    title: 'Sunny Sea Breeze Apartment near Miramar Beach',
+    price: 45000,
+    prop_type: 'APARTMENT',
+    list_type: 'RENT',
+    bedrooms: 2,
+    bathrooms: 2,
+    area_sqft: 1200,
+    address: 'Miramar Beach, Panaji, Goa',
+    latitude: 15.4828,
+    longitude: 73.8078,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
+    ],
   },
 ];
 
@@ -165,256 +298,148 @@ const QUICK_FILTERS: QuickFilter[] = [
   { id: 'apt', label: 'Apartment', prop_type: 'APARTMENT' },
 ];
 
-const INITIAL_REGION = {
-  latitude: 25.775,
-  longitude: -80.16,
-  latitudeDelta: 0.08,
-  longitudeDelta: 0.08,
-};
-
-const MINIMALIST_MAP_STYLE: MapStyleElement[] = [
-  {
-    elementType: 'geometry',
-    stylers: [{ color: '#f5f5f5' }],
-  },
-  {
-    elementType: 'labels.icon',
-    stylers: [{ visibility: 'off' }],
-  },
-  {
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#616161' }],
-  },
-  {
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#f5f5f5' }],
-  },
-  {
-    featureType: 'administrative.land_parcel',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#bdbdbd' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'geometry',
-    stylers: [{ color: '#eeeeee' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#757575' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'geometry',
-    stylers: [{ color: '#e5e5e5' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#9e9e9e' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'geometry',
-    stylers: [{ color: '#ffffff' }],
-  },
-  {
-    featureType: 'road.arterial',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#757575' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry',
-    stylers: [{ color: '#dadada' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#616161' }],
-  },
-  {
-    featureType: 'road.local',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#9e9e9e' }],
-  },
-  {
-    featureType: 'transit.line',
-    elementType: 'geometry',
-    stylers: [{ color: '#e5e5e5' }],
-  },
-  {
-    featureType: 'transit.station',
-    elementType: 'geometry',
-    stylers: [{ color: '#eeeeee' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'geometry',
-    stylers: [{ color: '#c9c9c9' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#9e9e9e' }],
-  },
-];
-
-function formatPricePill(price: number, isRent: boolean = false): string {
-  if (isRent) {
-    if (price >= 1000) {
-      const k = (price / 1000).toFixed(price % 1000 === 0 ? 0 : 1);
-      return '$' + k + 'k/mo';
-    }
-    return '$' + price + '/mo';
+// Point-in-Polygon Ray-Casting Algorithm
+function isPointInPolygon(
+  point: [number, number], // [lng, lat]
+  polygon: [number, number][] // array of [lng, lat]
+): boolean {
+  const [x, y] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+    const intersect =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
   }
-  if (price >= 1000000) {
-    const m = (price / 1000000).toFixed(price % 1000000 === 0 ? 0 : 1);
-    return '$' + m + 'M';
-  }
-  if (price >= 1000) {
-    const k = (price / 1000).toFixed(price % 1000 === 0 ? 0 : 1);
-    return '$' + k + 'k';
-  }
-  return '$' + price;
+  return inside;
 }
 
-export default function ExploreScreen() {
+export default function UserAppHomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
 
+  // View Mode: 'map' (Fullscreen Map + Snapping Card) | 'list' (Vertical Feed)
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
+
+  // Properties State
   const [properties, setProperties] = useState<PropertyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilterId, setActiveFilterId] = useState('all');
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set(['1', '3']));
+
+  // Selection & Viewed State
   const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<MultiUnitBuildingMarker | null>(null);
+  const [isSearchSaved, setIsSearchSaved] = useState(false);
   const [viewedPropertyIds, setViewedPropertyIds] = useState<Set<string>>(new Set());
-  const [mapType, setMapType] = useState<MapType>('standard');
-  const [positronEnabled, setPositronEnabled] = useState(true);
-  const [tileOffline, setTileOffline] = useState(false);
+  const [savedPropertyIds, setSavedPropertyIds] = useState<Set<string>>(new Set());
 
-  const checkTileConnectivity = useCallback(async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch('https://tiles.openfreemap.org/styles/positron', {
-        method: 'HEAD',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      setTileOffline(!res.ok);
-    } catch {
-      setTileOffline(true);
-    }
-  }, []);
+  // Search & Filter State
+  const [searchQuery, setSearchQuery] = useState('Los Angeles CA homes');
+  const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
+  const [activeRegion, setActiveRegion] = useState<SearchRegion | null>(() => {
+    return SEARCH_REGIONS.find((r) => r.id === 'los-angeles') || null;
+  });
+  const [preferredMode, setPreferredMode] = useState<'DUAL' | 'PEEK'>('DUAL');
+  const [activeQuickFilter, setActiveQuickFilter] = useState('rent');
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+  const [modalFilters, setModalFilters] = useState<MobileFilterState>({});
 
-  useEffect(() => {
-    checkTileConnectivity();
-  }, [checkTileConnectivity]);
+  // Map Controls State
+  const [mapType, setMapType] = useState<'standard' | 'satellite'>('standard');
+  const [is3D, setIs3D] = useState(false);
+  const [searchAsMove, setSearchAsMove] = useState(true);
 
-  const mapRef = useRef<MapView | null>(null);
-  const flatListRef = useRef<FlatList | null>(null);
+  // Freehand Touch Drawing State
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [drawnPolygon, setDrawnPolygon] = useState<Array<{ latitude: number; longitude: number }> | null>(null);
+
+  // Tri-State Bottom Sheet State (Starts in DUAL mode matching screenshot 1)
+  const [sheetSnapState, setSheetSnapState] = useState<SheetSnapState>('DUAL');
+  const [containerHeight, setContainerHeight] = useState(SCREEN_HEIGHT - 60);
+
+  // Refs
+  const mapboxRef = useRef<MobileMapboxViewRef | null>(null);
   const mapBoundsRef = useRef<MapBounds | null>(null);
-  const regionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRegionTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const activeFilterIdRef = useRef(activeFilterId);
-  activeFilterIdRef.current = activeFilterId;
-  const searchQueryRef = useRef(searchQuery);
-  searchQueryRef.current = searchQuery;
+  // Load Saved Properties for Authenticated User
+  useEffect(() => {
+    if (user?.id) {
+      getSavedProperties(user.id)
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setSavedPropertyIds(new Set(data.map((item: any) => item.property_id || item.id)));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user?.id]);
 
-  const markAsViewed = useCallback((id: string) => {
-    setViewedPropertyIds((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
-
-  const sheetHeight = useRef(new Animated.Value(SNAP_HALF)).current;
-  const currentSheetHeight = useRef(SNAP_HALF);
-
-  const snapTo = useCallback((targetHeight: number) => {
-    Animated.spring(sheetHeight, {
-      toValue: targetHeight,
-      useNativeDriver: false,
-      friction: 8,
-      tension: 65,
-    }).start(() => {
-      currentSheetHeight.current = targetHeight;
-    });
-  }, [sheetHeight]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gestureState) => Math.abs(gestureState.dy) > 5,
-      onPanResponderMove: (_, gestureState) => {
-        const newHeight = currentSheetHeight.current - gestureState.dy;
-        if (newHeight >= SNAP_COLLAPSED && newHeight <= SNAP_EXPANDED) {
-          sheetHeight.setValue(newHeight);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        const currentY = currentSheetHeight.current - gestureState.dy;
-        let targetSnap = SNAP_HALF;
-        if (gestureState.vy < -0.5 || currentY > (SNAP_HALF + SNAP_EXPANDED) / 2) {
-          targetSnap = SNAP_EXPANDED;
-        } else if (gestureState.vy > 0.5 || currentY < (SNAP_COLLAPSED + SNAP_HALF) / 2) {
-          targetSnap = SNAP_COLLAPSED;
-        } else {
-          targetSnap = SNAP_HALF;
-        }
-        snapTo(targetSnap);
-      },
-    })
-  ).current;
-
-  const loadProperties = useCallback(
+  // Data Fetching with Query & Bounds
+  const fetchHomes = useCallback(
     async (
-      filterId = activeFilterIdRef.current,
-      query = searchQueryRef.current,
+      queryText = searchQuery,
+      quickFilterId = activeQuickFilter,
+      advancedFilters = modalFilters,
       bounds: MapBounds | null = mapBoundsRef.current
     ) => {
       try {
-        const activeFilter = QUICK_FILTERS.find((f) => f.id === filterId);
-        const searchParams: SearchPropertiesParams = {};
+        const quick = QUICK_FILTERS.find((f) => f.id === quickFilterId);
+        const params: SearchPropertiesParams = {};
 
-        if (activeFilter?.list_type) {
-          searchParams.list_type = activeFilter.list_type;
+        // Merge quick filters and advanced modal filters
+        const listType = advancedFilters.list_type || quick?.list_type;
+        if (listType) params.list_type = listType;
+
+        const propType = advancedFilters.prop_type || quick?.prop_type;
+        if (propType) params.prop_type = propType;
+
+        const beds = advancedFilters.bedrooms || quick?.minBeds;
+        if (beds) params.bedrooms = beds;
+
+        if (advancedFilters.bathrooms) {
+          params.bathrooms = advancedFilters.bathrooms;
         }
-        if (activeFilter?.prop_type) {
-          searchParams.prop_type = activeFilter.prop_type;
+
+        // Price Presets
+        if (advancedFilters.priceRange === 'under_50l') {
+          params.maxPrice = 5000000;
+        } else if (advancedFilters.priceRange === '50l_1cr') {
+          params.minPrice = 5000000;
+          params.maxPrice = 10000000;
+        } else if (advancedFilters.priceRange === '1cr_3cr') {
+          params.minPrice = 10000000;
+          params.maxPrice = 30000000;
+        } else if (advancedFilters.priceRange === 'above_3cr') {
+          params.minPrice = 30000000;
         }
-        if (activeFilter?.minBeds) {
-          searchParams.bedrooms = activeFilter.minBeds;
+
+        if (queryText.trim()) {
+          params.query = queryText.trim();
         }
-        if (query.trim()) {
-          searchParams.query = query.trim();
-        }
+
         if (bounds) {
-          searchParams.bounds = bounds;
+          params.bounds = bounds;
         }
 
-        let data = await searchProperties(searchParams);
+        let data = await searchProperties(params);
 
         if (!data || data.length === 0) {
-          if (!bounds) {
+          if (!bounds && !queryText.trim() && quickFilterId === 'all') {
             data = await getPublishedProperties();
           }
         }
 
         if (data && data.length > 0) {
+          // Ensure every property has valid coordinates
           const withCoords = data.map((item: any, idx: number) => {
             let lat = item.latitude;
             let lng = item.longitude;
             if (!lat || !lng) {
-              const fallbackItem = FALLBACK_PROPERTIES[idx % FALLBACK_PROPERTIES.length];
-              lat = fallbackItem.latitude;
-              lng = fallbackItem.longitude;
+              const seed = SEED_PROPERTIES[idx % SEED_PROPERTIES.length];
+              lat = seed.latitude;
+              lng = seed.longitude;
             }
             return {
               ...item,
@@ -424,565 +449,500 @@ export default function ExploreScreen() {
           });
           setProperties(withCoords as PropertyItem[]);
         } else {
+          // Client-side fallback filtered by bounds
           if (bounds) {
             const { north, south, east, west } = bounds;
-            const filteredFallbacks = FALLBACK_PROPERTIES.filter(
+            const inBounds = SEED_PROPERTIES.filter(
               (p) =>
-                typeof p.latitude === 'number' &&
-                typeof p.longitude === 'number' &&
-                p.latitude >= south &&
-                p.latitude <= north &&
-                p.longitude >= west &&
-                p.longitude <= east
+                p.latitude! >= south &&
+                p.latitude! <= north &&
+                p.longitude! >= west &&
+                p.longitude! <= east
             );
-            setProperties(filteredFallbacks);
+            setProperties(inBounds.length > 0 ? inBounds : SEED_PROPERTIES);
           } else {
-            setProperties(FALLBACK_PROPERTIES);
+            setProperties(SEED_PROPERTIES);
           }
         }
       } catch (err) {
-        console.error('Error loading properties with search/fallback:', err);
-        setProperties(FALLBACK_PROPERTIES);
+        console.warn('[UserApp] searchProperties fallback:', err);
+        setProperties(SEED_PROPERTIES);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    []
-  );
-
-  const handleRegionChangeComplete = useCallback(
-    (region: Region) => {
-      const bounds: MapBounds = {
-        north: region.latitude + region.latitudeDelta / 2,
-        south: region.latitude - region.latitudeDelta / 2,
-        east: region.longitude + region.longitudeDelta / 2,
-        west: region.longitude - region.longitudeDelta / 2,
-      };
-      mapBoundsRef.current = bounds;
-
-      if (regionTimeoutRef.current) {
-        clearTimeout(regionTimeoutRef.current);
-      }
-
-      regionTimeoutRef.current = setTimeout(() => {
-        loadProperties(activeFilterIdRef.current, searchQueryRef.current, bounds);
-      }, 350);
-    },
-    [loadProperties]
+    [searchQuery, activeQuickFilter, modalFilters]
   );
 
   useEffect(() => {
-    return () => {
-      if (regionTimeoutRef.current) {
-        clearTimeout(regionTimeoutRef.current);
-      }
-    };
+    fetchHomes();
+  }, [fetchHomes]);
+
+  // Filter properties by drawn boundary polygon (if active)
+  const displayedProperties = useMemo(() => {
+    if (!drawnPolygon || drawnPolygon.length < 3) {
+      return properties;
+    }
+    const polygonLngLats: [number, number][] = drawnPolygon.map((p) => [p.longitude, p.latitude]);
+    return properties.filter((prop) => {
+      if (!prop.latitude || !prop.longitude) return false;
+      return isPointInPolygon([prop.longitude, prop.latitude], polygonLngLats);
+    });
+  }, [properties, drawnPolygon]);
+
+  // Clustered Markers with Screen-Space Thumbnail Collision Detection
+  const clusteredMarkers = useMemo(() => {
+    const raw = clusterPropertiesByBuilding(displayedProperties);
+    const activeId = selectedBuilding ? selectedBuilding.id : selectedPropertyId;
+    return calculateThumbnailCollision(raw, activeId);
+  }, [displayedProperties, selectedPropertyId, selectedBuilding]);
+
+  // Currently selected index in the carousel
+  const selectedIndex = useMemo(() => {
+    if (!selectedPropertyId) return -1;
+    return displayedProperties.findIndex((p) => p.id === selectedPropertyId);
+  }, [selectedPropertyId, displayedProperties]);
+
+  // Handle Marker / Property Selection
+  const handleMarkerPress = useCallback((marker: any) => {
+    if (!marker) {
+      setSelectedPropertyId(null);
+      setSelectedBuilding(null);
+      return;
+    }
+
+    if (marker.type === 'multi') {
+      setSelectedBuilding(marker as MultiUnitBuildingMarker);
+      setSelectedPropertyId(null);
+      setViewedPropertyIds((prev) => new Set(prev).add(marker.id));
+    } else {
+      setSelectedBuilding(null);
+      const singleId = marker.rawProperty?.id || marker.id;
+      setSelectedPropertyId(singleId);
+      setViewedPropertyIds((prev) => new Set(prev).add(singleId));
+      setSheetSnapState('DUAL');
+    }
   }, []);
 
-  useEffect(() => {
-    loadProperties();
-  }, [loadProperties]);
+  // Handle Carousel Card Swipe
+  const handleCarouselSnap = useCallback(
+    (index: number) => {
+      const prop = displayedProperties[index];
+      if (prop) {
+        setSelectedPropertyId(prop.id);
+        setViewedPropertyIds((prev) => new Set(prev).add(prop.id));
+      }
+    },
+    [displayedProperties]
+  );
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    checkTileConnectivity();
-    loadProperties(activeFilterId, searchQuery, mapBoundsRef.current);
-  };
-
-  const handleFilterSelect = (filter: QuickFilter) => {
-    setActiveFilterId(filter.id);
-    setLoading(true);
-    loadProperties(filter.id, searchQuery, mapBoundsRef.current);
-  };
-
-  const handleSearchSubmit = () => {
-    setLoading(true);
-    loadProperties(activeFilterId, searchQuery, mapBoundsRef.current);
-  };
-
-  const toggleHeart = async (id: string) => {
-    const nextSaved = new Set(savedIds);
-    if (nextSaved.has(id)) {
-      nextSaved.delete(id);
-    } else {
-      nextSaved.add(id);
-    }
-    setSavedIds(nextSaved);
+  // Toggle Favorite
+  const handleToggleFavorite = async (propertyId: string) => {
+    const isCurrentlySaved = savedPropertyIds.has(propertyId);
+    setSavedPropertyIds((prev) => {
+      const next = new Set(prev);
+      if (isCurrentlySaved) next.delete(propertyId);
+      else next.add(propertyId);
+      return next;
+    });
 
     if (user?.id) {
       try {
-        await toggleSavedProperty(user.id, id);
+        await toggleSavedProperty(user.id, propertyId);
       } catch (err) {
-        console.error(err);
+        console.warn('[UserApp] toggleSavedProperty error:', err);
       }
     }
   };
 
-  const activeFilter = QUICK_FILTERS.find((f) => f.id === activeFilterId);
-  const displayedProperties = properties.filter((prop) => {
-    const matchesSearch =
-      !searchQuery.trim() ||
-      prop.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (prop.address && prop.address.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Region change debounce for "Search as I move the map"
+  const handleRegionChangeComplete = (bounds: { north: number; south: number; east: number; west: number }) => {
+    if (!searchAsMove) return;
 
-    if (!matchesSearch) return false;
+    mapBoundsRef.current = bounds;
 
-    if (activeFilter?.list_type && prop.list_type !== activeFilter.list_type) return false;
-    if (activeFilter?.prop_type && prop.prop_type !== activeFilter.prop_type) return false;
-    if (activeFilter?.minBeds && (prop.bedrooms || 0) < activeFilter.minBeds) return false;
-
-    return true;
-  });
-
-  const handleMarkerPress = (property: PropertyItem) => {
-    setSelectedPropertyId(property.id);
-    markAsViewed(property.id);
-
-    if (property.latitude && property.longitude && mapRef.current) {
-      mapRef.current.animateToRegion(
-        {
-          latitude: property.latitude - 0.008,
-          longitude: property.longitude,
-          latitudeDelta: 0.04,
-          longitudeDelta: 0.04,
-        },
-        400
-      );
+    if (debounceRegionTimerRef.current) {
+      clearTimeout(debounceRegionTimerRef.current);
     }
+    debounceRegionTimerRef.current = setTimeout(() => {
+      fetchHomes(searchQuery, activeQuickFilter, modalFilters, bounds);
+    }, 400);
+  };
 
-    if (currentSheetHeight.current <= SNAP_COLLAPSED) {
-      snapTo(SNAP_HALF);
-    }
+  // Toggle 3D Perspective Tilt
+  const handleToggle3D = () => {
+    setIs3D((prev) => !prev);
+  };
 
-    const index = displayedProperties.findIndex((p) => p.id === property.id);
-    if (index >= 0 && flatListRef.current) {
-      try {
-        flatListRef.current.scrollToIndex({
-          index,
-          animated: true,
-          viewPosition: 0.2,
-        });
-      } catch {
-        // Ignored
-      }
+  // Recenter Map
+  const handleRecenter = () => {
+    mapboxRef.current?.recenter();
+  };
+
+  // Freehand Touch Drawing Completion
+  const handleFinishDraw = (screenPoints: Array<{ x: number; y: number }>) => {
+    mapboxRef.current?.convertPointsToCoords(screenPoints);
+    setIsDrawingMode(false);
+  };
+
+  const handlePolygonCreated = (coords: Array<{ latitude: number; longitude: number }>) => {
+    if (coords && coords.length >= 3) {
+      const closed = [...coords, coords[0]];
+      setDrawnPolygon(closed);
+      setSelectedPropertyId(null);
+      setSelectedBuilding(null);
     }
   };
 
-  const handleRecenterMap = () => {
-    if (displayedProperties.length > 0 && mapRef.current) {
-      const validCoords = displayedProperties.filter((p) => p.latitude && p.longitude);
-      if (validCoords.length > 0) {
-        const lats = validCoords.map((p) => p.latitude as number);
-        const lngs = validCoords.map((p) => p.longitude as number);
-        const minLat = Math.min(...lats);
-        const maxLat = Math.max(...lats);
-        const minLng = Math.min(...lngs);
-        const maxLng = Math.max(...lngs);
-
-        mapRef.current.animateToRegion(
-          {
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLng + maxLng) / 2,
-            latitudeDelta: Math.max(0.06, (maxLat - minLat) * 1.5),
-            longitudeDelta: Math.max(0.06, (maxLng - minLng) * 1.5),
-          },
-          500
-        );
-      } else {
-        mapRef.current.animateToRegion(INITIAL_REGION, 500);
-      }
+  const handleStartDraw = () => {
+    // Level camera to 2D for accurate drawing
+    if (is3D) {
+      setIs3D(false);
     }
+    setDrawnPolygon(null);
+    setSelectedPropertyId(null);
+    setSelectedBuilding(null);
+    setIsDrawingMode(true);
   };
 
-  const toggleMapType = () => {
-    setMapType((prev) => (prev === 'standard' ? 'satellite' : 'standard'));
-  };
+  // Dynamic Theme Color (Solid Brand Rose for SALE, Zillow Signature Deep Violet for RENT)
+  const isRent = activeQuickFilter === 'rent' || modalFilters.list_type === 'RENT';
+  const themeColor = isRent ? '#7B1FA2' : '#e11d48';
 
-  const renderPropertyCard = ({ item }: { item: PropertyItem }) => {
-    const isSaved = savedIds.has(item.id);
-    const isSelected = selectedPropertyId === item.id;
-    const isViewed = viewedPropertyIds.has(item.id);
-    const imageUrl =
-      item.property_media?.[0]?.url ||
-      'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267';
-    const isRent = item.list_type === 'RENT';
-    const priceFormatted = isRent
-      ? '$' + (item.price?.toLocaleString() || '0') + '/mo'
-      : '$' + (item.price?.toLocaleString() || '0');
-
-    return (
-      <TouchableOpacity
-        style={[styles.card, isSelected && styles.cardSelected]}
-        activeOpacity={0.9}
-        onPress={() => {
-          setSelectedPropertyId(item.id);
-          markAsViewed(item.id);
-          router.push('/property/' + item.id);
-        }}
-      >
-        <View style={styles.cardImageContainer}>
-          <Image source={{ uri: imageUrl }} style={styles.cardImage} />
-          <View style={styles.badgeRow}>
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>{isRent ? 'For Rent' : 'For Sale'}</Text>
-            </View>
-            {item.prop_type && (
-              <View style={styles.typeBadge}>
-                <Text style={styles.typeBadgeText}>{item.prop_type}</Text>
-              </View>
-            )}
-          </View>
-
-          <TouchableOpacity
-            style={styles.heartButton}
-            onPress={() => toggleHeart(item.id)}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isSaved ? 'heart' : 'heart-outline'}
-              size={20}
-              color={isSaved ? '#e11d48' : '#0f172a'}
-            />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.cardContent}>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceText}>{priceFormatted}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {isViewed && !isSelected && (
-                <View style={styles.viewedTag}>
-                  <Text style={styles.viewedTagText}>Viewed</Text>
-                </View>
-              )}
-              {isSelected && (
-                <View style={styles.activePillTag}>
-                  <Ionicons name="location" size={12} color="#e11d48" />
-                  <Text style={styles.activePillTagText}>Selected</Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          <Text style={styles.titleText} numberOfLines={1}>
-            {item.title}
-          </Text>
-
-          {item.address && (
-            <View style={styles.addressRow}>
-              <Ionicons
-                name="location-outline"
-                size={13}
-                color="#64748b"
-                style={{ marginRight: 4 }}
-              />
-              <Text style={styles.addressText} numberOfLines={1}>
-                {item.address}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.specsRow}>
-            <View style={styles.specItem}>
-              <Ionicons
-                name="bed-outline"
-                size={14}
-                color="#475569"
-                style={{ marginRight: 4 }}
-              />
-              <Text style={styles.specText}>{item.bedrooms || 0} Beds</Text>
-            </View>
-            <View style={styles.specItem}>
-              <Ionicons
-                name="water-outline"
-                size={14}
-                color="#475569"
-                style={{ marginRight: 4 }}
-              />
-              <Text style={styles.specText}>{item.bathrooms || 0} Baths</Text>
-            </View>
-            {item.area_sqft ? (
-              <View style={styles.specItem}>
-                <Ionicons
-                  name="scan-outline"
-                  size={14}
-                  color="#475569"
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={styles.specText}>{item.area_sqft.toLocaleString()} sqft</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  // Active filter count for badge
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (modalFilters.list_type) count++;
+    if (modalFilters.prop_type) count++;
+    if (modalFilters.bedrooms) count++;
+    if (modalFilters.bathrooms) count++;
+    if (modalFilters.priceRange) count++;
+    if (modalFilters.isVerified) count++;
+    return count;
+  }, [modalFilters]);
 
   return (
-    <View style={styles.container}>
-      <StatusBar
-        barStyle={mapType === 'satellite' ? 'light-content' : 'dark-content'}
-        backgroundColor="transparent"
-        translucent
+    <View
+      style={styles.container}
+      onLayout={(e) => {
+        const h = e.nativeEvent.layout.height;
+        if (h > 100 && h !== containerHeight) {
+          setContainerHeight(h);
+        }
+      }}
+    >
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+
+      {/* 1. Mapbox Standard 3D View (Full Screen) */}
+      <MobileMapboxView
+        ref={mapboxRef}
+        markers={clusteredMarkers}
+        selectedId={selectedBuilding ? selectedBuilding.id : selectedPropertyId}
+        viewedIds={viewedPropertyIds}
+        mapType={mapType}
+        is3D={is3D}
+        listType={isRent ? 'RENT' : 'SALE'}
+        drawnPolygon={drawnPolygon}
+        regionBoundary={activeRegion?.boundaryPolygon || null}
+        onSelectMarker={handleMarkerPress}
+        onRegionChange={handleRegionChangeComplete}
+        onPolygonCreated={handlePolygonCreated}
+        onMapTouch={() => {
+          if (sheetSnapState !== 'PEEK') {
+            setSheetSnapState('PEEK');
+          }
+        }}
       />
 
-      {/* Full Screen Google Map with Positron / Minimalist Styling */}
-      <MapView
-        ref={mapRef}
-        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT}
-        style={styles.map}
-        initialRegion={INITIAL_REGION}
-        mapType={mapType}
-        customMapStyle={mapType === 'standard' ? MINIMALIST_MAP_STYLE : undefined}
-        showsUserLocation
-        showsMyLocationButton={false}
-        showsCompass={false}
-        onRegionChangeComplete={handleRegionChangeComplete}
-      >
-        {/* OpenFreeMap Positron tile overlay with graceful fallback to native map if offline */}
-        {mapType === 'standard' && positronEnabled && !tileOffline && (
-          <UrlTile
-            urlTemplate="https://tiles.openfreemap.org/styles/positron/{z}/{x}/{y}.png"
-            maximumZ={19}
-            maximumNativeZ={19}
-            minimumZ={0}
-            zIndex={1}
-            flipY={false}
-            shouldReplaceMapContent={false}
-          />
-        )}
+      {/* 2. Touchscreen Freehand Lasso Drawing Overlay */}
+      <MobileTouchDrawOverlay
+        isDrawing={isDrawingMode}
+        onFinishDraw={handleFinishDraw}
+        onCancelDraw={() => setIsDrawingMode(false)}
+      />
 
-        {displayedProperties.map((property) => {
-          if (!property.latitude || !property.longitude) return null;
-          const isSelected = selectedPropertyId === property.id;
-          const isViewed = viewedPropertyIds.has(property.id);
-          const isRent = property.list_type === 'RENT';
-          const priceLabel = formatPricePill(property.price, isRent);
-
-          return (
-            <Marker
-              key={`${property.id}-${isSelected ? 'selected' : isViewed ? 'viewed' : 'default'}`}
-              coordinate={{
-                latitude: property.latitude,
-                longitude: property.longitude,
-              }}
-              onPress={() => handleMarkerPress(property)}
-              zIndex={isSelected ? 999 : isViewed ? 2 : 10}
-              tracksViewChanges={false}
+      {/* 3. Top Floating Search & Filter Bar (Clean Zillow Design - Visible over map in PEEK & DUAL modes) */}
+      {sheetSnapState !== 'FULL' && (
+        <View style={styles.topFloatingBarContainer} pointerEvents="box-none">
+          {/* Floating Search Pill */}
+          <TouchableOpacity
+            style={styles.searchPill}
+            activeOpacity={0.88}
+            onPress={() => setIsSearchModalVisible(true)}
+          >
+            <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
+            <Text
+              style={[styles.searchInputText, !searchQuery && styles.searchPlaceholderText]}
+              numberOfLines={1}
             >
-              {/* Custom Price Pill Marker */}
-              <View style={styles.markerWrapper}>
-                <View
-                  style={[
-                    styles.pricePill,
-                    isSelected
-                      ? styles.pricePillActive
-                      : isViewed
-                      ? styles.pricePillViewed
-                      : styles.pricePillInactive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.pricePillText,
-                      isSelected
-                        ? styles.pricePillTextActive
-                        : isViewed
-                        ? styles.pricePillTextViewed
-                        : styles.pricePillTextInactive,
-                    ]}
-                  >
-                    {priceLabel}
-                  </Text>
-                </View>
-                {/* Arrow Pointer Notch */}
-                <View
-                  style={[
-                    styles.markerArrow,
-                    isSelected
-                      ? styles.markerArrowActive
-                      : isViewed
-                      ? styles.markerArrowViewed
-                      : styles.markerArrowInactive,
-                  ]}
-                />
-              </View>
-            </Marker>
-          );
-        })}
-      </MapView>
-
-      {/* Top Floating Search and Filter Bar */}
-      <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
-        <View style={styles.headerFloatingCard}>
-          {/* Search Box */}
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={20} color="#e11d48" style={{ marginRight: 8 }} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search city, neighborhood, address..."
-              placeholderTextColor="#94a3b8"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={handleSearchSubmit}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
+              {searchQuery || activeRegion?.name || (isRent ? 'Los Angeles CA rentals' : 'Home features, school, location')}
+            </Text>
+            {searchQuery.length > 0 ? (
               <TouchableOpacity
-                onPress={() => {
+                onPress={(e) => {
+                  e.stopPropagation();
                   setSearchQuery('');
-                  loadProperties(activeFilterId, '', mapBoundsRef.current);
+                  setActiveRegion(null);
+                  fetchHomes('');
                 }}
+                style={styles.clearSearchBtn}
               >
                 <Ionicons name="close-circle" size={18} color="#94a3b8" />
               </TouchableOpacity>
+            ) : (
+              <Ionicons name="mic-outline" size={19} color="#94a3b8" />
             )}
-          </View>
+          </TouchableOpacity>
 
-          {/* Quick Filter Chips */}
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={QUICK_FILTERS}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => {
-              const isSelected = activeFilterId === item.id;
-              return (
-                <TouchableOpacity
-                  style={[styles.filterChip, isSelected && styles.filterChipActive]}
-                  onPress={() => handleFilterSelect(item)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }}
-            contentContainerStyle={styles.filterList}
-          />
-
-          {/* Offline notice indicator */}
-          {tileOffline && mapType === 'standard' && (
-            <View style={styles.offlineNotice}>
-              <Ionicons name="cloud-offline-outline" size={12} color="#64748b" style={{ marginRight: 4 }} />
-              <Text style={styles.offlineNoticeText}>Offline: Using native minimalist map</Text>
-            </View>
-          )}
+          {/* Dedicated Circular Filter Button */}
+          <TouchableOpacity
+            style={[
+              styles.filterCircleButton,
+              activeFilterCount > 0 && styles.filterCircleButtonActive,
+            ]}
+            onPress={() => setIsFilterModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <ZillowFilterIcon
+              size={20}
+              color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
+            />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      )}
 
-      {/* Map Control Floating Action Buttons */}
-      <View style={styles.mapControls}>
-        {/* Positron Tile Overlay Toggle */}
+      {/* Drawn Shape Clear Banner */}
+      {sheetSnapState !== 'FULL' && drawnPolygon && drawnPolygon.length >= 3 && (
+        <View style={styles.drawnShapeBannerContainer} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.clearBoundaryPill}
+            onPress={() => setDrawnPolygon(null)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="close-circle" size={14} color="#e11d48" style={{ marginRight: 4 }} />
+            <Text style={styles.clearBoundaryText}>Clear Drawn Area ✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 4. Floating 3D Perspective Tilt Button (Visible in PEEK & DUAL modes over the map) */}
+      {sheetSnapState !== 'FULL' && (
         <TouchableOpacity
-          style={[
-            styles.mapControlButton,
-            positronEnabled && !tileOffline && styles.mapControlButtonActive,
-          ]}
-          onPress={() => setPositronEnabled((prev) => !prev)}
+          style={[styles.floating3DCircle, is3D && styles.floating3DCircleActive]}
+          onPress={handleToggle3D}
           activeOpacity={0.85}
         >
-          <Ionicons
-            name="layers-outline"
-            size={20}
-            color={positronEnabled && !tileOffline ? '#ffffff' : '#0f172a'}
-          />
+          <Text style={[styles.floating3DText, is3D && styles.floating3DTextActive]}>3D</Text>
         </TouchableOpacity>
+      )}
 
-        {/* Satellite Toggle */}
-        <TouchableOpacity
-          style={[styles.mapControlButton, mapType === 'satellite' && styles.mapControlButtonActive]}
-          onPress={toggleMapType}
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name={mapType === 'satellite' ? 'earth' : 'earth-outline'}
-            size={22}
-            color={mapType === 'satellite' ? '#ffffff' : '#0f172a'}
-          />
-        </TouchableOpacity>
-
-        {/* Recenter Button */}
-        <TouchableOpacity
-          style={styles.mapControlButton}
-          onPress={handleRecenterMap}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="locate" size={22} color="#0f172a" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Gesture-Driven Expandable Bottom Sheet */}
-      <Animated.View style={[styles.bottomSheet, { height: sheetHeight }]}>
-        {/* Drag Handle Bar */}
-        <View style={styles.sheetHandleArea} {...panResponder.panHandlers}>
-          <View style={styles.sheetHandleBar} />
-          <View style={styles.sheetHeaderRow}>
-            <View style={styles.sheetHeaderLeft}>
-              <Text style={styles.sheetCountTitle}>
-                {displayedProperties.length} {displayedProperties.length === 1 ? 'Home' : 'Homes'} available
-              </Text>
-              <Text style={styles.sheetSubTitle}>
-                {activeFilter?.label === 'All' ? 'Miami & surrounding areas' : 'Filtered: ' + activeFilter?.label}
-              </Text>
-            </View>
-
-            {/* Quick snap toggle button */}
-            <TouchableOpacity
-              style={styles.sheetExpandButton}
-              onPress={() => {
-                if (currentSheetHeight.current >= SNAP_HALF) {
-                  snapTo(SNAP_COLLAPSED);
-                } else {
-                  snapTo(SNAP_HALF);
+      {/* 5. Map View Bottom Controls & Sheets (When in Map Mode) */}
+      {viewMode === 'map' && (
+        <>
+          {/* Zillow Tri-State Bottom Sheet with Anchored HUD (PEEK, DUAL, FULL) */}
+          {!selectedBuilding && (
+            <MobileTriStateBottomSheet
+              availableHeight={containerHeight}
+              snapState={sheetSnapState}
+              onSnapChange={(newState) => {
+                setSheetSnapState(newState);
+                if (newState === 'DUAL' || newState === 'FULL') {
+                  setPreferredMode('DUAL');
+                } else if (newState === 'PEEK') {
+                  setPreferredMode('PEEK');
                 }
               }}
-            >
-              <Ionicons
-                name={currentSheetHeight.current >= SNAP_HALF ? 'chevron-down' : 'chevron-up'}
-                size={20}
-                color="#64748b"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
+              properties={displayedProperties}
+              selectedPropertyId={selectedPropertyId}
+              onSelectProperty={(prop) => {
+                setSelectedPropertyId(prop.id);
+                if (prop.latitude && prop.longitude) {
+                  mapboxRef.current?.flyToRegion([prop.longitude, prop.latitude], 15.5);
+                }
+              }}
+              onToggleFavorite={handleToggleFavorite}
+              isSaved={(id) => savedPropertyIds.has(id)}
+              listType={isRent ? 'RENT' : 'SALE'}
+              onOpenFilters={() => setIsFilterModalVisible(true)}
+              activeFilterCount={activeFilterCount}
+              mapType={mapType}
+              onToggleMapType={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+              isDrawingMode={isDrawingMode}
+              onStartDraw={handleStartDraw}
+              onRecenter={handleRecenter}
+              isSearchSaved={isSearchSaved}
+              onToggleSaveSearch={() => setIsSearchSaved(!isSearchSaved)}
+              searchQuery={searchQuery}
+              onOpenSearchModal={() => setIsSearchModalVisible(true)}
+              onClearSearch={() => {
+                setSearchQuery('');
+                setActiveRegion(null);
+                fetchHomes('');
+              }}
+              regionName={activeRegion?.name}
+            />
+          )}
+        </>
+      )}
 
-        {/* Content Area */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#e11d48" />
-            <Text style={styles.loadingText}>Searching homes...</Text>
-          </View>
-        ) : (
+      {/* 6. Multi-Unit Building Drawer (Zillow Style Bottom Sheet) */}
+      <MobileBuildingDrawer
+        visible={!!selectedBuilding}
+        building={selectedBuilding}
+        onClose={() => setSelectedBuilding(null)}
+        onSelectUnit={(unit) => router.push(`/property/${unit.id}`)}
+        onToggleSaved={handleToggleFavorite}
+        isSaved={(id) => savedPropertyIds.has(id)}
+      />
+
+      {/* 7. Full-Screen Zillow Search Modal */}
+      <MobileSearchModal
+        visible={isSearchModalVisible}
+        initialQuery={searchQuery}
+        initialListType={isRent ? 'RENT' : 'SALE'}
+        onClose={() => setIsSearchModalVisible(false)}
+        onSelectRegion={(region, listType) => {
+          setActiveRegion(region);
+          setSearchQuery(region.name);
+          if (region.center) {
+            mapboxRef.current?.flyToRegion(region.center, region.zoom || 11);
+          }
+          if (region.sampleProperties && region.sampleProperties.length > 0) {
+            setProperties(region.sampleProperties);
+          }
+          if (listType === 'RENT') {
+            setActiveQuickFilter('rent');
+          } else if (listType === 'SALE') {
+            setActiveQuickFilter('sale');
+          }
+          // Apply remembered mode (DUAL or PEEK)
+          setSheetSnapState(preferredMode);
+        }}
+        onSelectQuery={(queryText, listType) => {
+          setActiveRegion(null);
+          setSearchQuery(queryText);
+          fetchHomes(queryText);
+          if (listType === 'RENT') {
+            setActiveQuickFilter('rent');
+          } else if (listType === 'SALE') {
+            setActiveQuickFilter('sale');
+          }
+          setSheetSnapState(preferredMode);
+        }}
+        onListTypeChange={(listType) => {
+          if (listType === 'RENT') {
+            setActiveQuickFilter('rent');
+          } else {
+            setActiveQuickFilter('sale');
+          }
+        }}
+      />
+
+      {/* 6. Fullscreen List Feed (When in 'list' View Mode) */}
+      {viewMode === 'list' && (
+        <View style={styles.listContainer}>
           <FlatList
-            ref={flatListRef}
             data={displayedProperties}
             keyExtractor={(item) => item.id}
-            renderItem={renderPropertyCard}
-            contentContainerStyle={styles.sheetListContent}
+            contentContainerStyle={styles.verticalListContent}
             showsVerticalScrollIndicator={false}
-            onScrollToIndexFailed={() => {}}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#e11d48']}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  fetchHomes();
+                }}
+                colors={[themeColor]}
               />
             }
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Ionicons name="home-outline" size={44} color="#cbd5e1" />
-                <Text style={styles.emptyTitle}>No Homes Found</Text>
-                <Text style={styles.emptySubtitle}>
-                  Try selecting a different filter chip or expanding your search query.
-                </Text>
-              </View>
-            }
+            renderItem={({ item }) => {
+              const photoUrl =
+                item.property_media?.[0]?.url ||
+                'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80';
+              const isSaved = savedPropertyIds.has(item.id);
+
+              return (
+                <TouchableOpacity
+                  style={styles.vertCard}
+                  activeOpacity={0.92}
+                  onPress={() => router.push(`/property/${item.id}`)}
+                >
+                  <View style={styles.vertImageContainer}>
+                    <Image source={{ uri: photoUrl }} style={styles.vertImage} resizeMode="cover" />
+                    <View style={[styles.vertPriceTag, { backgroundColor: themeColor }]}>
+                      <Text style={styles.vertPriceText}>{formatPricePill(item.price)}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.vertHeartBtn}
+                      onPress={() => handleToggleFavorite(item.id)}
+                    >
+                      <Ionicons
+                        name={isSaved ? 'heart' : 'heart-outline'}
+                        size={18}
+                        color={isSaved ? themeColor : '#ffffff'}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.vertDetails}>
+                    <Text style={styles.vertTitle} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.vertAddress} numberOfLines={1}>
+                      {item.address || 'Prime Location'}
+                    </Text>
+                    <View style={styles.vertSpecsRow}>
+                      {item.bedrooms !== undefined && item.bedrooms !== null ? (
+                        <Text style={styles.vertSpecText}>{item.bedrooms} bd · </Text>
+                      ) : null}
+                      {item.bathrooms !== undefined && item.bathrooms !== null ? (
+                        <Text style={styles.vertSpecText}>{item.bathrooms} ba · </Text>
+                      ) : null}
+                      {item.area_sqft ? (
+                        <Text style={styles.vertSpecText}>{item.area_sqft} sqft</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
           />
-        )}
-      </Animated.View>
+
+          {/* Floating Bottom-Center "Map" Toggle Pill */}
+          <View style={styles.bottomPillWrap} pointerEvents="box-none">
+            <TouchableOpacity
+              style={styles.viewTogglePill}
+              onPress={() => setViewMode('map')}
+              activeOpacity={0.88}
+            >
+              <Ionicons name="map" size={16} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.viewToggleText}>Map</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* 7. Comprehensive Filter Modal Bottom Sheet */}
+      <MobileFilterModal
+        visible={isFilterModalVisible}
+        onClose={() => setIsFilterModalVisible(false)}
+        filters={modalFilters}
+        totalMatches={displayedProperties.length}
+        onApply={(newFilters) => {
+          setModalFilters(newFilters);
+          fetchHomes(searchQuery, activeQuickFilter, newFilters);
+        }}
+        onReset={() => {
+          setModalFilters({});
+          fetchHomes(searchQuery, activeQuickFilter, {});
+        }}
+      />
     </View>
   );
 }
@@ -990,187 +950,289 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f8fafc',
   },
   map: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
   },
-  topOverlay: {
-    position: 'absolute',
-    top: Platform.OS === 'android' ? 30 : 10,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-  },
-  headerFloatingCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    marginHorizontal: 16,
-    borderRadius: 20,
-    paddingTop: 10,
-    paddingBottom: 10,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.14,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(226, 232, 240, 0.8)',
-  },
-  searchBar: {
-    flexDirection: 'row',
+  // Price Pill Markers
+  markerAnchor: {
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 14,
-    marginHorizontal: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#0f172a',
-    paddingVertical: 4,
+  pricePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 3,
+    elevation: 4,
   },
-  filterList: {
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    gap: 8,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  filterChipActive: {
+  pricePillDefault: {
     backgroundColor: '#e11d48',
-    borderColor: '#e11d48',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
   },
-  filterChipText: {
+  pricePillSelected: {
+    backgroundColor: '#be123c',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    transform: [{ scale: 1.15 }],
+  },
+  pricePillViewed: {
+    backgroundColor: '#fff1f2',
+    borderWidth: 1.5,
+    borderColor: '#fecdd3',
+  },
+  pricePillText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#64748b',
+    fontWeight: '800',
   },
-  filterChipTextActive: {
+  pricePillTextDefault: {
     color: '#ffffff',
   },
-  offlineNotice: {
+  pricePillTextSelected: {
+    color: '#ffffff',
+    fontWeight: '900',
+  },
+  pricePillTextViewed: {
+    color: '#9f1239',
+  },
+  markerCaret: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderTopWidth: 5,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  markerCaretDefault: {
+    borderTopColor: '#e11d48',
+  },
+  markerCaretSelected: {
+    borderTopColor: '#be123c',
+  },
+  markerCaretViewed: {
+    borderTopColor: '#fff1f2',
+  },
+
+  // Top Floating Header
+  // Top Floating Search Bar & Circular Filter Button Row
+  topFloatingBarContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : 12,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 8,
-    paddingBottom: 2,
+    gap: 10,
+    zIndex: 35,
   },
-  offlineNoticeText: {
-    fontSize: 11,
+  searchPill: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  searchInputText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  searchPlaceholderText: {
     color: '#64748b',
     fontWeight: '500',
   },
-
-  // Map Controls
-  mapControls: {
-    position: 'absolute',
-    right: 16,
-    top: Platform.OS === 'android' ? 170 : 160,
-    zIndex: 90,
-    gap: 10,
+  clearSearchBtn: {
+    padding: 4,
   },
-  mapControlButton: {
+  filterCircleButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    position: 'relative',
+  },
+  filterCircleButtonActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    backgroundColor: '#2563eb',
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
+  },
+  filterBadgeText: {
+    color: '#ffffff',
+    fontSize: 9.5,
+    fontWeight: '800',
+  },
+  drawnShapeBannerContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 64 : 68,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+    zIndex: 34,
+  },
+  // Floating 3D Perspective Tilt Button (Positioned cleanly on top-right below the circular filter button)
+  floating3DCircle: {
+    position: 'absolute',
+    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 66 : 70,
+    right: 16,
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+    elevation: 4,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    zIndex: 35,
   },
-  mapControlButtonActive: {
+  floating3DCircleActive: {
     backgroundColor: '#0f172a',
     borderColor: '#0f172a',
   },
-
-  // Custom Price Pill Marker
-  markerWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  floating3DText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#0f172a',
   },
-  pricePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 18,
-    borderWidth: 1.5,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 6,
-  },
-  pricePillInactive: {
-    backgroundColor: '#e11d48',
-    borderColor: '#be123c',
-  },
-  pricePillViewed: {
-    backgroundColor: '#ffe4e6',
-    borderColor: '#fecdd3',
-  },
-  pricePillActive: {
-    backgroundColor: '#be123c',
-    borderColor: '#ffffff',
-    transform: [{ scale: 1.12 }],
-    shadowOpacity: 0.35,
-    elevation: 8,
-  },
-  pricePillText: {
-    fontWeight: '800',
-    fontSize: 12,
-  },
-  pricePillTextInactive: {
+  floating3DTextActive: {
     color: '#ffffff',
   },
-  pricePillTextViewed: {
-    color: '#9f1239',
+  quickFilterList: {
+    paddingTop: 8,
+    gap: 6,
+  },
+  quickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: '#f1f5f9',
+  },
+  quickChipActive: {
+    backgroundColor: '#0f172a',
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  quickChipTextActive: {
+    color: '#ffffff',
     fontWeight: '700',
   },
-  pricePillTextActive: {
+
+  // Sub Bar (Draw, Search as move, Clear)
+  subBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  subPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  subPillActive: {
+    backgroundColor: '#e11d48',
+    borderColor: '#e11d48',
+  },
+  subPillMoveActive: {
+    borderColor: '#cbd5e1',
+  },
+  subPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  subPillTextActive: {
     color: '#ffffff',
   },
-  markerArrow: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 6,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
+  microDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#cbd5e1',
+    marginRight: 6,
   },
-  markerArrowInactive: {
-    borderTopColor: '#e11d48',
+  microDotActive: {
+    backgroundColor: '#059669',
   },
-  markerArrowViewed: {
-    borderTopColor: '#ffe4e6',
+  clearBoundaryPill: {
+    backgroundColor: '#fff1f2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#fecdd3',
   },
-  markerArrowActive: {
-    borderTopColor: '#be123c',
+  clearBoundaryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#e11d48',
   },
 
-  // Bottom Sheet
-  bottomSheet: {
+  // Bottom Summary Sheet Card (Zillow Style)
+  bottomSummaryCard: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -1178,238 +1240,157 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 10,
-    zIndex: 100,
-    overflow: 'hidden',
-  },
-  sheetHandleArea: {
     paddingTop: 10,
-    paddingBottom: 10,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 18,
     paddingHorizontal: 20,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    zIndex: 30,
   },
-  sheetHandleBar: {
-    width: 38,
-    height: 5,
-    borderRadius: 3,
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: '#cbd5e1',
     alignSelf: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  sheetHeaderRow: {
+  sheetContentRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sheetHeaderLeft: {
-    flex: 1,
-  },
-  sheetCountTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  sheetSubTitle: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  sheetExpandButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  sheetListContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-
-  // Property Card inside bottom sheet
-  card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    marginBottom: 16,
-    borderWidth: 1.5,
-    borderColor: '#f1f5f9',
-    elevation: 3,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.07,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    overflow: 'hidden',
-  },
-  cardSelected: {
-    borderColor: '#e11d48',
-    backgroundColor: '#fffbfa',
-  },
-  cardImageContainer: {
-    position: 'relative',
-    width: '100%',
-    height: 180,
-  },
-  cardImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#e2e8f0',
-  },
-  badgeRow: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    flexDirection: 'row',
     gap: 6,
   },
-  statusBadge: {
-    backgroundColor: '#0f172a',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  typeBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  typeBadgeText: {
-    color: '#0f172a',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  heartButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    backgroundColor: '#ffffff',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  cardContent: {
-    padding: 14,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  priceText: {
-    fontSize: 20,
+  sheetTitle: {
+    fontSize: 15,
     fontWeight: '800',
     color: '#0f172a',
+    letterSpacing: -0.2,
   },
-  viewedTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+
+
+
+  // Fullscreen Vertical List View
+  listContainer: {
+    position: 'absolute',
+    top: 150,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f8fafc',
+    zIndex: 35,
+  },
+  verticalListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 90,
+    gap: 16,
+  },
+  vertCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  viewedTagText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#94a3b8',
+  vertImageContainer: {
+    width: '100%',
+    height: 180,
+    position: 'relative',
+    backgroundColor: '#0f172a',
   },
-  activePillTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffe4e6',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-    gap: 3,
+  vertImage: {
+    width: '100%',
+    height: '100%',
   },
-  activePillTagText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#e11d48',
+  vertPriceTag: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    backgroundColor: '#e11d48',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
   },
-  titleText: {
+  vertPriceText: {
+    color: '#ffffff',
     fontSize: 15,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 4,
+    fontWeight: '900',
   },
-  addressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  addressText: {
-    fontSize: 12,
-    color: '#64748b',
-    flex: 1,
-  },
-  specsRow: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 10,
-    gap: 14,
-  },
-  specItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  specText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  emptyState: {
+  vertHeartBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 50,
-    paddingHorizontal: 20,
   },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+  vertDetails: {
+    padding: 14,
+  },
+  vertTitle: {
+    fontSize: 16,
+    fontWeight: '800',
     color: '#0f172a',
-    marginTop: 10,
     marginBottom: 4,
   },
-  emptySubtitle: {
-    fontSize: 13,
+  vertAddress: {
+    fontSize: 12,
     color: '#64748b',
-    textAlign: 'center',
-    lineHeight: 18,
+    marginBottom: 8,
+  },
+  vertSpecsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingTop: 8,
+  },
+  vertSpecText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+  },
+
+  // Floating Bottom "List / Map" Toggle Pill
+  bottomPillWrap: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  viewTogglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  viewToggleText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
 });

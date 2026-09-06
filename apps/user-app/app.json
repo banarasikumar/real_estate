@@ -4,6 +4,13 @@
     "slug": "real-estate-user",
     "scheme": "userapp",
     "version": "1.0.0",
-    "plugins": ["expo-router"]
+    "plugins": ["expo-router"],
+    "android": {
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyC1tcsWiybKccHR-ceMjlPXIKO4lxe6g7k"
+        }
+      }
+    }
   }
 }

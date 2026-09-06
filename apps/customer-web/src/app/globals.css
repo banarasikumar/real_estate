@@ -42,3 +42,12 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Hide Mapbox watermark and attribution overlay */
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-bottom-left,
+.mapboxgl-ctrl-attrib {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
