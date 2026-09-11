@@ -113,10 +113,10 @@ real_estate/
 
 ## 4. Active Background Tasks & Services
 
-| Service | Task ID | Port | Command |
+| Service | Status | Port | Command |
 |---|---|---|---|
-| Metro Bundler (`user-app`) | `task-651` | `8081` | `npx expo start --clear` |
-| Customer Web (`customer-web`) | `task-162` | `3000` | `npm run dev --workspace=customer-web` |
+| Metro Bundler (`user-app`) | Active (`task-110`) | `8081` | `npx expo start --clear` |
+| Customer Web (`customer-web`) | Ready to start | `3000` | `npm run dev --workspace=customer-web` |
 
 ### Environment Variables
 - `apps/user-app/.env`: `EXPO_PUBLIC_MAPBOX_TOKEN=pk.eyJ1...`
