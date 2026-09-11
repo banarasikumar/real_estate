@@ -18,11 +18,10 @@ All changes for the **Zillow-identical UI & Mapbox Standard 3D** initiative have
 ### Git Branch Status
 | Branch | Commit | Remote Tracking | Status |
 |---|---|---|---|
-| `main` | `7bfcc105` | `origin/main` | Stable base, 100% in sync |
-| `feature/mapbox-stunning-ui` | `2e0b359c` | `origin/feature/mapbox-stunning-ui` | Full Mapbox Standard 3D + Zillow UI, clean history, 100% in sync |
+| `main` | `c96af5b6` | `origin/main` | Production base, merged with Mapbox Standard 3D & Zillow UI, 100% in sync |
+| `feature/mapbox-stunning-ui` | `c96af5b6` | `origin/feature/mapbox-stunning-ui` | Merged into `main`, 100% in sync |
 
 - **Security Note**: All Mapbox access tokens were purged from Git commit history. Tokens reside strictly in gitignored `.env` files (`apps/user-app/.env` and `apps/customer-web/.env.local`). GitHub Push Protection passed with zero warnings.
-- **GitHub PR URL**: [Open PR for feature/mapbox-stunning-ui](https://github.com/banarasikumar/real_estate/pull/new/feature/mapbox-stunning-ui)
 
 ---
 
@@ -127,14 +126,9 @@ real_estate/
 
 ## 5. Next Steps & Future Roadmap
 
-When resuming in the next conversation:
-
-1. **Pull Request & Branch Merge**:
-   - Test and merge `feature/mapbox-stunning-ui` into `main` on GitHub via PR:
-     [Create Pull Request](https://github.com/banarasikumar/real_estate/pull/new/feature/mapbox-stunning-ui)
-2. **Owner App Harmonization (`apps/owner-app`)**:
+1. **Owner App Harmonization (`apps/owner-app`)**:
    - Bring any relevant Mapbox 3D or address pin-drop capabilities into the property listing creation flow.
-3. **Saved Searches & Boundary Sync**:
+2. **Saved Searches & Boundary Sync**:
    - Connect the 'Save search' button and drawn boundary polygons to Supabase user preferences table for push notification alerts on new listings in saved areas.
-4. **Property Details Page**:
+3. **Property Details Page**:
    - Refine the property details view when clicking through from the bottom sheet card feed or map popups.
