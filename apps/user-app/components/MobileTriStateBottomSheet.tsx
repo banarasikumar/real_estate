@@ -397,13 +397,81 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     animateToState(snapState);
   }, [snapState, animateToState]);
 
-  // PanResponder for Handle Bar (PEEK & DUAL)
+  // Status bar padding calculation matching Zillow
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : insets.top;
+  const headerPaddingTop = statusBarHeight + 8;
+  const searchRowTotalHeight = headerPaddingTop + 56;
+
+  // 60fps GPU Native Driver Animated Interpolations
+  const headerBgOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 70, 140],
+        outputRange: [1, 0.5, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim]
+  );
+
+  const countRowOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 50, 110],
+        outputRange: [0, 0.2, 1],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim]
+  );
+
+  const sortRowOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 50, 110],
+        outputRange: [1, 0.6, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim]
+  );
+
+  const hudOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 60, 130],
+        outputRange: [0, 0, 1],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim]
+  );
+
+  const bottomMapButtonOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 30, 80],
+        outputRange: [1, 0.8, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim]
+  );
+
+  const subheaderTranslateY = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 140],
+        outputRange: [searchRowTotalHeight, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, searchRowTotalHeight]
+  );
+
+  // Universal PanResponder for PEEK & DUAL modes (swiping anywhere on container drags sheet)
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          return Math.abs(gesture.dy) > 3;
+          if (snapState === 'FULL') return false; // in FULL mode, FlatList scrolls natively
+          // in PEEK or DUAL: capture vertical drag if dy > 4 and vertical dominates horizontal
+          return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
           dragStartTranslateY.current = currentTranslateYRef.current;
@@ -458,7 +526,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          return snapState === 'FULL' && gesture.dy > 8;
+          return snapState === 'FULL' && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
           dragStartTranslateY.current = 0;
@@ -494,14 +562,14 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const handleTouchStart = useCallback((e: any) => {
     touchStartYRef.current = e.nativeEvent.pageY;
-    isAtTopRef.current = scrollYRef.current <= 2;
+    isAtTopRef.current = scrollYRef.current <= 0;
   }, []);
 
   const handleTouchMove = useCallback(
     (e: any) => {
       if (snapState === 'FULL' && isAtTopRef.current) {
         const dy = e.nativeEvent.pageY - touchStartYRef.current;
-        if (dy > 35) {
+        if (dy > 25) {
           isAtTopRef.current = false;
           onSnapChange('DUAL');
           animateToState('DUAL');
@@ -555,10 +623,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     listType === 'RENT' ? 'rentals' : 'homes'
   } available`;
 
-  // Status bar padding calculation matching Zillow Screenshot 2
-  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : insets.top;
-  const headerPaddingTop = statusBarHeight + 12;
-
   return (
     <Animated.View
       style={[
@@ -569,124 +633,191 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           transform: [{ translateY: translateYAnim }],
         },
       ]}
+      {...panResponder.panHandlers}
     >
       {/* 0. Anchored Floating Action HUD Row: Layer | Draw | Recenter | Save Search */}
-      {snapState !== 'FULL' && (
-        <View style={styles.anchoredHudContainer} pointerEvents="box-none">
-          {/* Left circular HUD buttons */}
-          <View style={styles.hudLeftGroup}>
-            {/* Map Layer (Satellite / Standard) */}
-            {onToggleMapType && (
-              <TouchableOpacity
-                style={[styles.hudCircle, mapType === 'satellite' && styles.hudCircleActive]}
-                onPress={onToggleMapType}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name={mapType === 'satellite' ? 'earth' : 'earth-outline'}
-                  size={20}
-                  color={mapType === 'satellite' ? '#ffffff' : '#0f172a'}
-                />
-              </TouchableOpacity>
-            )}
-
-            {/* Touch Draw Button with ZillowDrawIcon */}
-            {onStartDraw && (
-              <TouchableOpacity
-                style={[styles.hudCircle, isDrawingMode && styles.hudCircleActive]}
-                onPress={onStartDraw}
-                activeOpacity={0.85}
-              >
-                <ZillowDrawIcon size={22} color={isDrawingMode ? '#ffffff' : '#0f172a'} />
-              </TouchableOpacity>
-            )}
-
-            {/* Recenter / My Location */}
-            {onRecenter && (
-              <TouchableOpacity
-                style={styles.hudCircle}
-                onPress={onRecenter}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="locate" size={20} color="#0f172a" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Right Save Search Pill */}
-          <TouchableOpacity
-            style={[
-              styles.anchoredSaveSearchPill,
-              isSearchSaved && styles.anchoredSaveSearchPillActive,
-            ]}
-            onPress={handleToggleSaveSearch}
-            activeOpacity={0.88}
-          >
-            <Ionicons
-              name={isSearchSaved ? 'checkmark-circle' : 'search'}
-              size={14}
-              color="#ffffff"
-              style={{ marginRight: 6 }}
-            />
-            <Text style={styles.anchoredSaveSearchText}>
-              {isSearchSaved ? 'Saved' : 'Save search'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* 1. Sticky Solid White Fullscreen Header (Exact Zillow Match) */}
-      {snapState === 'FULL' ? (
-        <View style={[styles.fullscreenHeader, { paddingTop: headerPaddingTop }]}>
-          {/* Row 1: Search Pill + Circular Filter Button */}
-          <View style={styles.fullscreenSearchRow}>
+      <Animated.View
+        style={[
+          styles.anchoredHudContainer,
+          { opacity: hudOpacity },
+        ]}
+        pointerEvents={snapState === 'FULL' ? 'none' : 'box-none'}
+      >
+        {/* Left circular HUD buttons */}
+        <View style={styles.hudLeftGroup}>
+          {/* Map Layer (Satellite / Standard) */}
+          {onToggleMapType && (
             <TouchableOpacity
-              style={styles.fullscreenSearchPill}
-              onPress={onOpenSearchModal}
-              activeOpacity={0.88}
-            >
-              <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
-              <Text
-                style={[
-                  styles.fullscreenSearchText,
-                  !searchQuery && styles.fullscreenSearchPlaceholder,
-                ]}
-                numberOfLines={1}
-              >
-                {searchQuery || regionName || (listType === 'RENT' ? 'Los Angeles CA homes' : 'Home features, school, location')}
-              </Text>
-              {searchQuery ? (
-                <TouchableOpacity onPress={onClearSearch} style={styles.clearSearchBtn}>
-                  <Ionicons name="close-circle" size={18} color="#94a3b8" />
-                </TouchableOpacity>
-              ) : (
-                <Ionicons name="mic-outline" size={19} color="#94a3b8" />
-              )}
-            </TouchableOpacity>
-
-            {/* Circular Filter Button */}
-            <TouchableOpacity
-              style={[
-                styles.fullscreenFilterCircle,
-                activeFilterCount > 0 && styles.fullscreenFilterCircleActive,
-              ]}
-              onPress={onOpenFilters}
+              style={[styles.hudCircle, mapType === 'satellite' && styles.hudCircleActive]}
+              onPress={onToggleMapType}
               activeOpacity={0.85}
             >
-              <ZillowFilterIcon
+              <Ionicons
+                name={mapType === 'satellite' ? 'earth' : 'earth-outline'}
                 size={20}
-                color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
+                color={mapType === 'satellite' ? '#ffffff' : '#0f172a'}
               />
-              {activeFilterCount > 0 && (
-                <View style={styles.filterBadge}>
-                  <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-                </View>
-              )}
             </TouchableOpacity>
-          </View>
+          )}
 
-          {/* Row 2: Sort: Recommended ⇅  |  Save Search (Clean Zillow Typography) */}
-          <View {...headerPanResponder.panHandlers} style={styles.fullscreenSubHeaderRow}>
+          {/* Touch Draw Button with ZillowDrawIcon */}
+          {onStartDraw && (
+            <TouchableOpacity
+              style={[styles.hudCircle, isDrawingMode && styles.hudCircleActive]}
+              onPress={onStartDraw}
+              activeOpacity={0.85}
+            >
+              <ZillowDrawIcon size={22} color={isDrawingMode ? '#ffffff' : '#0f172a'} />
+            </TouchableOpacity>
+          )}
+
+          {/* Recenter / My Location */}
+          {onRecenter && (
+            <TouchableOpacity
+              style={styles.hudCircle}
+              onPress={onRecenter}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="locate" size={20} color="#0f172a" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Right Save Search Pill */}
+        <TouchableOpacity
+          style={[
+            styles.anchoredSaveSearchPill,
+            isSearchSaved && styles.anchoredSaveSearchPillActive,
+          ]}
+          onPress={handleToggleSaveSearch}
+          activeOpacity={0.88}
+        >
+          <Ionicons
+            name={isSearchSaved ? 'checkmark-circle' : 'search'}
+            size={14}
+            color="#ffffff"
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.anchoredSaveSearchText}>
+            {isSearchSaved ? 'Saved' : 'Save search'}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* 1. Header Structure: Zero Flash, Continuous GPU Native Driver */}
+      {/* 1A. Solid White Background behind Status Bar and Search Bar */}
+      <Animated.View
+        style={[
+          styles.headerBgFill,
+          {
+            height: searchRowTotalHeight,
+            opacity: headerBgOpacity,
+          },
+        ]}
+        pointerEvents="none"
+      />
+
+      {/* 1B. Top Fixed Search Row (Search Pill & Circular Filter Button) */}
+      <Animated.View
+        {...(snapState === 'FULL' ? headerPanResponder.panHandlers : {})}
+        style={[
+          styles.topFixedSearchRow,
+          {
+            paddingTop: headerPaddingTop,
+            opacity: headerBgOpacity,
+          },
+        ]}
+        pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
+      >
+        <View style={styles.fullscreenSearchRow}>
+          <TouchableOpacity
+            style={styles.fullscreenSearchPill}
+            onPress={onOpenSearchModal}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
+            <Text
+              style={[
+                styles.fullscreenSearchText,
+                !searchQuery && styles.fullscreenSearchPlaceholder,
+              ]}
+              numberOfLines={1}
+            >
+              {searchQuery || regionName || (listType === 'RENT' ? 'Los Angeles CA homes' : 'Home features, school, location')}
+            </Text>
+            {searchQuery ? (
+              <TouchableOpacity onPress={onClearSearch} style={styles.clearSearchBtn}>
+                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            ) : (
+              <Ionicons name="mic-outline" size={19} color="#94a3b8" />
+            )}
+          </TouchableOpacity>
+
+          {/* Circular Filter Button */}
+          <TouchableOpacity
+            style={[
+              styles.fullscreenFilterCircle,
+              activeFilterCount > 0 && styles.fullscreenFilterCircleActive,
+            ]}
+            onPress={onOpenFilters}
+            activeOpacity={0.85}
+          >
+            <ZillowFilterIcon
+              size={20}
+              color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
+            />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+
+      {/* 1C. Subheader Row & Feed Container (slides directly beneath search row in FULL mode) */}
+      <Animated.View
+        style={[
+          styles.mainContentContainer,
+          {
+            transform: [{ translateY: subheaderTranslateY }],
+          },
+        ]}
+      >
+        {/* Subheader Row: Cross-fades between count+handle and sort+save */}
+        <View
+          {...(snapState === 'FULL' ? headerPanResponder.panHandlers : {})}
+          style={styles.subHeaderRowContainer}
+        >
+          {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
+          <Animated.View
+            style={[
+              styles.countSubheaderLayer,
+              { opacity: countRowOpacity },
+            ]}
+            pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
+          >
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={handleHeaderPress}
+              style={styles.handleTouchable}
+            >
+              <View style={styles.grabHandle} />
+              <View style={styles.headerRow}>
+                <Text style={styles.headerTitle}>{countText}</Text>
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+
+          {/* Layer B (FULL): Sort: {sortOption} ⇅ | Save Search */}
+          <Animated.View
+            style={[
+              styles.sortSubheaderLayer,
+              { opacity: sortRowOpacity },
+            ]}
+            pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
+          >
             <TouchableOpacity
               style={styles.zillowSortButton}
               onPress={handleSortToggle}
@@ -713,94 +844,81 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                 {isSearchSaved ? 'Saved' : 'Save search'}
               </Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
-      ) : (
-        /* PEEK & DUAL Header: Grab Handle & Centered Count Available */
-        <View {...panResponder.panHandlers} style={styles.headerWrapper}>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={handleHeaderPress}
-            style={styles.handleTouchable}
-          >
-            {/* Top grab handle: 36x4px pill, rounded, #cbd5e1 */}
-            <View style={styles.grabHandle} />
 
-            {/* Header Row in PEEK & DUAL: Centered Count Title */}
-            <View style={styles.headerRow}>
-              <Text style={styles.headerTitle}>{countText}</Text>
+        {/* Thin Divider Border below the subheader */}
+        <View style={styles.headerDivider} />
+
+        {/* Property Cards Feed - ALWAYS mounted to eliminate unmounting/mounting freeze! */}
+        <FlatList
+          data={sortedProperties}
+          keyExtractor={(item) => String(item.id)}
+          showsVerticalScrollIndicator={false}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          getItemLayout={(_, index) => ({
+            length: 356,
+            offset: 356 * index,
+            index,
+          })}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+          scrollEnabled={snapState === 'FULL'}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 + searchRowTotalHeight : 32 },
+          ]}
+          renderItem={({ item }) => (
+            <LuxuryPropertyCard
+              property={item}
+              isSelected={item.id === selectedPropertyId}
+              isFavorite={isSaved(item.id)}
+              listType={listType}
+              onSelect={() => onSelectProperty(item)}
+              onToggleFavorite={() => onToggleFavorite(item.id)}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="home-outline" size={40} color="#cbd5e1" style={{ marginBottom: 8 }} />
+              <Text style={styles.emptyTitle}>No listings in this area</Text>
+              <Text style={styles.emptySubtitle}>
+                Try zooming out or moving the map to discover homes.
+              </Text>
             </View>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Property Cards Feed - ALWAYS mounted to eliminate unmounting/mounting freeze! */}
-      <FlatList
-        data={sortedProperties}
-        keyExtractor={(item) => String(item.id)}
-        showsVerticalScrollIndicator={false}
-        onScroll={handleListScroll}
-        scrollEventThrottle={16}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        getItemLayout={(_, index) => ({
-          length: 356,
-          offset: 356 * index,
-          index,
-        })}
-        initialNumToRender={4}
-        maxToRenderPerBatch={4}
-        windowSize={5}
-        removeClippedSubviews={Platform.OS === 'android'}
-        scrollEnabled={snapState !== 'PEEK'}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 : 32 },
-        ]}
-        renderItem={({ item }) => (
-          <LuxuryPropertyCard
-            property={item}
-            isSelected={item.id === selectedPropertyId}
-            isFavorite={isSaved(item.id)}
-            listType={listType}
-            onSelect={() => onSelectProperty(item)}
-            onToggleFavorite={() => onToggleFavorite(item.id)}
-          />
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="home-outline" size={40} color="#cbd5e1" style={{ marginBottom: 8 }} />
-            <Text style={styles.emptyTitle}>No listings in this area</Text>
-            <Text style={styles.emptySubtitle}>
-              Try zooming out or moving the map to discover homes.
-            </Text>
-          </View>
-        }
-      />
+          }
+        />
+      </Animated.View>
 
       {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - instantly switches to PEEK mode! */}
-      {snapState === 'FULL' && (
-        <View
-          style={[
-            styles.floatingMapPillWrap,
-            { bottom: insets.bottom + 16 },
-          ]}
-          pointerEvents="box-none"
+      <Animated.View
+        style={[
+          styles.floatingMapPillWrap,
+          {
+            bottom: insets.bottom + 16,
+            opacity: bottomMapButtonOpacity,
+          },
+        ]}
+        pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
+      >
+        <TouchableOpacity
+          style={styles.floatingMapPill}
+          onPress={() => {
+            onSnapChange('PEEK');
+            animateToState('PEEK');
+          }}
+          activeOpacity={0.9}
         >
-          <TouchableOpacity
-            style={styles.floatingMapPill}
-            onPress={() => {
-              onSnapChange('PEEK');
-              animateToState('PEEK');
-            }}
-            activeOpacity={0.9}
-          >
-            <Ionicons name="map" size={16} color="#ffffff" style={{ marginRight: 6 }} />
-            <Text style={styles.floatingMapPillText}>Map</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+          <Ionicons name="map" size={16} color="#ffffff" style={{ marginRight: 6 }} />
+          <Text style={styles.floatingMapPillText}>Map</Text>
+        </TouchableOpacity>
+      </Animated.View>
     </Animated.View>
   );
 };
@@ -830,6 +948,56 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     shadowOpacity: 0,
     elevation: 0,
+  },
+  headerBgFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    zIndex: 10,
+  },
+  topFixedSearchRow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    zIndex: 15,
+  },
+  mainContentContainer: {
+    flex: 1,
+    width: '100%',
+  },
+  subHeaderRowContainer: {
+    height: 48,
+    position: 'relative',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  countSubheaderLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  sortSubheaderLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+    width: '100%',
   },
   fullscreenHeader: {
     backgroundColor: '#ffffff',

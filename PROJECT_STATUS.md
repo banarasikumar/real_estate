@@ -65,16 +65,19 @@ real_estate/
      - Implemented with `transform: [{ translateY }]` using **`useNativeDriver: true`**, running directly on the native GPU compositor thread.
      - Snappy spring constants (`damping: 28, stiffness: 300, mass: 0.8`) with zero rubbery jitter.
      - Handle bar PanResponder: light 8px drag or upward flick in PEEK immediately glides into DUAL; tapping transitions between states.
-   - **Immersive Solid White Sticky Fullscreen Header (Zillow Screenshot 2 Match)**:
-     - Calibrated height: `availableHeight = SCREEN_HEIGHT - 60` (respecting the 60dp bottom tab bar so the header never shifts into the status bar).
-     - Calibrated status bar padding: `paddingTop: (StatusBar.currentHeight || 24) + 12`.
-     - **Row 1**: Floating Search Pill (`height: 48, borderRadius: 24, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e2e8f0'`) + Circular Filter Button (`48x48, borderRadius: 24`, vector slider icon).
-     - **Row 2**: Exact Zillow typography with flat blue styling: `Sort: Recommended ⇅` (`#006aff`, `14px, bold`) and `Save search` (`#006aff`, `14px, bold`), separated by a hairline `#f1f5f9` bottom border.
+   - **Continuous Zero-Flash Header Interpolations (60fps GPU Native Driver)**:
+     - `headerBgOpacity`: As the sheet approaches the search bar, the background behind the status bar and search bar smoothly turns solid white (`#ffffff`).
+     - `countRowOpacity` & `sortRowOpacity`: The drag handle `—` and `{count} rentals available` cross-fade into `Sort: {sortOption} ⇅` and `Save search` at the exact same screen position without any flicker or flash.
+     - `hudOpacity` & `bottomMapButtonOpacity`: Floating map HUD (Layer, Draw, GPS) and 3D button smoothly dissolve, while the floating bottom `[ 🗺️ Map ]` button fades in.
+   - **Universal Swipe-Up in DUAL & PEEK Modes**:
+     - Swiping up anywhere on the property card container (including cards) lifts the sheet into FULL mode without freezing.
+     - Card vertical scroll is locked in DUAL mode (`scrollEnabled={snapState === 'FULL'}`) and unlocked in FULL mode.
+     - Card click navigation and horizontal photo carousel paging (`dx > dy`) operate without interference.
    - **Reliable Downward Overscroll to DUAL Mode**:
-     - Direct touch tracking on the card list (`scrollY <= 2` and downward drag `dy > 35px`) immediately and smoothly returns to DUAL mode on Android and iOS.
-     - Dragging downward on the header subheader row also triggers smooth return to DUAL mode.
+     - Direct touch tracking on the card list (`scrollY <= 2` and downward drag `dy > 25px`) smoothly returns to DUAL mode.
+     - Header drag down also smoothly returns to DUAL mode.
    - **Instant PEEK Map Snap**:
-     - Floating black `[ 🗺️ Map ]` button at bottom center in FULL mode smoothly glides all the way down into PEEK mode.
+     - Floating black `[ 🗺️ Map ]` button at bottom center in FULL mode smoothly glides down into PEEK mode.
 
 3. **Feed Performance & Virtualization Optimization**:
    - Eliminated nested VirtualizedLists: Replaced nested card photo `FlatList` in `LuxuryPropertyCard` with native horizontal `<ScrollView horizontal pagingEnabled>` (eliminated 604ms JS thread freeze).

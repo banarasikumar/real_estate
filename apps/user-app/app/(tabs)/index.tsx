@@ -12,6 +12,7 @@ import {
   Dimensions,
   StatusBar,
   Platform,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MobileMapboxView, MobileMapboxViewRef } from '../../components/MobileMapboxView';
@@ -622,6 +623,30 @@ export default function UserAppHomeScreen() {
     return count;
   }, [modalFilters]);
 
+  // Smooth animated opacity for top floating search bar and 3D button transitions
+  const topBarOpacityAnim = useRef(
+    new Animated.Value(sheetSnapState === 'FULL' ? 0 : 1)
+  ).current;
+  const floating3DOpacityAnim = useRef(
+    new Animated.Value(sheetSnapState === 'FULL' ? 0 : 1)
+  ).current;
+
+  useEffect(() => {
+    const isFull = sheetSnapState === 'FULL';
+    Animated.parallel([
+      Animated.timing(topBarOpacityAnim, {
+        toValue: isFull ? 0 : 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(floating3DOpacityAnim, {
+        toValue: isFull ? 0 : 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [sheetSnapState, topBarOpacityAnim, floating3DOpacityAnim]);
+
   return (
     <View
       style={styles.container}
@@ -662,60 +687,64 @@ export default function UserAppHomeScreen() {
         onCancelDraw={() => setIsDrawingMode(false)}
       />
 
-      {/* 3. Top Floating Search & Filter Bar (Clean Zillow Design - Visible over map in PEEK & DUAL modes) */}
-      {sheetSnapState !== 'FULL' && (
-        <View style={styles.topFloatingBarContainer} pointerEvents="box-none">
-          {/* Floating Search Pill */}
-          <TouchableOpacity
-            style={styles.searchPill}
-            activeOpacity={0.88}
-            onPress={() => setIsSearchModalVisible(true)}
+      {/* 3. Top Floating Search & Filter Bar (Clean Zillow Design - Visible over map in PEEK & DUAL modes, smoothly hidden in FULL mode to prevent duplicate header) */}
+      <Animated.View
+        style={[
+          styles.topFloatingBarContainer,
+          { opacity: topBarOpacityAnim },
+        ]}
+        pointerEvents={sheetSnapState === 'FULL' ? 'none' : 'box-none'}
+      >
+        {/* Floating Search Pill */}
+        <TouchableOpacity
+          style={styles.searchPill}
+          activeOpacity={0.88}
+          onPress={() => setIsSearchModalVisible(true)}
+        >
+          <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
+          <Text
+            style={[styles.searchInputText, !searchQuery && styles.searchPlaceholderText]}
+            numberOfLines={1}
           >
-            <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
-            <Text
-              style={[styles.searchInputText, !searchQuery && styles.searchPlaceholderText]}
-              numberOfLines={1}
+            {searchQuery || activeRegion?.name || (isRent ? 'Los Angeles CA rentals' : 'Home features, school, location')}
+          </Text>
+          {searchQuery.length > 0 ? (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                setSearchQuery('');
+                setActiveRegion(null);
+                fetchHomes('');
+              }}
+              style={styles.clearSearchBtn}
             >
-              {searchQuery || activeRegion?.name || (isRent ? 'Los Angeles CA rentals' : 'Home features, school, location')}
-            </Text>
-            {searchQuery.length > 0 ? (
-              <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation();
-                  setSearchQuery('');
-                  setActiveRegion(null);
-                  fetchHomes('');
-                }}
-                style={styles.clearSearchBtn}
-              >
-                <Ionicons name="close-circle" size={18} color="#94a3b8" />
-              </TouchableOpacity>
-            ) : (
-              <Ionicons name="mic-outline" size={19} color="#94a3b8" />
-            )}
-          </TouchableOpacity>
+              <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="mic-outline" size={19} color="#94a3b8" />
+          )}
+        </TouchableOpacity>
 
-          {/* Dedicated Circular Filter Button */}
-          <TouchableOpacity
-            style={[
-              styles.filterCircleButton,
-              activeFilterCount > 0 && styles.filterCircleButtonActive,
-            ]}
-            onPress={() => setIsFilterModalVisible(true)}
-            activeOpacity={0.85}
-          >
-            <ZillowFilterIcon
-              size={20}
-              color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
-            />
-            {activeFilterCount > 0 && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+        {/* Dedicated Circular Filter Button */}
+        <TouchableOpacity
+          style={[
+            styles.filterCircleButton,
+            activeFilterCount > 0 && styles.filterCircleButtonActive,
+          ]}
+          onPress={() => setIsFilterModalVisible(true)}
+          activeOpacity={0.85}
+        >
+          <ZillowFilterIcon
+            size={20}
+            color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
+          />
+          {activeFilterCount > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* Drawn Shape Clear Banner */}
       {sheetSnapState !== 'FULL' && drawnPolygon && drawnPolygon.length >= 3 && (
@@ -731,8 +760,14 @@ export default function UserAppHomeScreen() {
         </View>
       )}
 
-      {/* 4. Floating 3D Perspective Tilt Button (Visible in PEEK & DUAL modes over the map) */}
-      {sheetSnapState !== 'FULL' && (
+      {/* 4. Floating 3D Perspective Tilt Button (Visible in PEEK & DUAL modes over the map, smoothly fades out in FULL mode) */}
+      <Animated.View
+        pointerEvents={sheetSnapState === 'FULL' ? 'none' : 'auto'}
+        style={[
+          styles.floating3DWrap,
+          { opacity: floating3DOpacityAnim },
+        ]}
+      >
         <TouchableOpacity
           style={[styles.floating3DCircle, is3D && styles.floating3DCircleActive]}
           onPress={handleToggle3D}
@@ -740,7 +775,7 @@ export default function UserAppHomeScreen() {
         >
           <Text style={[styles.floating3DText, is3D && styles.floating3DTextActive]}>3D</Text>
         </TouchableOpacity>
-      )}
+      </Animated.View>
 
       {/* 5. Map View Bottom Controls & Sheets (When in Map Mode) */}
       {viewMode === 'map' && (
@@ -1115,10 +1150,13 @@ const styles = StyleSheet.create({
     zIndex: 34,
   },
   // Floating 3D Perspective Tilt Button (Positioned cleanly on top-right below the circular filter button)
-  floating3DCircle: {
+  floating3DWrap: {
     position: 'absolute',
     top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 66 : 70,
     right: 16,
+    zIndex: 35,
+  },
+  floating3DCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -1132,7 +1170,6 @@ const styles = StyleSheet.create({
     elevation: 4,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    zIndex: 35,
   },
   floating3DCircleActive: {
     backgroundColor: '#0f172a',
