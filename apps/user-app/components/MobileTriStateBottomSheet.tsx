@@ -15,6 +15,7 @@ import {
   StatusBar,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  GestureResponderEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -102,6 +103,7 @@ interface LuxuryPropertyCardProps {
   listType: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
+  onCarouselScrollChange?: (isActive: boolean) => void;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -111,6 +113,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   listType,
   onSelect,
   onToggleFavorite,
+  onCarouselScrollChange,
 }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
@@ -192,33 +195,81 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
     [photos.length, activePhotoIndex]
   );
 
-  const handleCardPress = () => {
+  const handleCardPress = useCallback(() => {
     onSelect();
     if (property.id) {
       router.push(`/property/${property.id}`);
     }
-  };
+  }, [onSelect, property.id, router]);
 
-  const handleCallPress = () => {
+  const handleCallPress = useCallback(() => {
     const phone = property.phone || '+1234567890';
     Linking.openURL(`tel:${phone}`).catch(() => {});
+  }, [property.phone]);
+
+  // Gesture tracking on photo carousel to detect genuine taps vs horizontal swipes
+  const imageTouchStart = useRef({ x: 0, y: 0, time: 0 });
+  const hasImageDragged = useRef(false);
+
+  const handleImageTouchStart = (e: GestureResponderEvent) => {
+    imageTouchStart.current = {
+      x: e.nativeEvent.pageX,
+      y: e.nativeEvent.pageY,
+      time: Date.now(),
+    };
+    hasImageDragged.current = false;
+  };
+
+  const handleImageTouchMove = (e: GestureResponderEvent) => {
+    const dx = Math.abs(e.nativeEvent.pageX - imageTouchStart.current.x);
+    const dy = Math.abs(e.nativeEvent.pageY - imageTouchStart.current.y);
+    if (dx > 5 || dy > 5) {
+      hasImageDragged.current = true;
+    }
+    // Smart direction lock:
+    // If movement is horizontal (even with diagonal tilt dx >= dy * 0.7), notify parent bottom sheet
+    // to lock out vertical scrolling/sheet dragging!
+    if (dx > 4 && dx >= dy * 0.7) {
+      onCarouselScrollChange?.(true);
+    }
+  };
+
+  const handleImageTouchEnd = (e: GestureResponderEvent) => {
+    onCarouselScrollChange?.(false);
+    const dx = Math.abs(e.nativeEvent.pageX - imageTouchStart.current.x);
+    const dy = Math.abs(e.nativeEvent.pageY - imageTouchStart.current.y);
+    const dt = Date.now() - imageTouchStart.current.time;
+    // Pure intentional tap on photo: no dragging (dx <= 5, dy <= 5) and quick (< 300ms)
+    if (!hasImageDragged.current && dx <= 5 && dy <= 5 && dt < 300) {
+      handleCardPress();
+    }
+  };
+
+  const handleImageTouchCancel = () => {
+    onCarouselScrollChange?.(false);
+    hasImageDragged.current = false;
   };
 
   return (
-    <TouchableOpacity
-      style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}
-      activeOpacity={0.96}
-      onPress={handleCardPress}
-    >
+    <View style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}>
       {/* 1. Image Carousel Container */}
       <View style={styles.cardImageWrapper}>
         <ScrollView
           horizontal
           pagingEnabled
+          nestedScrollEnabled={true}
+          directionalLockEnabled={true}
           showsHorizontalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
           decelerationRate="fast"
+          onTouchStart={handleImageTouchStart}
+          onTouchMove={handleImageTouchMove}
+          onTouchEnd={handleImageTouchEnd}
+          onTouchCancel={handleImageTouchCancel}
+          onScrollBeginDrag={() => onCarouselScrollChange?.(true)}
+          onScrollEndDrag={() => onCarouselScrollChange?.(false)}
+          onMomentumScrollEnd={() => onCarouselScrollChange?.(false)}
         >
           {photos.map((photoUrl, idx) => (
             <Image
@@ -244,6 +295,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
             onToggleFavorite();
           }}
           activeOpacity={0.8}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
             name={isFavorite ? 'heart' : 'heart-outline'}
@@ -266,49 +318,56 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
         </View>
       </View>
 
-      {/* 2. Card Details */}
-      <View style={styles.cardBody}>
-        {/* Price & Total Monthly Price Badge */}
-        <View style={styles.priceRow}>
-          <Text style={styles.priceValue}>
-            {formatPropertyPrice(property.price, listType)}
+      {/* 2. Card Details - Dedicated Touchable with delayPressIn to prevent scroll miss-clicks */}
+      <TouchableOpacity
+        style={styles.cardBodyTouchable}
+        activeOpacity={0.92}
+        delayPressIn={60}
+        onPress={handleCardPress}
+      >
+        <View style={styles.cardBody}>
+          {/* Price & Total Monthly Price Badge */}
+          <View style={styles.priceRow}>
+            <Text style={styles.priceValue}>
+              {formatPropertyPrice(property.price, listType)}
+            </Text>
+            <View style={styles.totalMonthlyBadge}>
+              <View style={styles.bulletDot} />
+              <Text style={styles.totalMonthlyText}>Total monthly price</Text>
+            </View>
+          </View>
+
+          {/* Specs: 1 bd | 1 ba | 756 sqft | Apartment for rent */}
+          <Text style={styles.specsText} numberOfLines={1}>
+            {specsText}
           </Text>
-          <View style={styles.totalMonthlyBadge}>
-            <View style={styles.bulletDot} />
-            <Text style={styles.totalMonthlyText}>Total monthly price</Text>
+
+          {/* Address */}
+          <Text style={styles.addressText} numberOfLines={1}>
+            {property.address || '1530 N Poinsettia Pl #120, Los Angeles, CA'}
+          </Text>
+
+          {/* Actions Row: [ 📞 ] + [ Check availability ] */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={styles.callButton}
+              onPress={handleCallPress}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="call" size={18} color="#0f172a" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.availabilityButton}
+              onPress={handleCardPress}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.availabilityButtonText}>Check availability</Text>
+            </TouchableOpacity>
           </View>
         </View>
-
-        {/* Specs: 1 bd | 1 ba | 756 sqft | Apartment for rent */}
-        <Text style={styles.specsText} numberOfLines={1}>
-          {specsText}
-        </Text>
-
-        {/* Address */}
-        <Text style={styles.addressText} numberOfLines={1}>
-          {property.address || '1530 N Poinsettia Pl #120, Los Angeles, CA'}
-        </Text>
-
-        {/* Actions Row: [ 📞 ] + [ Check availability ] */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={styles.callButton}
-            onPress={handleCallPress}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="call" size={18} color="#0f172a" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.availabilityButton}
-            onPress={handleCardPress}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.availabilityButtonText}>Check availability</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 });
 
@@ -387,6 +446,18 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const isSwipingDownHandledRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
+
+  // Direction coordination: locks out vertical gestures when photo carousel is active
+  const isPhotoCarouselActiveRef = useRef(false);
+  const [isPhotoCarouselActive, setIsPhotoCarouselActive] = useState(false);
+  const handleCarouselScrollChange = useCallback((isActive: boolean) => {
+    isPhotoCarouselActiveRef.current = isActive;
+    setIsPhotoCarouselActive(isActive);
+  }, []);
+
+  // Sheet dragging lock: disables list scrolling while sheet is being physically dragged
+  const isSheetDraggingRef = useRef(false);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -514,21 +585,34 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         onStartShouldSetPanResponder: () => false,
         onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponderCapture: (_, gesture) => {
+          // If photo carousel is actively swiping horizontally, DO NOT capture vertically!
+          if (isPhotoCarouselActiveRef.current) return false;
+
           if (snapState === 'FULL') {
-            // Instant direction-lock within 6px:
-            // Downward drag dominates horizontal (|dy| > |dx| and dy > 6) AND at top of listings (scrollY <= 5)
-            return scrollYRef.current <= 5 && gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx);
+            // In FULL mode: capture if at top of listings, moving DOWN, and vertical dominates horizontal:
+            const isAtTop = scrollYRef.current <= 5;
+            const isDownward = gesture.dy > 5;
+            const isVerticalDominant = Math.abs(gesture.dy) > Math.abs(gesture.dx);
+            return isAtTop && isDownward && isVerticalDominant;
           }
           // In PEEK or DUAL mode: capture vertical drag if dy > 4 and vertical dominates horizontal
           return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
         onMoveShouldSetPanResponder: (_, gesture) => {
+          if (isPhotoCarouselActiveRef.current) return false;
+
           if (snapState === 'FULL') {
-            return scrollYRef.current <= 5 && gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx);
+            const isAtTop = scrollYRef.current <= 5;
+            const isDownward = gesture.dy > 5;
+            const isVerticalDominant = Math.abs(gesture.dy) > Math.abs(gesture.dx);
+            return isAtTop && isDownward && isVerticalDominant;
           }
           return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
+          isSheetDraggingRef.current = true;
+          setIsSheetDragging(true);
           dragStartTranslateY.current = currentTranslateYRef.current;
         },
         onPanResponderMove: (_, gesture) => {
@@ -540,6 +624,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           translateYAnim.setValue(clamped);
         },
         onPanResponderRelease: (_, gesture) => {
+          isSheetDraggingRef.current = false;
+          setIsSheetDragging(false);
           const vy = gesture.vy;
           const dy = gesture.dy;
           const currentY = currentTranslateYRef.current;
@@ -590,6 +676,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             onSnapChange(nextState);
           }
           animateToState(nextState);
+        },
+        onPanResponderTerminate: () => {
+          isSheetDraggingRef.current = false;
+          setIsSheetDragging(false);
+          animateToState(snapState);
         },
       }),
     [snapState, onSnapChange, animateToState, peekY, dualY, translateYAnim, resetListToTop]
@@ -786,6 +877,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           showsVerticalScrollIndicator={false}
           onScroll={handleListScroll}
           scrollEventThrottle={16}
+          bounces={false}
+          overScrollMode="never"
           getItemLayout={(_, index) => ({
             length: 356,
             offset: 356 * index,
@@ -795,7 +888,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           maxToRenderPerBatch={4}
           windowSize={5}
           removeClippedSubviews={Platform.OS === 'android'}
-          scrollEnabled={snapState === 'FULL'}
+          scrollEnabled={snapState === 'FULL' && !isSheetDragging && !isPhotoCarouselActive}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 + computedSearchRowTotalHeight : 32 },
@@ -808,6 +901,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               listType={listType}
               onSelect={() => onSelectProperty(item)}
               onToggleFavorite={() => onToggleFavorite(item.id)}
+              onCarouselScrollChange={handleCarouselScrollChange}
             />
           )}
           ListEmptyComponent={
@@ -1201,6 +1295,9 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: '#ffffff',
+  },
+  cardBodyTouchable: {
+    width: '100%',
   },
   cardBody: {
     padding: 14,
