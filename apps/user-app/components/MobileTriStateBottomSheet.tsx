@@ -15,7 +15,6 @@ import {
   StatusBar,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  GestureResponderEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -103,6 +102,8 @@ interface LuxuryPropertyCardProps {
   listType: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
+  onSwipeDown?: () => void;
+  isAtTop?: () => boolean;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -112,9 +113,13 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   listType,
   onSelect,
   onToggleFavorite,
+  onSwipeDown,
+  isAtTop,
 }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const cardTouchStartY = useRef(0);
+  const cardTouchStartedAtTop = useRef(false);
 
   // Collect up to 5 images for carousel
   const photos = useMemo(() => {
@@ -193,70 +198,59 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
     [photos.length, activePhotoIndex]
   );
 
-  const handleCardPress = useCallback(() => {
+  const handleCardPress = () => {
     onSelect();
     if (property.id) {
       router.push(`/property/${property.id}`);
     }
-  }, [onSelect, property.id, router]);
+  };
 
-  const handleCallPress = useCallback(() => {
+  const handleCallPress = () => {
     const phone = property.phone || '+1234567890';
     Linking.openURL(`tel:${phone}`).catch(() => {});
-  }, [property.phone]);
-
-  // Gesture tracking on photo carousel to detect genuine taps vs horizontal swipes
-  const imageTouchStart = useRef({ x: 0, y: 0, time: 0 });
-  const hasImageDragged = useRef(false);
-
-  const handleImageTouchStart = (e: GestureResponderEvent) => {
-    imageTouchStart.current = {
-      x: e.nativeEvent.pageX,
-      y: e.nativeEvent.pageY,
-      time: Date.now(),
-    };
-    hasImageDragged.current = false;
-  };
-
-  const handleImageTouchMove = (e: GestureResponderEvent) => {
-    const dx = Math.abs(e.nativeEvent.pageX - imageTouchStart.current.x);
-    const dy = Math.abs(e.nativeEvent.pageY - imageTouchStart.current.y);
-    if (dx > 5 || dy > 5) {
-      hasImageDragged.current = true;
-    }
-  };
-
-  const handleImageTouchEnd = (e: GestureResponderEvent) => {
-    const dx = Math.abs(e.nativeEvent.pageX - imageTouchStart.current.x);
-    const dy = Math.abs(e.nativeEvent.pageY - imageTouchStart.current.y);
-    const dt = Date.now() - imageTouchStart.current.time;
-    // Pure intentional tap on photo: no dragging (dx <= 5, dy <= 5) and quick (< 250ms)
-    if (!hasImageDragged.current && dx <= 5 && dy <= 5 && dt < 250) {
-      handleCardPress();
-    }
-  };
-
-  const handleImageTouchCancel = () => {
-    hasImageDragged.current = false;
   };
 
   return (
-    <View style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}>
+    <View
+      onTouchStart={(e) => {
+        cardTouchStartY.current = e.nativeEvent.pageY;
+        cardTouchStartedAtTop.current = isAtTop ? isAtTop() : true;
+      }}
+      onTouchMove={(e) => {
+        if (onSwipeDown && cardTouchStartedAtTop.current) {
+          if (cardTouchStartY.current === 0) {
+            cardTouchStartY.current = e.nativeEvent.pageY;
+            return;
+          }
+          const dy = e.nativeEvent.pageY - cardTouchStartY.current;
+          if (dy > 12) {
+            onSwipeDown();
+          }
+        }
+      }}
+      onTouchEnd={() => {
+        cardTouchStartY.current = 0;
+        cardTouchStartedAtTop.current = false;
+      }}
+      onTouchCancel={() => {
+        cardTouchStartY.current = 0;
+        cardTouchStartedAtTop.current = false;
+      }}
+    >
+      <TouchableOpacity
+      style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}
+      activeOpacity={0.96}
+      onPress={handleCardPress}
+    >
       {/* 1. Image Carousel Container */}
       <View style={styles.cardImageWrapper}>
         <ScrollView
           horizontal
           pagingEnabled
-          nestedScrollEnabled={true}
-          directionalLockEnabled={true}
           showsHorizontalScrollIndicator={false}
           onScroll={handleScroll}
           scrollEventThrottle={16}
           decelerationRate="fast"
-          onTouchStart={handleImageTouchStart}
-          onTouchMove={handleImageTouchMove}
-          onTouchEnd={handleImageTouchEnd}
-          onTouchCancel={handleImageTouchCancel}
         >
           {photos.map((photoUrl, idx) => (
             <Image
@@ -282,7 +276,6 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
             onToggleFavorite();
           }}
           activeOpacity={0.8}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Ionicons
             name={isFavorite ? 'heart' : 'heart-outline'}
@@ -305,54 +298,48 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
         </View>
       </View>
 
-      {/* 2. Card Details - Dedicated Touchable with delayPressIn to prevent scroll miss-clicks */}
-      <TouchableOpacity
-        style={styles.cardBodyTouchable}
-        activeOpacity={0.92}
-        delayPressIn={60}
-        onPress={handleCardPress}
-      >
-        <View style={styles.cardBody}>
-          {/* Price & Total Monthly Price Badge */}
-          <View style={styles.priceRow}>
-            <Text style={styles.priceValue}>
-              {formatPropertyPrice(property.price, listType)}
-            </Text>
-            <View style={styles.totalMonthlyBadge}>
-              <View style={styles.bulletDot} />
-              <Text style={styles.totalMonthlyText}>Total monthly price</Text>
-            </View>
-          </View>
-
-          {/* Specs: 1 bd | 1 ba | 756 sqft | Apartment for rent */}
-          <Text style={styles.specsText} numberOfLines={1}>
-            {specsText}
+      {/* 2. Card Details */}
+      <View style={styles.cardBody}>
+        {/* Price & Total Monthly Price Badge */}
+        <View style={styles.priceRow}>
+          <Text style={styles.priceValue}>
+            {formatPropertyPrice(property.price, listType)}
           </Text>
-
-          {/* Address */}
-          <Text style={styles.addressText} numberOfLines={1}>
-            {property.address || '1530 N Poinsettia Pl #120, Los Angeles, CA'}
-          </Text>
-
-          {/* Actions Row: [ 📞 ] + [ Check availability ] */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.callButton}
-              onPress={handleCallPress}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="call" size={18} color="#0f172a" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.availabilityButton}
-              onPress={handleCardPress}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.availabilityButtonText}>Check availability</Text>
-            </TouchableOpacity>
+          <View style={styles.totalMonthlyBadge}>
+            <View style={styles.bulletDot} />
+            <Text style={styles.totalMonthlyText}>Total monthly price</Text>
           </View>
         </View>
+
+        {/* Specs: 1 bd | 1 ba | 756 sqft | Apartment for rent */}
+        <Text style={styles.specsText} numberOfLines={1}>
+          {specsText}
+        </Text>
+
+        {/* Address */}
+        <Text style={styles.addressText} numberOfLines={1}>
+          {property.address || '1530 N Poinsettia Pl #120, Los Angeles, CA'}
+        </Text>
+
+        {/* Actions Row: [ 📞 ] + [ Check availability ] */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.callButton}
+            onPress={handleCallPress}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="call" size={18} color="#0f172a" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.availabilityButton}
+            onPress={handleCardPress}
+            activeOpacity={0.88}
+          >
+            <Text style={styles.availabilityButtonText}>Check availability</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
       </TouchableOpacity>
     </View>
   );
@@ -548,20 +535,20 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = e.nativeEvent.contentOffset.y;
       scrollYRef.current = Math.max(0, offsetY);
-      if (snapState === 'FULL' && offsetY < -8) {
+      if (snapState === 'FULL' && offsetY < -12) {
         triggerGlideToDual();
       }
     },
     [snapState, triggerGlideToDual]
   );
 
-  // Universal PanResponder for PEEK and DUAL modes (swiping anywhere on container drags sheet)
+  // Universal PanResponder for PEEK & DUAL modes (swiping anywhere on container drags sheet)
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (snapState === 'FULL') return false; // In FULL mode, FlatList handles native scrolling
+          if (snapState === 'FULL') return false; // in FULL mode, FlatList scrolls natively and RefreshControl/overscroll handles pull-down
           return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
@@ -580,7 +567,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           const dy = gesture.dy;
           let nextState: SheetSnapState = snapState;
 
-          if (snapState === 'DUAL') {
+          if (snapState === 'FULL') {
+            if (dy > 20 || vy > 0.15) {
+              nextState = 'DUAL';
+            } else {
+              nextState = 'FULL';
+            }
+          } else if (snapState === 'DUAL') {
             if (dy < -20 || vy < -0.15) {
               nextState = 'FULL';
             } else if (dy > 20 || vy > 0.15) {
@@ -588,7 +581,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             } else {
               nextState = 'DUAL';
             }
-          } else if (snapState === 'PEEK') {
+          } else {
             if (dy < -8 || vy < -0.1) {
               nextState = 'DUAL';
             } else {
@@ -609,36 +602,31 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     [snapState, onSnapChange, animateToState, peekY, translateYAnim, resetListToTop]
   );
 
-  // Subheader PanResponder for FULL mode downward pull
+  // Header PanResponder to allow dragging down on the header in FULL mode
   const headerPanResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (snapState !== 'FULL') return false;
-          return gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx);
+          return snapState === 'FULL' && gesture.dy > 10 && gesture.dy > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
           dragStartTranslateY.current = 0;
         },
         onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 0) {
-            const clamped = Math.min(dualY, Math.max(0, gesture.dy));
-            currentTranslateYRef.current = clamped;
-            translateYAnim.setValue(clamped);
+          if (gesture.dy > 10) {
+            triggerGlideToDual();
           }
         },
         onPanResponderRelease: (_, gesture) => {
-          if (gesture.dy > 15 || gesture.vy > 0.15) {
-            resetListToTop();
-            onSnapChange('DUAL');
-            animateToState('DUAL');
+          if (gesture.dy > 10 || gesture.vy > 0.15) {
+            triggerGlideToDual();
           } else {
             animateToState('FULL');
           }
         },
       }),
-    [snapState, onSnapChange, animateToState, dualY, translateYAnim, resetListToTop]
+    [snapState, triggerGlideToDual, animateToState]
   );
 
   const handleHeaderPress = () => {
@@ -763,7 +751,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         ]}
       >
         {/* Subheader Row: Cross-fades between count+handle and sort+save */}
-        <View style={styles.subHeaderRowContainer} {...headerPanResponder.panHandlers}>
+        <View
+          {...(snapState === 'FULL' ? headerPanResponder.panHandlers : {})}
+          style={styles.subHeaderRowContainer}
+        >
           {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
           <Animated.View
             style={[
@@ -832,8 +823,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           showsVerticalScrollIndicator={false}
           onScroll={handleListScroll}
           scrollEventThrottle={16}
-          bounces={false}
-          overScrollMode="never"
           onTouchStart={(e) => {
             listTouchStartY.current = e.nativeEvent.pageY;
             listTouchStartedAtTop.current = scrollYRef.current <= 5;
@@ -845,7 +834,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                 return;
               }
               const dy = e.nativeEvent.pageY - listTouchStartY.current;
-              if (dy > 15) {
+              if (dy > 12) {
                 triggerGlideToDual();
               }
             }
@@ -878,6 +867,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               isSelected={item.id === selectedPropertyId}
               isFavorite={isSaved(item.id)}
               listType={listType}
+              onSwipeDown={snapState === 'FULL' ? triggerGlideToDual : undefined}
+              isAtTop={() => scrollYRef.current <= 5}
               onSelect={() => onSelectProperty(item)}
               onToggleFavorite={() => onToggleFavorite(item.id)}
             />
@@ -1273,9 +1264,6 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: '#ffffff',
-  },
-  cardBodyTouchable: {
-    width: '100%',
   },
   cardBody: {
     padding: 14,
