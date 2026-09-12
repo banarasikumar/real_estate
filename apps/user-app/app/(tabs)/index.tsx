@@ -49,6 +49,7 @@ import {
 import { ZillowFilterIcon } from '../../components/ZillowIcons';
 import { MobileSearchModal } from '../../components/MobileSearchModal';
 import { SearchRegion, SEARCH_REGIONS } from '../../data/searchRegions';
+import { ALL_DEMO_PROPERTIES } from '../../data/mockProperties';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -58,228 +59,63 @@ export interface PropertyItem extends CarouselProperty {
 
 type MapBounds = SearchBounds;
 
-// Realistic Indian Luxury Real Estate Seed (Mumbai, Bangalore, Delhi, Pune, Goa)
-const SEED_PROPERTIES: PropertyItem[] = [
-  // 1. Single Unit: Bandra West Luxury Penthouse (SALE)
-  {
-    id: 'prop-1',
-    title: 'Sea-Facing Luxury Penthouse in Bandra West',
-    price: 65000000,
-    prop_type: 'APARTMENT',
-    list_type: 'SALE',
-    bedrooms: 4,
-    bathrooms: 4,
-    area_sqft: 3400,
-    address: 'Carter Road, Bandra West, Mumbai',
-    latitude: 19.062,
-    longitude: 72.824,
-    isVerified: true,
-    isNew: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' },
-      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
-    ],
-  },
+// Comprehensive Demo Real Estate Properties (Los Angeles: 26, New York: 25, Mumbai: 25)
+const SEED_PROPERTIES: PropertyItem[] = ALL_DEMO_PROPERTIES as PropertyItem[];
 
-  // 2. Multi-Unit Complex (3 Units): Lodha Park Towers, Worli, Mumbai (SALE)
-  {
-    id: 'prop-2a',
-    title: 'Lodha Park • 3 BHK Horizon Suite',
-    price: 32000000,
-    prop_type: 'APARTMENT',
-    list_type: 'SALE',
-    bedrooms: 3,
-    bathrooms: 3,
-    area_sqft: 1850,
-    address: 'Lodha Park, Worli, Mumbai',
-    latitude: 19.001,
-    longitude: 72.829,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80' },
-    ],
-  },
-  {
-    id: 'prop-2b',
-    title: 'Lodha Park • 2 BHK Sky View Suite',
-    price: 24000000,
-    prop_type: 'APARTMENT',
-    list_type: 'SALE',
-    bedrooms: 2,
-    bathrooms: 2,
-    area_sqft: 1250,
-    address: 'Lodha Park, Worli, Mumbai',
-    latitude: 19.001,
-    longitude: 72.829,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
-    ],
-  },
-  {
-    id: 'prop-2c',
-    title: 'Lodha Park • 4 BHK Presidential Duplex',
-    price: 68000000,
-    prop_type: 'APARTMENT',
-    list_type: 'SALE',
-    bedrooms: 4,
-    bathrooms: 5,
-    area_sqft: 3800,
-    address: 'Lodha Park, Worli, Mumbai',
-    latitude: 19.001,
-    longitude: 72.829,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80' },
-    ],
-  },
+function getFallbackProperties(queryText: string, bounds: MapBounds | null): PropertyItem[] {
+  let list = SEED_PROPERTIES;
+  const trimmed = (queryText || '').trim().toLowerCase();
+  if (trimmed) {
+    const words = trimmed.split(/[\s,]+/).filter(Boolean);
+    const matched = SEED_PROPERTIES.filter((p) => {
+      const city = (p.city || '').toLowerCase();
+      const state = (p.state || '').toLowerCase();
+      const address = (p.address || '').toLowerCase();
+      const title = (p.title || '').toLowerCase();
+      const haystack = `${title} ${address} ${city} ${state}`.toLowerCase();
+      if (haystack.includes(trimmed)) return true;
 
-  // 3. Multi-Unit Complex (3 Units): Prestige Shantiniketan, Whitefield, Bangalore (RENT)
-  {
-    id: 'prop-3a',
-    title: 'Prestige Shantiniketan • 2 BHK Executive Suite',
-    price: 42000,
-    prop_type: 'APARTMENT',
-    list_type: 'RENT',
-    bedrooms: 2,
-    bathrooms: 2,
-    area_sqft: 1350,
-    address: 'Prestige Shantiniketan, Whitefield, Bangalore',
-    latitude: 12.989,
-    longitude: 77.728,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80' },
-    ],
-  },
-  {
-    id: 'prop-3b',
-    title: 'Prestige Shantiniketan • 3 BHK Lake View Residence',
-    price: 55000,
-    prop_type: 'APARTMENT',
-    list_type: 'RENT',
-    bedrooms: 3,
-    bathrooms: 3,
-    area_sqft: 1980,
-    address: 'Prestige Shantiniketan, Whitefield, Bangalore',
-    latitude: 12.989,
-    longitude: 77.728,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800&q=80' },
-    ],
-  },
-  {
-    id: 'prop-3c',
-    title: 'Prestige Shantiniketan • 4 BHK Sky Villa',
-    price: 85000,
-    prop_type: 'APARTMENT',
-    list_type: 'RENT',
-    bedrooms: 4,
-    bathrooms: 4,
-    area_sqft: 3200,
-    address: 'Prestige Shantiniketan, Whitefield, Bangalore',
-    latitude: 12.989,
-    longitude: 77.728,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
-    ],
-  },
+      if (
+        (trimmed.includes('los angeles') || trimmed.includes('ca home') || trimmed.includes('santa monica') || trimmed.includes('beverly hills') || trimmed.includes('la home')) &&
+        city.includes('los angeles')
+      ) {
+        return true;
+      }
+      if (
+        (trimmed.includes('new york') || trimmed.includes('ny home') || trimmed.includes('manhattan') || trimmed.includes('brooklyn') || trimmed.includes('nyc')) &&
+        city.includes('new york')
+      ) {
+        return true;
+      }
+      if (
+        (trimmed.includes('mumbai') || trimmed.includes('bandra') || trimmed.includes('worli') || trimmed.includes('juhu')) &&
+        city.includes('mumbai')
+      ) {
+        return true;
+      }
 
-  // 4. Single Unit: Palm Meadows Garden Villa, Bangalore (SALE)
-  {
-    id: 'prop-4',
-    title: 'Contemporary Garden Villa with Private Pool',
-    price: 48000000,
-    prop_type: 'VILLA',
-    list_type: 'SALE',
-    bedrooms: 5,
-    bathrooms: 5,
-    area_sqft: 4500,
-    address: 'Palm Meadows, Whitefield, Bangalore',
-    latitude: 12.9698,
-    longitude: 77.75,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1613490908836-e05e54d6d654?w=800&q=80' },
-    ],
-  },
+      return words.some(
+        (w) => w.length > 2 && (city.includes(w) || address.includes(w) || title.includes(w))
+      );
+    });
+    if (matched.length > 0) {
+      list = matched;
+    }
+  }
 
-  // 5. Multi-Unit Complex (2 Units): Indiranagar Heights, Bangalore (RENT)
-  {
-    id: 'prop-5a',
-    title: 'Indiranagar Heights • Modern Studio',
-    price: 32000,
-    prop_type: 'APARTMENT',
-    list_type: 'RENT',
-    bedrooms: 1,
-    bathrooms: 1,
-    area_sqft: 650,
-    address: '100ft Road, Indiranagar, Bangalore',
-    latitude: 12.9784,
-    longitude: 77.6408,
-    isVerified: false,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80' },
-    ],
-  },
-  {
-    id: 'prop-5b',
-    title: 'Indiranagar Heights • 2 BHK Furnished Balcony Suite',
-    price: 48000,
-    prop_type: 'APARTMENT',
-    list_type: 'RENT',
-    bedrooms: 2,
-    bathrooms: 2,
-    area_sqft: 1100,
-    address: '100ft Road, Indiranagar, Bangalore',
-    latitude: 12.9784,
-    longitude: 77.6408,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
-    ],
-  },
-
-  // 6. Single Unit: Vasant Vihar Grand Bungalow, New Delhi (SALE)
-  {
-    id: 'prop-6',
-    title: 'Grand Independent Bungalow in Vasant Vihar',
-    price: 95000000,
-    prop_type: 'HOUSE',
-    list_type: 'SALE',
-    bedrooms: 6,
-    bathrooms: 6,
-    area_sqft: 6200,
-    address: 'Vasant Vihar, New Delhi',
-    latitude: 28.5603,
-    longitude: 77.1611,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
-    ],
-  },
-
-  // 7. Single Unit: Miramar Beach Apartment, Goa (RENT)
-  {
-    id: 'prop-7',
-    title: 'Sunny Sea Breeze Apartment near Miramar Beach',
-    price: 45000,
-    prop_type: 'APARTMENT',
-    list_type: 'RENT',
-    bedrooms: 2,
-    bathrooms: 2,
-    area_sqft: 1200,
-    address: 'Miramar Beach, Panaji, Goa',
-    latitude: 15.4828,
-    longitude: 73.8078,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
-    ],
-  },
-];
+  if (bounds) {
+    const { north, south, east, west } = bounds;
+    const inBounds = list.filter(
+      (p) =>
+        p.latitude! >= south &&
+        p.latitude! <= north &&
+        p.longitude! >= west &&
+        p.longitude! <= east
+    );
+    return inBounds.length > 0 ? inBounds : list;
+  }
+  return list;
+}
 
 interface QuickFilter {
   id: string;
@@ -450,24 +286,12 @@ export default function UserAppHomeScreen() {
           });
           setProperties(withCoords as PropertyItem[]);
         } else {
-          // Client-side fallback filtered by bounds
-          if (bounds) {
-            const { north, south, east, west } = bounds;
-            const inBounds = SEED_PROPERTIES.filter(
-              (p) =>
-                p.latitude! >= south &&
-                p.latitude! <= north &&
-                p.longitude! >= west &&
-                p.longitude! <= east
-            );
-            setProperties(inBounds.length > 0 ? inBounds : SEED_PROPERTIES);
-          } else {
-            setProperties(SEED_PROPERTIES);
-          }
+          // Client-side fallback filtered by search query & map bounds
+          setProperties(getFallbackProperties(queryText, bounds));
         }
       } catch (err) {
         console.warn('[UserApp] searchProperties fallback:', err);
-        setProperties(SEED_PROPERTIES);
+        setProperties(getFallbackProperties(queryText, bounds));
       } finally {
         setLoading(false);
         setRefreshing(false);

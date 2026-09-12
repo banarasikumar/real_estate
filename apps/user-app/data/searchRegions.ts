@@ -25,6 +25,12 @@ export interface SearchSuggestionItem {
   listType?: 'SALE' | 'RENT';
 }
 
+import {
+  LOS_ANGELES_PROPERTIES,
+  NEW_YORK_PROPERTIES,
+  MUMBAI_PROPERTIES,
+} from './mockProperties';
+
 export const SEARCH_REGIONS: SearchRegion[] = [
   {
     id: 'los-angeles',
@@ -58,84 +64,29 @@ export const SEARCH_REGIONS: SearchRegion[] = [
       [-118.6400, 34.2000], // West Hills
       [-118.6000, 34.2850], // Close loop
     ],
-    sampleProperties: [
-      {
-        id: 'la-1',
-        title: 'Cozy fireplace Apartment',
-        price: 2500,
-        list_type: 'RENT',
-        prop_type: 'APARTMENT',
-        bedrooms: 1,
-        bathrooms: 1,
-        area_sqft: 756,
-        address: '1530 N Poinsettia Pl #120, Los Angeles, CA',
-        latitude: 34.098,
-        longitude: -118.347,
-        isVerified: true,
-        badge: 'Cozy fireplace',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&q=80' },
-          { url: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800&q=80' },
-        ],
-      },
-      {
-        id: 'la-2',
-        title: 'Citrus Commons Luxury Residences',
-        price: 2755,
-        list_type: 'RENT',
-        prop_type: 'APARTMENT',
-        bedrooms: 2,
-        bathrooms: 2,
-        area_sqft: 1150,
-        address: 'Citrus Commons, Sherman Oaks, Los Angeles, CA',
-        latitude: 34.150,
-        longitude: -118.448,
-        isVerified: true,
-        badge: '2 Months Free',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
-          { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
-        ],
-      },
-      {
-        id: 'la-3',
-        title: 'Beverly Hills Sunset Modern Villa',
-        price: 9800,
-        list_type: 'RENT',
-        prop_type: 'VILLA',
-        bedrooms: 4,
-        bathrooms: 5,
-        area_sqft: 4200,
-        address: '1040 Loma Vista Dr, Beverly Hills, CA',
-        latitude: 34.088,
-        longitude: -118.398,
-        isVerified: true,
-        badge: 'Panoramic Views',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=800&q=80' },
-          { url: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80' },
-        ],
-      },
-      {
-        id: 'la-4',
-        title: 'Ocean Avenue Coastal Penthouse',
-        price: 5200,
-        list_type: 'RENT',
-        prop_type: 'APARTMENT',
-        bedrooms: 2,
-        bathrooms: 2,
-        area_sqft: 1480,
-        address: '1220 Ocean Ave #4B, Santa Monica, CA',
-        latitude: 34.019,
-        longitude: -118.498,
-        isVerified: true,
-        badge: 'Oceanfront View',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1512918728675-ed5a9ecdebfd?w=800&q=80' },
-          { url: 'https://images.unsplash.com/photo-1502005229762-ee152da915d6?w=800&q=80' },
-        ],
-      },
+    sampleProperties: LOS_ANGELES_PROPERTIES,
+  },
+  {
+    id: 'new-york',
+    name: 'New York NY homes',
+    city: 'New York',
+    state: 'NY',
+    center: [-73.9851, 40.7488], // Midtown Manhattan / Empire State Building
+    zoom: 11,
+    boundaryPolygon: [
+      [-74.0400, 40.7000], // Battery Park / Financial District
+      [-74.0150, 40.7500], // Chelsea / Hudson Yards / West Side Highway
+      [-73.9900, 40.7950], // Upper West Side / Riverside Park
+      [-73.9400, 40.8750], // Inwood / Fort Tryon / Harlem River
+      [-73.9100, 40.8500], // South Bronx / Mott Haven border
+      [-73.9250, 40.7750], // Astoria / Queens border
+      [-73.9550, 40.7250], // Greenpoint / Williamsburg, Brooklyn
+      [-73.9850, 40.6900], // DUMBO / Brooklyn Heights
+      [-74.0200, 40.6500], // Red Hook / Sunset Park
+      [-74.0500, 40.6400], // Upper New York Bay / Staten Island ferry channel
+      [-74.0400, 40.7000], // Close loop
     ],
+    sampleProperties: NEW_YORK_PROPERTIES,
   },
   {
     id: 'mumbai',
@@ -161,45 +112,7 @@ export const SEARCH_REGIONS: SearchRegion[] = [
       [72.8550, 18.9600], // Mumbai Port / Mazgaon
       [72.8150, 18.9050], // Close loop
     ],
-    sampleProperties: [
-      {
-        id: 'mum-1',
-        title: 'Sea-Facing Luxury Penthouse in Bandra West',
-        price: 65000000,
-        list_type: 'SALE',
-        prop_type: 'APARTMENT',
-        bedrooms: 4,
-        bathrooms: 4,
-        area_sqft: 3400,
-        address: 'Carter Road, Bandra West, Mumbai',
-        latitude: 19.062,
-        longitude: 72.824,
-        isVerified: true,
-        badge: 'Sea Facing',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' },
-          { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
-        ],
-      },
-      {
-        id: 'mum-2',
-        title: 'Lodha Park • 3 BHK Horizon Suite',
-        price: 32000000,
-        list_type: 'SALE',
-        prop_type: 'APARTMENT',
-        bedrooms: 3,
-        bathrooms: 3,
-        area_sqft: 1850,
-        address: 'Lodha Park, Worli, Mumbai',
-        latitude: 19.001,
-        longitude: 72.829,
-        isVerified: true,
-        badge: 'Luxury Suite',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&q=80' },
-        ],
-      },
-    ],
+    sampleProperties: MUMBAI_PROPERTIES,
   },
   {
     id: 'bangalore',
