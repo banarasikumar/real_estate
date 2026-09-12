@@ -666,7 +666,7 @@ function SearchContent() {
                     }}
                     className={`group relative flex flex-col bg-white rounded-2xl border transition-all duration-200 cursor-pointer overflow-hidden ${
                       isHovered || isSelected
-                        ? "border-rose-500 ring-2 ring-rose-500/20 shadow-xl -translate-y-0.5"
+                        ? "border-slate-200/90 shadow-sm md:border-rose-500 md:ring-2 md:ring-rose-500/20 md:shadow-xl md:-translate-y-0.5"
                         : "border-slate-200/90 shadow-sm hover:shadow-md hover:border-slate-300"
                     }`}
                   >

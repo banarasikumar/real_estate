@@ -29,6 +29,7 @@
 @layer base {
   * {
     border-color: var(--border);
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply bg-white text-slate-900 antialiased;

@@ -238,10 +238,10 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
       }}
     >
       <TouchableOpacity
-      style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}
-      activeOpacity={0.96}
-      onPress={handleCardPress}
-    >
+        style={styles.cardContainer}
+        activeOpacity={0.96}
+        onPress={handleCardPress}
+      >
       {/* 1. Image Carousel Container */}
       <View style={styles.cardImageWrapper}>
         <ScrollView
@@ -1198,10 +1198,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 4,
-  },
-  cardContainerSelected: {
-    borderColor: '#2563eb',
-    borderWidth: 2,
   },
   cardImageWrapper: {
     width: '100%',
