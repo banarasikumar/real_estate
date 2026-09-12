@@ -23,6 +23,7 @@ import { ZillowDrawIcon } from './ZillowIcons';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
+const CARD_INNER_WIDTH = CARD_WIDTH - 2;
 
 export type SheetSnapState = 'PEEK' | 'DUAL' | 'FULL';
 
@@ -189,7 +190,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetX = e.nativeEvent.contentOffset.x;
-      const index = Math.round(offsetX / CARD_WIDTH);
+      const index = Math.round(offsetX / CARD_INNER_WIDTH);
       if (index >= 0 && index < photos.length && index !== activePhotoIndex) {
         setActivePhotoIndex(index);
       }
@@ -926,15 +927,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 10,
     elevation: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
     zIndex: 40,
     overflow: 'visible',
   },
   sheetContainerFull: {
-    borderWidth: 0,
     borderTopWidth: 0,
-    borderColor: 'transparent',
+    borderTopColor: 'transparent',
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
     shadowOpacity: 0,
     shadowRadius: 0,
     elevation: 0,
@@ -1181,6 +1187,7 @@ const styles = StyleSheet.create({
   },
   // Luxury Property Card
   cardContainer: {
+    width: CARD_WIDTH,
     backgroundColor: '#ffffff',
     borderRadius: 16,
     overflow: 'hidden',
@@ -1197,13 +1204,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   cardImageWrapper: {
-    width: CARD_WIDTH,
+    width: '100%',
     height: 200,
     position: 'relative',
     backgroundColor: '#0f172a',
   },
   cardImage: {
-    width: CARD_WIDTH,
+    width: CARD_INNER_WIDTH,
     height: 200,
   },
   badgeWrapper: {
