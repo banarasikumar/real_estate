@@ -102,8 +102,6 @@ interface LuxuryPropertyCardProps {
   listType: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
-  onSwipeDown?: () => void;
-  isAtTop?: () => boolean;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -113,13 +111,9 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   listType,
   onSelect,
   onToggleFavorite,
-  onSwipeDown,
-  isAtTop,
 }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
-  const cardTouchStartY = useRef(0);
-  const cardTouchStartedAtTop = useRef(false);
 
   // Collect up to 5 images for carousel
   const photos = useMemo(() => {
@@ -211,33 +205,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   };
 
   return (
-    <View
-      onTouchStart={(e) => {
-        cardTouchStartY.current = e.nativeEvent.pageY;
-        cardTouchStartedAtTop.current = isAtTop ? isAtTop() : true;
-      }}
-      onTouchMove={(e) => {
-        if (onSwipeDown && cardTouchStartedAtTop.current) {
-          if (cardTouchStartY.current === 0) {
-            cardTouchStartY.current = e.nativeEvent.pageY;
-            return;
-          }
-          const dy = e.nativeEvent.pageY - cardTouchStartY.current;
-          if (dy > 12) {
-            onSwipeDown();
-          }
-        }
-      }}
-      onTouchEnd={() => {
-        cardTouchStartY.current = 0;
-        cardTouchStartedAtTop.current = false;
-      }}
-      onTouchCancel={() => {
-        cardTouchStartY.current = 0;
-        cardTouchStartedAtTop.current = false;
-      }}
-    >
-      <TouchableOpacity
+    <TouchableOpacity
       style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}
       activeOpacity={0.96}
       onPress={handleCardPress}
@@ -340,8 +308,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
           </TouchableOpacity>
         </View>
       </View>
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 });
 
@@ -420,8 +387,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const isSwipingDownHandledRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
-  const listTouchStartY = useRef(0);
-  const listTouchStartedAtTop = useRef(false);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -535,20 +500,32 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = e.nativeEvent.contentOffset.y;
       scrollYRef.current = Math.max(0, offsetY);
-      if (snapState === 'FULL' && offsetY < -12) {
+      if (snapState === 'FULL' && offsetY < -8) {
         triggerGlideToDual();
       }
     },
     [snapState, triggerGlideToDual]
   );
 
-  // Universal PanResponder for PEEK & DUAL modes (swiping anywhere on container drags sheet)
+  // Universal PanResponder for PEEK, DUAL, and FULL modes (swiping anywhere on container drags sheet)
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponderCapture: (_, gesture) => {
+          if (snapState === 'FULL') {
+            // Instant direction-lock within 6px:
+            // Downward drag dominates horizontal (|dy| > |dx| and dy > 6) AND at top of listings (scrollY <= 5)
+            return scrollYRef.current <= 5 && gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx);
+          }
+          // In PEEK or DUAL mode: capture vertical drag if dy > 4 and vertical dominates horizontal
+          return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        },
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (snapState === 'FULL') return false; // in FULL mode, FlatList scrolls natively and RefreshControl/overscroll handles pull-down
+          if (snapState === 'FULL') {
+            return scrollYRef.current <= 5 && gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx);
+          }
           return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
@@ -565,13 +542,29 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         onPanResponderRelease: (_, gesture) => {
           const vy = gesture.vy;
           const dy = gesture.dy;
+          const currentY = currentTranslateYRef.current;
           let nextState: SheetSnapState = snapState;
 
           if (snapState === 'FULL') {
-            if (dy > 20 || vy > 0.15) {
-              nextState = 'DUAL';
+            if (currentY > dualY) {
+              // Dragged past DUAL mode down towards PEEK mode:
+              const midDualPeek = (dualY + peekY) / 2;
+              // If pushed back up towards DUAL ("undoing" back towards DUAL) or near DUAL:
+              if (vy < -0.2 || currentY < midDualPeek) {
+                nextState = 'DUAL';
+              } else {
+                // Dragged all the way down towards PEEK and released near bottom:
+                nextState = 'PEEK';
+              }
             } else {
-              nextState = 'FULL';
+              // Between FULL (0) and DUAL (dualY):
+              // If pushed back up towards top ("undoing" back to FULL):
+              if (vy < -0.2 || currentY < 25) {
+                nextState = 'FULL';
+              } else {
+                // Releasing after dragging down even a little bit (or downward flick):
+                nextState = 'DUAL';
+              }
             }
           } else if (snapState === 'DUAL') {
             if (dy < -20 || vy < -0.15) {
@@ -599,34 +592,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           animateToState(nextState);
         },
       }),
-    [snapState, onSnapChange, animateToState, peekY, translateYAnim, resetListToTop]
-  );
-
-  // Header PanResponder to allow dragging down on the header in FULL mode
-  const headerPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          return snapState === 'FULL' && gesture.dy > 10 && gesture.dy > Math.abs(gesture.dx);
-        },
-        onPanResponderGrant: () => {
-          dragStartTranslateY.current = 0;
-        },
-        onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 10) {
-            triggerGlideToDual();
-          }
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (gesture.dy > 10 || gesture.vy > 0.15) {
-            triggerGlideToDual();
-          } else {
-            animateToState('FULL');
-          }
-        },
-      }),
-    [snapState, triggerGlideToDual, animateToState]
+    [snapState, onSnapChange, animateToState, peekY, dualY, translateYAnim, resetListToTop]
   );
 
   const handleHeaderPress = () => {
@@ -751,10 +717,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         ]}
       >
         {/* Subheader Row: Cross-fades between count+handle and sort+save */}
-        <View
-          {...(snapState === 'FULL' ? headerPanResponder.panHandlers : {})}
-          style={styles.subHeaderRowContainer}
-        >
+        <View style={styles.subHeaderRowContainer}>
           {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
           <Animated.View
             style={[
@@ -823,30 +786,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           showsVerticalScrollIndicator={false}
           onScroll={handleListScroll}
           scrollEventThrottle={16}
-          onTouchStart={(e) => {
-            listTouchStartY.current = e.nativeEvent.pageY;
-            listTouchStartedAtTop.current = scrollYRef.current <= 5;
-          }}
-          onTouchMove={(e) => {
-            if (snapState === 'FULL' && listTouchStartedAtTop.current) {
-              if (listTouchStartY.current === 0) {
-                listTouchStartY.current = e.nativeEvent.pageY;
-                return;
-              }
-              const dy = e.nativeEvent.pageY - listTouchStartY.current;
-              if (dy > 12) {
-                triggerGlideToDual();
-              }
-            }
-          }}
-          onTouchEnd={() => {
-            listTouchStartY.current = 0;
-            listTouchStartedAtTop.current = false;
-          }}
-          onTouchCancel={() => {
-            listTouchStartY.current = 0;
-            listTouchStartedAtTop.current = false;
-          }}
           getItemLayout={(_, index) => ({
             length: 356,
             offset: 356 * index,
@@ -867,8 +806,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               isSelected={item.id === selectedPropertyId}
               isFavorite={isSaved(item.id)}
               listType={listType}
-              onSwipeDown={snapState === 'FULL' ? triggerGlideToDual : undefined}
-              isAtTop={() => scrollYRef.current <= 5}
               onSelect={() => onSelectProperty(item)}
               onToggleFavorite={() => onToggleFavorite(item.id)}
             />
