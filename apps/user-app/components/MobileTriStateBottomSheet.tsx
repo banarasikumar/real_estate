@@ -102,8 +102,6 @@ interface LuxuryPropertyCardProps {
   listType: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
-  onSwipeDown?: () => void;
-  isAtTop?: () => boolean;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -113,13 +111,9 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   listType,
   onSelect,
   onToggleFavorite,
-  onSwipeDown,
-  isAtTop,
 }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
-  const cardTouchStartY = useRef(0);
-  const cardTouchStartedAtTop = useRef(false);
 
   // Collect up to 5 images for carousel
   const photos = useMemo(() => {
@@ -211,37 +205,11 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   };
 
   return (
-    <View
-      onTouchStart={(e) => {
-        cardTouchStartY.current = e.nativeEvent.pageY;
-        cardTouchStartedAtTop.current = isAtTop ? isAtTop() : true;
-      }}
-      onTouchMove={(e) => {
-        if (onSwipeDown && cardTouchStartedAtTop.current) {
-          if (cardTouchStartY.current === 0) {
-            cardTouchStartY.current = e.nativeEvent.pageY;
-            return;
-          }
-          const dy = e.nativeEvent.pageY - cardTouchStartY.current;
-          if (dy > 12) {
-            onSwipeDown();
-          }
-        }
-      }}
-      onTouchEnd={() => {
-        cardTouchStartY.current = 0;
-        cardTouchStartedAtTop.current = false;
-      }}
-      onTouchCancel={() => {
-        cardTouchStartY.current = 0;
-        cardTouchStartedAtTop.current = false;
-      }}
+    <TouchableOpacity
+      style={styles.cardContainer}
+      activeOpacity={0.96}
+      onPress={handleCardPress}
     >
-      <TouchableOpacity
-        style={styles.cardContainer}
-        activeOpacity={0.96}
-        onPress={handleCardPress}
-      >
       {/* 1. Image Carousel Container */}
       <View style={styles.cardImageWrapper}>
         <ScrollView
@@ -251,6 +219,8 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
           onScroll={handleScroll}
           scrollEventThrottle={16}
           decelerationRate="fast"
+          directionalLockEnabled={true}
+          nestedScrollEnabled={false}
         >
           {photos.map((photoUrl, idx) => (
             <Image
@@ -341,7 +311,6 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
         </View>
       </View>
       </TouchableOpacity>
-    </View>
   );
 });
 
@@ -394,7 +363,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const fullHeight = availableHeight || (SCREEN_HEIGHT - 60);
   const PEEK_HEIGHT = 72;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
-  const fullY = 0;
+  const fullY = computedSearchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
   const midY = (dualY + fullY) / 2;
@@ -403,25 +372,23 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     (state: SheetSnapState) => {
       switch (state) {
         case 'FULL':
-          return 0;
+          return fullY;
         case 'DUAL':
           return dualY;
         case 'PEEK':
           return peekY;
       }
     },
-    [dualY, peekY]
+    [fullY, dualY, peekY]
   );
 
   const internalTranslateY = useRef(new Animated.Value(getSnapTranslateY(snapState))).current;
   const translateYAnim = externalTranslateYAnim || internalTranslateY;
   const currentTranslateYRef = useRef(getSnapTranslateY(snapState));
   const dragStartTranslateY = useRef(getSnapTranslateY(snapState));
-  const isSwipingDownHandledRef = useRef(false);
+  const animatingToStateRef = useRef<SheetSnapState | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
-  const listTouchStartY = useRef(0);
-  const listTouchStartedAtTop = useRef(false);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -432,133 +399,212 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     }
   }, []);
 
-  // Sync internal translateY on snapState prop changes
-  useEffect(() => {
-    currentTranslateYRef.current = getSnapTranslateY(snapState);
-  }, [snapState, getSnapTranslateY]);
-
-  // Ultra-fluid GPU-accelerated spring animation with useNativeDriver: true!
+  // Ultra-fluid zero-bounce GPU spring animation with exact critical damping (zeta = 1.00) & overshootClamping
   const animateToState = useCallback(
-    (state: SheetSnapState) => {
+    (state: SheetSnapState, velocity?: number) => {
       const targetY = getSnapTranslateY(state);
+
+      // If already actively animating to this target state, prevent duplicate trigger
+      if (animatingToStateRef.current === state) {
+        return;
+      }
+
+      // If already settled at this target position and not animating, no-op
+      if (animatingToStateRef.current === null && currentTranslateYRef.current === targetY) {
+        return;
+      }
+
+      animatingToStateRef.current = state;
+      translateYAnim.stopAnimation();
+
+      const clampedVelocity =
+        velocity !== undefined ? Math.max(-8, Math.min(8, velocity)) : undefined;
+
       Animated.spring(translateYAnim, {
         toValue: targetY,
-        damping: 28,
-        stiffness: 300,
-        mass: 0.8,
+        damping: 24,
+        stiffness: 320,
+        mass: 0.45,
+        overshootClamping: true, // Mathematically eliminates any bounce/rebound past target
+        velocity: clampedVelocity,
         useNativeDriver: true,
       }).start(() => {
         currentTranslateYRef.current = targetY;
-        isSwipingDownHandledRef.current = false;
+        animatingToStateRef.current = null;
       });
     },
     [getSnapTranslateY, translateYAnim]
   );
 
-  const triggerGlideToDual = useCallback(() => {
-    if (snapState === 'FULL' && !isSwipingDownHandledRef.current) {
-      isSwipingDownHandledRef.current = true;
-      resetListToTop();
-      onSnapChange('DUAL');
-      animateToState('DUAL');
-    }
-  }, [snapState, resetListToTop, onSnapChange, animateToState]);
+  const triggerGlideToDual = useCallback(
+    (velocity?: number) => {
+      if (animatingToStateRef.current === null) {
+        resetListToTop();
+        onSnapChange('DUAL');
+        animateToState('DUAL', velocity !== undefined ? velocity : 2.0);
+      }
+    },
+    [resetListToTop, onSnapChange, animateToState]
+  );
 
   // React to snapState changes from parent
   useEffect(() => {
+    if (snapState !== 'FULL') {
+      resetListToTop();
+    }
     animateToState(snapState);
-  }, [snapState, animateToState]);
-
-  // Docked Content Translation: stays docked at computedSearchRowTotalHeight as container moves from 0 to computedSearchRowTotalHeight
-  const contentTranslateY = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [0, computedSearchRowTotalHeight],
-        outputRange: [computedSearchRowTotalHeight, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, computedSearchRowTotalHeight]
-  );
+  }, [snapState, animateToState, resetListToTop]);
 
   // 60fps GPU Native Driver Animated Interpolations
   const countRowOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, computedSearchRowTotalHeight * 0.4, computedSearchRowTotalHeight],
+        inputRange: [fullY, fullY + 40, dualY],
         outputRange: [0, 0.4, 1],
         extrapolate: 'clamp',
       }),
-    [translateYAnim, computedSearchRowTotalHeight]
+    [translateYAnim, fullY, dualY]
   );
 
   const sortRowOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, computedSearchRowTotalHeight * 0.4, computedSearchRowTotalHeight],
+        inputRange: [fullY, fullY + 40, dualY],
         outputRange: [1, 0.6, 0],
         extrapolate: 'clamp',
       }),
-    [translateYAnim, computedSearchRowTotalHeight]
+    [translateYAnim, fullY, dualY]
   );
 
   const hudOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, Math.max(1, dualY - 80), dualY - 20, dualY, peekY],
+        inputRange: [fullY, Math.max(fullY + 1, dualY - 80), dualY - 20, dualY, peekY],
         outputRange: [0, 0, 0.7, 1, 1],
         extrapolate: 'clamp',
       }),
-    [translateYAnim, dualY, peekY]
-  );
-
-  const containerBorderRadius = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [0, 30, computedSearchRowTotalHeight],
-        outputRange: [0, 14, 24],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, computedSearchRowTotalHeight]
+    [translateYAnim, fullY, dualY, peekY]
   );
 
   const bottomMapButtonOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, 30, 80],
+        inputRange: [fullY, fullY + 30, fullY + 80],
         outputRange: [1, 0.8, 0],
         extrapolate: 'clamp',
       }),
-    [translateYAnim]
+    [translateYAnim, fullY]
+  );
+
+  // Seamless borderless fusion interpolations: fade to 0 in FULL mode, 1 in DUAL/PEEK
+  const sheetBorderOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, fullY + 20, dualY],
+        outputRange: [0, 1, 1],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY]
+  );
+
+  const sheetShadowOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, fullY + 20, dualY],
+        outputRange: [0, 1, 1],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY]
   );
 
   const handleListScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetY = e.nativeEvent.contentOffset.y;
       scrollYRef.current = Math.max(0, offsetY);
-      if (snapState === 'FULL' && offsetY < -12) {
-        triggerGlideToDual();
+      if (snapState === 'FULL' && offsetY < -20 && animatingToStateRef.current === null) {
+        triggerGlideToDual(2.0);
       }
     },
     [snapState, triggerGlideToDual]
   );
 
-  // Universal PanResponder for PEEK & DUAL modes (swiping anywhere on container drags sheet)
+  // Universal PanResponder across ALL modes (PEEK, DUAL, and FULL)
+  // Always prioritizes user gesture tracking with 1:1 direct finger following
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          if (snapState === 'FULL') return false; // in FULL mode, FlatList scrolls natively and RefreshControl/overscroll handles pull-down
-          return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponderCapture: (_, gesture) => {
+          if (animatingToStateRef.current !== null) {
+            return false;
+          }
+
+          const isVertical = Math.abs(gesture.dy) > Math.abs(gesture.dx);
+          if (!isVertical) return false;
+
+          // In PEEK or DUAL mode: any vertical drag captures the bottom sheet
+          if (snapState !== 'FULL') {
+            return Math.abs(gesture.dy) > 4;
+          }
+
+          // In FULL mode:
+          // Swiping UP (gesture.dy < 0): never capture, letting FlatList scroll smoothly at 60fps
+          if (gesture.dy <= 0) {
+            return false;
+          }
+
+          // Swiping DOWN (gesture.dy > 3):
+          if (gesture.dy > 3) {
+            // Subheader touch: gesture.y0 <= fullY + 54. If gesture.dy > 3, ALWAYS capture immediately and drag the sheet down, regardless of list scroll.
+            if (gesture.y0 <= fullY + 54) {
+              return true;
+            }
+            // Card touch: gesture.y0 > fullY + 54. If gesture.dy > 3 and scrollYRef.current <= 5, capture immediately and drag the sheet down.
+            if (scrollYRef.current <= 5) {
+              return true;
+            }
+          }
+
+          return false;
         },
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          if (animatingToStateRef.current !== null) {
+            return false;
+          }
+
+          const isVertical = Math.abs(gesture.dy) > Math.abs(gesture.dx);
+          if (!isVertical) return false;
+
+          if (snapState !== 'FULL') {
+            return Math.abs(gesture.dy) > 4;
+          }
+
+          if (gesture.dy <= 0) {
+            return false;
+          }
+
+          if (gesture.dy > 3) {
+            if (gesture.y0 <= fullY + 54) {
+              return true;
+            }
+            if (scrollYRef.current <= 5) {
+              return true;
+            }
+          }
+
+          return false;
+        },
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
+          animatingToStateRef.current = null;
           dragStartTranslateY.current = currentTranslateYRef.current;
         },
         onPanResponderMove: (_, gesture) => {
           const target = dragStartTranslateY.current + gesture.dy;
-          const minTranslate = 0;
+          const minTranslate = fullY;
           const maxTranslate = peekY;
-          const clamped = Math.min(maxTranslate + 10, Math.max(minTranslate, target));
+          const clamped = Math.min(maxTranslate, Math.max(minTranslate, target));
           currentTranslateYRef.current = clamped;
           translateYAnim.setValue(clamped);
         },
@@ -568,12 +614,18 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           let nextState: SheetSnapState = snapState;
 
           if (snapState === 'FULL') {
+            // From FULL: if dy > 20 || vy > 0.15, glide to DUAL (or PEEK if dy > (dualY - fullY) + 60); otherwise return to FULL
             if (dy > 20 || vy > 0.15) {
-              nextState = 'DUAL';
+              if (dy > (dualY - fullY) + 60) {
+                nextState = 'PEEK';
+              } else {
+                nextState = 'DUAL';
+              }
             } else {
               nextState = 'FULL';
             }
           } else if (snapState === 'DUAL') {
+            // From DUAL: standard snappy transitions
             if (dy < -20 || vy < -0.15) {
               nextState = 'FULL';
             } else if (dy > 20 || vy > 0.15) {
@@ -582,7 +634,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               nextState = 'DUAL';
             }
           } else {
-            if (dy < -8 || vy < -0.1) {
+            // From PEEK: if currentTranslateYRef.current < dualY || vy < -0.7, snap DIRECTLY to FULL view mode. If dy < -8 || vy < -0.1, snap to DUAL. Otherwise stay PEEK
+            if (currentTranslateYRef.current < dualY || vy < -0.7) {
+              nextState = 'FULL';
+            } else if (dy < -8 || vy < -0.1) {
               nextState = 'DUAL';
             } else {
               nextState = 'PEEK';
@@ -596,37 +651,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           if (nextState !== snapState) {
             onSnapChange(nextState);
           }
-          animateToState(nextState);
+          animateToState(nextState, vy);
         },
       }),
-    [snapState, onSnapChange, animateToState, peekY, translateYAnim, resetListToTop]
-  );
-
-  // Header PanResponder to allow dragging down on the header in FULL mode
-  const headerPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          return snapState === 'FULL' && gesture.dy > 10 && gesture.dy > Math.abs(gesture.dx);
-        },
-        onPanResponderGrant: () => {
-          dragStartTranslateY.current = 0;
-        },
-        onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 10) {
-            triggerGlideToDual();
-          }
-        },
-        onPanResponderRelease: (_, gesture) => {
-          if (gesture.dy > 10 || gesture.vy > 0.15) {
-            triggerGlideToDual();
-          } else {
-            animateToState('FULL');
-          }
-        },
-      }),
-    [snapState, triggerGlideToDual, animateToState]
+    [snapState, onSnapChange, animateToState, fullY, dualY, peekY, translateYAnim, resetListToTop]
   );
 
   const handleHeaderPress = () => {
@@ -664,16 +692,31 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     <Animated.View
       style={[
         styles.sheetContainer,
-        snapState === 'FULL' && styles.sheetContainerFull,
         {
           height: fullHeight,
-          borderTopLeftRadius: containerBorderRadius,
-          borderTopRightRadius: containerBorderRadius,
           transform: [{ translateY: translateYAnim }],
         },
       ]}
       {...panResponder.panHandlers}
     >
+      {/* Animated Sheet Shadow Overlay - fades out completely at fullY so no shadow bleeds into search bar */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.sheetShadowOverlay,
+          { opacity: sheetShadowOpacity },
+        ]}
+      />
+
+      {/* Animated Hairline Border Overlay - fades out to 0 at fullY for seamless borderless fusion */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.sheetHairlineBorderOverlay,
+          { opacity: sheetBorderOpacity },
+        ]}
+      />
+
       {/* 0. Anchored Floating Action HUD Row: Layer | Draw | Recenter | Save Search */}
       <Animated.View
         style={[
@@ -744,17 +787,9 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       </Animated.View>
 
       {/* 1C. Subheader Row & Feed Container */}
-      <Animated.View
-        style={[
-          styles.mainContentContainer,
-          { transform: [{ translateY: contentTranslateY }] },
-        ]}
-      >
+      <View style={styles.mainContentContainer}>
         {/* Subheader Row: Cross-fades between count+handle and sort+save */}
-        <View
-          {...(snapState === 'FULL' ? headerPanResponder.panHandlers : {})}
-          style={styles.subHeaderRowContainer}
-        >
+        <View style={styles.subHeaderRowContainer}>
           {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
           <Animated.View
             style={[
@@ -823,43 +858,16 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           showsVerticalScrollIndicator={false}
           onScroll={handleListScroll}
           scrollEventThrottle={16}
-          onTouchStart={(e) => {
-            listTouchStartY.current = e.nativeEvent.pageY;
-            listTouchStartedAtTop.current = scrollYRef.current <= 5;
-          }}
-          onTouchMove={(e) => {
-            if (snapState === 'FULL' && listTouchStartedAtTop.current) {
-              if (listTouchStartY.current === 0) {
-                listTouchStartY.current = e.nativeEvent.pageY;
-                return;
-              }
-              const dy = e.nativeEvent.pageY - listTouchStartY.current;
-              if (dy > 12) {
-                triggerGlideToDual();
-              }
-            }
-          }}
-          onTouchEnd={() => {
-            listTouchStartY.current = 0;
-            listTouchStartedAtTop.current = false;
-          }}
-          onTouchCancel={() => {
-            listTouchStartY.current = 0;
-            listTouchStartedAtTop.current = false;
-          }}
-          getItemLayout={(_, index) => ({
-            length: 356,
-            offset: 356 * index,
-            index,
-          })}
-          initialNumToRender={4}
-          maxToRenderPerBatch={4}
-          windowSize={5}
-          removeClippedSubviews={Platform.OS === 'android'}
+          overScrollMode="never"
+          bounces={Platform.OS === 'ios'}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          decelerationRate="normal"
           scrollEnabled={snapState === 'FULL'}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 + computedSearchRowTotalHeight : 32 },
+            { paddingBottom: insets.bottom + 90 },
           ]}
           renderItem={({ item }) => (
             <LuxuryPropertyCard
@@ -867,8 +875,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               isSelected={item.id === selectedPropertyId}
               isFavorite={isSaved(item.id)}
               listType={listType}
-              onSwipeDown={snapState === 'FULL' ? triggerGlideToDual : undefined}
-              isAtTop={() => scrollYRef.current <= 5}
               onSelect={() => onSelectProperty(item)}
               onToggleFavorite={() => onToggleFavorite(item.id)}
             />
@@ -883,7 +889,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             </View>
           }
         />
-      </Animated.View>
+      </View>
 
       {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - instantly switches to PEEK mode! */}
       <Animated.View
@@ -922,28 +928,42 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
     borderLeftWidth: 0,
     borderRightWidth: 0,
     borderBottomWidth: 0,
     zIndex: 40,
     overflow: 'visible',
   },
-  sheetContainerFull: {
-    borderTopWidth: 0,
-    borderTopColor: 'transparent',
-    borderLeftWidth: 0,
-    borderRightWidth: 0,
-    borderBottomWidth: 0,
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
+  sheetShadowOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    zIndex: -1,
+  },
+  sheetHairlineBorderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: '#f1f5f9',
+    backgroundColor: 'transparent',
+    zIndex: 45,
   },
   mainContentContainer: {
     flex: 1,

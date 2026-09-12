@@ -457,13 +457,13 @@ export default function UserAppHomeScreen() {
   const fullHeight = containerHeight || (SCREEN_HEIGHT - 60);
   const PEEK_HEIGHT = 72;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
-  const fullY = 0;
+  const fullY = searchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
 
   const getSnapTranslateY = (state: SheetSnapState) => {
     switch (state) {
-      case 'FULL': return 0;
+      case 'FULL': return fullY;
       case 'DUAL': return dualY;
       case 'PEEK': return peekY;
     }
@@ -473,11 +473,21 @@ export default function UserAppHomeScreen() {
   const floating3DOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, 60, dualY],
+        inputRange: [fullY, fullY + 60, dualY],
         outputRange: [0, 0.4, 1],
         extrapolate: 'clamp',
       }),
-    [translateYAnim, dualY]
+    [translateYAnim, fullY, dualY]
+  );
+
+  const topBarBgOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, fullY + 40, dualY],
+        outputRange: [1, 0, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY]
   );
 
   return (
@@ -522,6 +532,16 @@ export default function UserAppHomeScreen() {
 
       {/* 3. Stationary Top Search & Filter Bar (Option 1: Unified Single-Surface Fusion) */}
       <View style={styles.stationaryTopHeaderWrapper} pointerEvents="box-none">
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: '#ffffff',
+              opacity: topBarBgOpacity,
+            },
+          ]}
+          pointerEvents="none"
+        />
         {/* Fixed Search Row - NEVER moves */}
         <View style={[styles.topFloatingBarContainer, { paddingTop: statusBarHeight + 8 }]}>
           {/* Search Pill */}
