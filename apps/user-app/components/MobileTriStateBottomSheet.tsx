@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ZillowDrawIcon, ZillowFilterIcon } from './ZillowIcons';
+import { ZillowDrawIcon } from './ZillowIcons';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -50,6 +50,8 @@ export interface MobileTriStateBottomSheetProps {
   onOpenSearchModal?: () => void;
   onClearSearch?: () => void;
   regionName?: string;
+  translateYAnim?: Animated.Value;
+  searchRowTotalHeight?: number;
 }
 
 // Fallback high-res luxury architectural photos for carousel preview
@@ -99,6 +101,8 @@ interface LuxuryPropertyCardProps {
   listType: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
+  onSwipeDown?: () => void;
+  isAtTop?: () => boolean;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -108,9 +112,13 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   listType,
   onSelect,
   onToggleFavorite,
+  onSwipeDown,
+  isAtTop,
 }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const cardTouchStartY = useRef(0);
+  const cardTouchStartedAtTop = useRef(false);
 
   // Collect up to 5 images for carousel
   const photos = useMemo(() => {
@@ -202,7 +210,33 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   };
 
   return (
-    <TouchableOpacity
+    <View
+      onTouchStart={(e) => {
+        cardTouchStartY.current = e.nativeEvent.pageY;
+        cardTouchStartedAtTop.current = isAtTop ? isAtTop() : true;
+      }}
+      onTouchMove={(e) => {
+        if (onSwipeDown && cardTouchStartedAtTop.current) {
+          if (cardTouchStartY.current === 0) {
+            cardTouchStartY.current = e.nativeEvent.pageY;
+            return;
+          }
+          const dy = e.nativeEvent.pageY - cardTouchStartY.current;
+          if (dy > 12) {
+            onSwipeDown();
+          }
+        }
+      }}
+      onTouchEnd={() => {
+        cardTouchStartY.current = 0;
+        cardTouchStartedAtTop.current = false;
+      }}
+      onTouchCancel={() => {
+        cardTouchStartY.current = 0;
+        cardTouchStartedAtTop.current = false;
+      }}
+    >
+      <TouchableOpacity
       style={[styles.cardContainer, isSelected && styles.cardContainerSelected]}
       activeOpacity={0.96}
       onPress={handleCardPress}
@@ -305,7 +339,8 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
           </TouchableOpacity>
         </View>
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 });
 
@@ -320,8 +355,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   isSaved,
   listType,
   onHeightChange,
-  onOpenFilters,
-  activeFilterCount = 0,
+  onOpenFilters: _onOpenFilters,
+  activeFilterCount: _activeFilterCount = 0,
   mapType,
   onToggleMapType,
   isDrawingMode = false,
@@ -329,10 +364,12 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   onRecenter,
   isSearchSaved: isSearchSavedProp,
   onToggleSaveSearch,
-  searchQuery = '',
-  onOpenSearchModal,
-  onClearSearch,
-  regionName,
+  searchQuery: _searchQuery = '',
+  onOpenSearchModal: _onOpenSearchModal,
+  onClearSearch: _onClearSearch,
+  regionName: _regionName,
+  translateYAnim: externalTranslateYAnim,
+  searchRowTotalHeight,
 }) => {
   const insets = useSafeAreaInsets();
   const [sortOption, setSortOption] = useState<'Recommended' | 'Price: Low' | 'Price: High'>('Recommended');
@@ -347,10 +384,19 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     }
   };
 
-  // Calibrated Heights
+  // Status bar padding calculation matching Zillow
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : insets.top;
+  const headerPaddingTop = statusBarHeight + 8;
+  const computedSearchRowTotalHeight = searchRowTotalHeight || (headerPaddingTop + 56);
+
+  // Calibrated Heights & Snap Point Geometry
   const fullHeight = availableHeight || (SCREEN_HEIGHT - 60);
   const PEEK_HEIGHT = 72;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
+  const fullY = 0;
+  const dualY = fullHeight - DUAL_HEIGHT;
+  const peekY = fullHeight - PEEK_HEIGHT;
+  const midY = (dualY + fullY) / 2;
 
   const getSnapTranslateY = useCallback(
     (state: SheetSnapState) => {
@@ -358,17 +404,32 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         case 'FULL':
           return 0;
         case 'DUAL':
-          return fullHeight - DUAL_HEIGHT;
+          return dualY;
         case 'PEEK':
-          return fullHeight - PEEK_HEIGHT;
+          return peekY;
       }
     },
-    [fullHeight, DUAL_HEIGHT, PEEK_HEIGHT]
+    [dualY, peekY]
   );
 
-  const translateYAnim = useRef(new Animated.Value(getSnapTranslateY(snapState))).current;
+  const internalTranslateY = useRef(new Animated.Value(getSnapTranslateY(snapState))).current;
+  const translateYAnim = externalTranslateYAnim || internalTranslateY;
   const currentTranslateYRef = useRef(getSnapTranslateY(snapState));
   const dragStartTranslateY = useRef(getSnapTranslateY(snapState));
+  const isSwipingDownHandledRef = useRef(false);
+  const flatListRef = useRef<FlatList>(null);
+  const scrollYRef = useRef(0);
+  const listTouchStartY = useRef(0);
+  const listTouchStartedAtTop = useRef(false);
+
+  const resetListToTop = useCallback(() => {
+    scrollYRef.current = 0;
+    try {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    } catch (e) {
+      // safe fallback
+    }
+  }, []);
 
   // Sync internal translateY on snapState prop changes
   useEffect(() => {
@@ -387,60 +448,76 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         useNativeDriver: true,
       }).start(() => {
         currentTranslateYRef.current = targetY;
+        isSwipingDownHandledRef.current = false;
       });
     },
     [getSnapTranslateY, translateYAnim]
   );
+
+  const triggerGlideToDual = useCallback(() => {
+    if (snapState === 'FULL' && !isSwipingDownHandledRef.current) {
+      isSwipingDownHandledRef.current = true;
+      resetListToTop();
+      onSnapChange('DUAL');
+      animateToState('DUAL');
+    }
+  }, [snapState, resetListToTop, onSnapChange, animateToState]);
 
   // React to snapState changes from parent
   useEffect(() => {
     animateToState(snapState);
   }, [snapState, animateToState]);
 
-  // Status bar padding calculation matching Zillow
-  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : insets.top;
-  const headerPaddingTop = statusBarHeight + 8;
-  const searchRowTotalHeight = headerPaddingTop + 56;
-
-  // 60fps GPU Native Driver Animated Interpolations
-  const headerBgOpacity = useMemo(
+  // Docked Content Translation: stays docked at computedSearchRowTotalHeight as container moves from 0 to computedSearchRowTotalHeight
+  const contentTranslateY = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, 70, 140],
-        outputRange: [1, 0.5, 0],
+        inputRange: [0, computedSearchRowTotalHeight],
+        outputRange: [computedSearchRowTotalHeight, 0],
         extrapolate: 'clamp',
       }),
-    [translateYAnim]
+    [translateYAnim, computedSearchRowTotalHeight]
   );
 
+  // 60fps GPU Native Driver Animated Interpolations
   const countRowOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, 50, 110],
-        outputRange: [0, 0.2, 1],
+        inputRange: [0, computedSearchRowTotalHeight * 0.4, computedSearchRowTotalHeight],
+        outputRange: [0, 0.4, 1],
         extrapolate: 'clamp',
       }),
-    [translateYAnim]
+    [translateYAnim, computedSearchRowTotalHeight]
   );
 
   const sortRowOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, 50, 110],
+        inputRange: [0, computedSearchRowTotalHeight * 0.4, computedSearchRowTotalHeight],
         outputRange: [1, 0.6, 0],
         extrapolate: 'clamp',
       }),
-    [translateYAnim]
+    [translateYAnim, computedSearchRowTotalHeight]
   );
 
   const hudOpacity = useMemo(
     () =>
       translateYAnim.interpolate({
-        inputRange: [0, 60, 130],
-        outputRange: [0, 0, 1],
+        inputRange: [0, Math.max(1, dualY - 80), dualY - 20, dualY, peekY],
+        outputRange: [0, 0, 0.7, 1, 1],
         extrapolate: 'clamp',
       }),
-    [translateYAnim]
+    [translateYAnim, dualY, peekY]
+  );
+
+  const containerBorderRadius = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 30, computedSearchRowTotalHeight],
+        outputRange: [0, 14, 24],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, computedSearchRowTotalHeight]
   );
 
   const bottomMapButtonOpacity = useMemo(
@@ -453,14 +530,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     [translateYAnim]
   );
 
-  const subheaderTranslateY = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [0, 140],
-        outputRange: [searchRowTotalHeight, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, searchRowTotalHeight]
+  const handleListScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = e.nativeEvent.contentOffset.y;
+      scrollYRef.current = Math.max(0, offsetY);
+      if (snapState === 'FULL' && offsetY < -12) {
+        triggerGlideToDual();
+      }
+    },
+    [snapState, triggerGlideToDual]
   );
 
   // Universal PanResponder for PEEK & DUAL modes (swiping anywhere on container drags sheet)
@@ -469,18 +547,17 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (snapState === 'FULL') return false; // in FULL mode, FlatList scrolls natively
-          // in PEEK or DUAL: capture vertical drag if dy > 4 and vertical dominates horizontal
+          if (snapState === 'FULL') return false; // in FULL mode, FlatList scrolls natively and RefreshControl/overscroll handles pull-down
           return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
           dragStartTranslateY.current = currentTranslateYRef.current;
         },
         onPanResponderMove: (_, gesture) => {
-          // Dragging up has negative dy -> targetY decreases towards 0
           const target = dragStartTranslateY.current + gesture.dy;
-          const maxTranslate = fullHeight - PEEK_HEIGHT;
-          const clamped = Math.min(maxTranslate + 10, Math.max(0, target));
+          const minTranslate = 0;
+          const maxTranslate = peekY;
+          const clamped = Math.min(maxTranslate + 10, Math.max(minTranslate, target));
           currentTranslateYRef.current = clamped;
           translateYAnim.setValue(clamped);
         },
@@ -489,11 +566,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           const dy = gesture.dy;
           let nextState: SheetSnapState = snapState;
 
-          if (snapState === 'PEEK') {
-            if (dy < -8 || vy < -0.1) {
+          if (snapState === 'FULL') {
+            if (dy > 20 || vy > 0.15) {
               nextState = 'DUAL';
             } else {
-              nextState = 'PEEK';
+              nextState = 'FULL';
             }
           } else if (snapState === 'DUAL') {
             if (dy < -20 || vy < -0.15) {
@@ -504,11 +581,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               nextState = 'DUAL';
             }
           } else {
-            if (dy > 25 || vy > 0.15) {
+            if (dy < -8 || vy < -0.1) {
               nextState = 'DUAL';
             } else {
-              nextState = 'FULL';
+              nextState = 'PEEK';
             }
+          }
+
+          if (nextState !== 'FULL') {
+            resetListToTop();
           }
 
           if (nextState !== snapState) {
@@ -517,7 +598,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           animateToState(nextState);
         },
       }),
-    [snapState, onSnapChange, animateToState, fullHeight, PEEK_HEIGHT, translateYAnim]
+    [snapState, onSnapChange, animateToState, peekY, translateYAnim, resetListToTop]
   );
 
   // Header PanResponder to allow dragging down on the header in FULL mode
@@ -526,70 +607,25 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          return snapState === 'FULL' && gesture.dy > 8 && gesture.dy > Math.abs(gesture.dx);
+          return snapState === 'FULL' && gesture.dy > 10 && gesture.dy > Math.abs(gesture.dx);
         },
         onPanResponderGrant: () => {
           dragStartTranslateY.current = 0;
         },
         onPanResponderMove: (_, gesture) => {
-          if (gesture.dy > 0) {
-            const maxTranslate = fullHeight - DUAL_HEIGHT;
-            const clamped = Math.min(maxTranslate, gesture.dy);
-            currentTranslateYRef.current = clamped;
-            translateYAnim.setValue(clamped);
+          if (gesture.dy > 10) {
+            triggerGlideToDual();
           }
         },
         onPanResponderRelease: (_, gesture) => {
-          if (gesture.dy > 25 || gesture.vy > 0.15) {
-            onSnapChange('DUAL');
-            animateToState('DUAL');
+          if (gesture.dy > 10 || gesture.vy > 0.15) {
+            triggerGlideToDual();
           } else {
             animateToState('FULL');
           }
         },
       }),
-    [snapState, onSnapChange, animateToState, fullHeight, DUAL_HEIGHT, translateYAnim]
-  );
-
-  // Downward pull-to-dismiss gesture on the card list in FULL mode
-  const scrollYRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const isAtTopRef = useRef(true);
-
-  const handleListScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollYRef.current = e.nativeEvent.contentOffset.y;
-  }, []);
-
-  const handleTouchStart = useCallback((e: any) => {
-    touchStartYRef.current = e.nativeEvent.pageY;
-    isAtTopRef.current = scrollYRef.current <= 0;
-  }, []);
-
-  const handleTouchMove = useCallback(
-    (e: any) => {
-      if (snapState === 'FULL' && isAtTopRef.current) {
-        const dy = e.nativeEvent.pageY - touchStartYRef.current;
-        if (dy > 25) {
-          isAtTopRef.current = false;
-          onSnapChange('DUAL');
-          animateToState('DUAL');
-        }
-      }
-    },
-    [snapState, onSnapChange, animateToState]
-  );
-
-  const handleTouchEnd = useCallback(
-    (e: any) => {
-      if (snapState === 'FULL' && isAtTopRef.current) {
-        const dy = e.nativeEvent.pageY - touchStartYRef.current;
-        if (dy > 25) {
-          onSnapChange('DUAL');
-          animateToState('DUAL');
-        }
-      }
-    },
-    [snapState, onSnapChange, animateToState]
+    [snapState, triggerGlideToDual, animateToState]
   );
 
   const handleHeaderPress = () => {
@@ -630,6 +666,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         snapState === 'FULL' && styles.sheetContainerFull,
         {
           height: fullHeight,
+          borderTopLeftRadius: containerBorderRadius,
+          borderTopRightRadius: containerBorderRadius,
           transform: [{ translateY: translateYAnim }],
         },
       ]}
@@ -704,85 +742,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         </TouchableOpacity>
       </Animated.View>
 
-      {/* 1. Header Structure: Zero Flash, Continuous GPU Native Driver */}
-      {/* 1A. Solid White Background behind Status Bar and Search Bar */}
-      <Animated.View
-        style={[
-          styles.headerBgFill,
-          {
-            height: searchRowTotalHeight,
-            opacity: headerBgOpacity,
-          },
-        ]}
-        pointerEvents="none"
-      />
-
-      {/* 1B. Top Fixed Search Row (Search Pill & Circular Filter Button) */}
-      <Animated.View
-        {...(snapState === 'FULL' ? headerPanResponder.panHandlers : {})}
-        style={[
-          styles.topFixedSearchRow,
-          {
-            paddingTop: headerPaddingTop,
-            opacity: headerBgOpacity,
-          },
-        ]}
-        pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
-      >
-        <View style={styles.fullscreenSearchRow}>
-          <TouchableOpacity
-            style={styles.fullscreenSearchPill}
-            onPress={onOpenSearchModal}
-            activeOpacity={0.88}
-          >
-            <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
-            <Text
-              style={[
-                styles.fullscreenSearchText,
-                !searchQuery && styles.fullscreenSearchPlaceholder,
-              ]}
-              numberOfLines={1}
-            >
-              {searchQuery || regionName || (listType === 'RENT' ? 'Los Angeles CA homes' : 'Home features, school, location')}
-            </Text>
-            {searchQuery ? (
-              <TouchableOpacity onPress={onClearSearch} style={styles.clearSearchBtn}>
-                <Ionicons name="close-circle" size={18} color="#94a3b8" />
-              </TouchableOpacity>
-            ) : (
-              <Ionicons name="mic-outline" size={19} color="#94a3b8" />
-            )}
-          </TouchableOpacity>
-
-          {/* Circular Filter Button */}
-          <TouchableOpacity
-            style={[
-              styles.fullscreenFilterCircle,
-              activeFilterCount > 0 && styles.fullscreenFilterCircleActive,
-            ]}
-            onPress={onOpenFilters}
-            activeOpacity={0.85}
-          >
-            <ZillowFilterIcon
-              size={20}
-              color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
-            />
-            {activeFilterCount > 0 && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-
-      {/* 1C. Subheader Row & Feed Container (slides directly beneath search row in FULL mode) */}
+      {/* 1C. Subheader Row & Feed Container */}
       <Animated.View
         style={[
           styles.mainContentContainer,
-          {
-            transform: [{ translateY: subheaderTranslateY }],
-          },
+          { transform: [{ translateY: contentTranslateY }] },
         ]}
       >
         {/* Subheader Row: Cross-fades between count+handle and sort+save */}
@@ -852,14 +816,36 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
         {/* Property Cards Feed - ALWAYS mounted to eliminate unmounting/mounting freeze! */}
         <FlatList
+          ref={flatListRef}
           data={sortedProperties}
           keyExtractor={(item) => String(item.id)}
           showsVerticalScrollIndicator={false}
           onScroll={handleListScroll}
           scrollEventThrottle={16}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          onTouchStart={(e) => {
+            listTouchStartY.current = e.nativeEvent.pageY;
+            listTouchStartedAtTop.current = scrollYRef.current <= 5;
+          }}
+          onTouchMove={(e) => {
+            if (snapState === 'FULL' && listTouchStartedAtTop.current) {
+              if (listTouchStartY.current === 0) {
+                listTouchStartY.current = e.nativeEvent.pageY;
+                return;
+              }
+              const dy = e.nativeEvent.pageY - listTouchStartY.current;
+              if (dy > 12) {
+                triggerGlideToDual();
+              }
+            }
+          }}
+          onTouchEnd={() => {
+            listTouchStartY.current = 0;
+            listTouchStartedAtTop.current = false;
+          }}
+          onTouchCancel={() => {
+            listTouchStartY.current = 0;
+            listTouchStartedAtTop.current = false;
+          }}
           getItemLayout={(_, index) => ({
             length: 356,
             offset: 356 * index,
@@ -872,7 +858,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           scrollEnabled={snapState === 'FULL'}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 + searchRowTotalHeight : 32 },
+            { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 + computedSearchRowTotalHeight : 32 },
           ]}
           renderItem={({ item }) => (
             <LuxuryPropertyCard
@@ -880,6 +866,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               isSelected={item.id === selectedPropertyId}
               isFavorite={isSaved(item.id)}
               listType={listType}
+              onSwipeDown={snapState === 'FULL' ? triggerGlideToDual : undefined}
+              isAtTop={() => scrollYRef.current <= 5}
               onSelect={() => onSelectProperty(item)}
               onToggleFavorite={() => onToggleFavorite(item.id)}
             />
@@ -910,6 +898,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         <TouchableOpacity
           style={styles.floatingMapPill}
           onPress={() => {
+            resetListToTop();
             onSnapChange('PEEK');
             animateToState('PEEK');
           }}
@@ -943,27 +932,12 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   sheetContainerFull: {
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
     borderWidth: 0,
+    borderTopWidth: 0,
+    borderColor: 'transparent',
     shadowOpacity: 0,
+    shadowRadius: 0,
     elevation: 0,
-  },
-  headerBgFill: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#ffffff',
-    zIndex: 10,
-  },
-  topFixedSearchRow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 16,
-    zIndex: 15,
   },
   mainContentContainer: {
     flex: 1,
@@ -998,95 +972,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#f1f5f9',
     width: '100%',
-  },
-  fullscreenHeader: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  fullscreenSearchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
-  },
-  fullscreenSearchPill: {
-    flex: 1,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  fullscreenSearchText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  fullscreenSearchPlaceholder: {
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  clearSearchBtn: {
-    padding: 4,
-  },
-  fullscreenFilterCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    position: 'relative',
-  },
-  fullscreenFilterCircleActive: {
-    backgroundColor: '#0f172a',
-    borderColor: '#0f172a',
-  },
-  filterBadge: {
-    position: 'absolute',
-    top: -3,
-    right: -3,
-    backgroundColor: '#2563eb',
-    borderRadius: 9,
-    minWidth: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: '#ffffff',
-  },
-  filterBadgeText: {
-    color: '#ffffff',
-    fontSize: 9.5,
-    fontWeight: '800',
-  },
-  fullscreenSubHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 6,
-    paddingBottom: 4,
-    paddingHorizontal: 4,
   },
   zillowSortButton: {
     flexDirection: 'row',

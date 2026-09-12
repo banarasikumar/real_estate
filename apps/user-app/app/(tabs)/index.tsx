@@ -14,7 +14,7 @@ import {
   Platform,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MobileMapboxView, MobileMapboxViewRef } from '../../components/MobileMapboxView';
 import {
   clusterPropertiesByBuilding,
@@ -623,29 +623,38 @@ export default function UserAppHomeScreen() {
     return count;
   }, [modalFilters]);
 
-  // Smooth animated opacity for top floating search bar and 3D button transitions
-  const topBarOpacityAnim = useRef(
-    new Animated.Value(sheetSnapState === 'FULL' ? 0 : 1)
-  ).current;
-  const floating3DOpacityAnim = useRef(
-    new Animated.Value(sheetSnapState === 'FULL' ? 0 : 1)
-  ).current;
+  // Status Bar and Safe Area Insets for Stationary Header
+  const insets = useSafeAreaInsets();
+  const statusBarHeight = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : insets.top;
+  const headerPaddingTop = statusBarHeight + 8;
+  const searchRowTotalHeight = headerPaddingTop + 56;
 
-  useEffect(() => {
-    const isFull = sheetSnapState === 'FULL';
-    Animated.parallel([
-      Animated.timing(topBarOpacityAnim, {
-        toValue: isFull ? 0 : 1,
-        duration: 200,
-        useNativeDriver: true,
+  // Shared translateYAnim between index.tsx and MobileTriStateBottomSheet
+  const fullHeight = containerHeight || (SCREEN_HEIGHT - 60);
+  const PEEK_HEIGHT = 72;
+  const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
+  const fullY = 0;
+  const dualY = fullHeight - DUAL_HEIGHT;
+  const peekY = fullHeight - PEEK_HEIGHT;
+
+  const getSnapTranslateY = (state: SheetSnapState) => {
+    switch (state) {
+      case 'FULL': return 0;
+      case 'DUAL': return dualY;
+      case 'PEEK': return peekY;
+    }
+  };
+  const translateYAnim = useRef(new Animated.Value(getSnapTranslateY(sheetSnapState))).current;
+
+  const floating3DOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [0, 60, dualY],
+        outputRange: [0, 0.4, 1],
+        extrapolate: 'clamp',
       }),
-      Animated.timing(floating3DOpacityAnim, {
-        toValue: isFull ? 0 : 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [sheetSnapState, topBarOpacityAnim, floating3DOpacityAnim]);
+    [translateYAnim, dualY]
+  );
 
   return (
     <View
@@ -687,64 +696,61 @@ export default function UserAppHomeScreen() {
         onCancelDraw={() => setIsDrawingMode(false)}
       />
 
-      {/* 3. Top Floating Search & Filter Bar (Clean Zillow Design - Visible over map in PEEK & DUAL modes, smoothly hidden in FULL mode to prevent duplicate header) */}
-      <Animated.View
-        style={[
-          styles.topFloatingBarContainer,
-          { opacity: topBarOpacityAnim },
-        ]}
-        pointerEvents={sheetSnapState === 'FULL' ? 'none' : 'box-none'}
-      >
-        {/* Floating Search Pill */}
-        <TouchableOpacity
-          style={styles.searchPill}
-          activeOpacity={0.88}
-          onPress={() => setIsSearchModalVisible(true)}
-        >
-          <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
-          <Text
-            style={[styles.searchInputText, !searchQuery && styles.searchPlaceholderText]}
-            numberOfLines={1}
+      {/* 3. Stationary Top Search & Filter Bar (Option 1: Unified Single-Surface Fusion) */}
+      <View style={styles.stationaryTopHeaderWrapper} pointerEvents="box-none">
+        {/* Fixed Search Row - NEVER moves */}
+        <View style={[styles.topFloatingBarContainer, { paddingTop: statusBarHeight + 8 }]}>
+          {/* Search Pill */}
+          <TouchableOpacity
+            style={styles.searchPill}
+            activeOpacity={0.88}
+            onPress={() => setIsSearchModalVisible(true)}
           >
-            {searchQuery || activeRegion?.name || (isRent ? 'Los Angeles CA rentals' : 'Home features, school, location')}
-          </Text>
-          {searchQuery.length > 0 ? (
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation();
-                setSearchQuery('');
-                setActiveRegion(null);
-                fetchHomes('');
-              }}
-              style={styles.clearSearchBtn}
+            <Ionicons name="search" size={19} color="#0f172a" style={{ marginRight: 8 }} />
+            <Text
+              style={[styles.searchInputText, !searchQuery && styles.searchPlaceholderText]}
+              numberOfLines={1}
             >
-              <Ionicons name="close-circle" size={18} color="#94a3b8" />
-            </TouchableOpacity>
-          ) : (
-            <Ionicons name="mic-outline" size={19} color="#94a3b8" />
-          )}
-        </TouchableOpacity>
+              {searchQuery || activeRegion?.name || (isRent ? 'Los Angeles CA rentals' : 'Home features, school, location')}
+            </Text>
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation();
+                  setSearchQuery('');
+                  setActiveRegion(null);
+                  fetchHomes('');
+                }}
+                style={styles.clearSearchBtn}
+              >
+                <Ionicons name="close-circle" size={18} color="#94a3b8" />
+              </TouchableOpacity>
+            ) : (
+              <Ionicons name="mic-outline" size={19} color="#94a3b8" />
+            )}
+          </TouchableOpacity>
 
-        {/* Dedicated Circular Filter Button */}
-        <TouchableOpacity
-          style={[
-            styles.filterCircleButton,
-            activeFilterCount > 0 && styles.filterCircleButtonActive,
-          ]}
-          onPress={() => setIsFilterModalVisible(true)}
-          activeOpacity={0.85}
-        >
-          <ZillowFilterIcon
-            size={20}
-            color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
-          />
-          {activeFilterCount > 0 && (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </Animated.View>
+          {/* Circular Filter Button */}
+          <TouchableOpacity
+            style={[
+              styles.filterCircleButton,
+              activeFilterCount > 0 && styles.filterCircleButtonActive,
+            ]}
+            onPress={() => setIsFilterModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <ZillowFilterIcon
+              size={20}
+              color={activeFilterCount > 0 ? '#ffffff' : '#0f172a'}
+            />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* Drawn Shape Clear Banner */}
       {sheetSnapState !== 'FULL' && drawnPolygon && drawnPolygon.length >= 3 && (
@@ -765,7 +771,7 @@ export default function UserAppHomeScreen() {
         pointerEvents={sheetSnapState === 'FULL' ? 'none' : 'auto'}
         style={[
           styles.floating3DWrap,
-          { opacity: floating3DOpacityAnim },
+          { opacity: floating3DOpacity },
         ]}
       >
         <TouchableOpacity
@@ -784,7 +790,9 @@ export default function UserAppHomeScreen() {
           {!selectedBuilding && (
             <MobileTriStateBottomSheet
               availableHeight={containerHeight}
+              searchRowTotalHeight={searchRowTotalHeight}
               snapState={sheetSnapState}
+              translateYAnim={translateYAnim}
               onSnapChange={(newState) => {
                 setSheetSnapState(newState);
                 if (newState === 'DUAL' || newState === 'FULL') {
@@ -1061,17 +1069,22 @@ const styles = StyleSheet.create({
     borderTopColor: '#fff1f2',
   },
 
-  // Top Floating Header
-  // Top Floating Search Bar & Circular Filter Button Row
-  topFloatingBarContainer: {
+  // Top Stationary Header
+  stationaryTopHeaderWrapper: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : 12,
-    left: 16,
-    right: 16,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    backgroundColor: 'transparent',
+  },
+  topFloatingBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
     gap: 10,
-    zIndex: 35,
+    zIndex: 2,
   },
   searchPill: {
     flex: 1,
