@@ -103,7 +103,6 @@ interface LuxuryPropertyCardProps {
   listType: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
-  onCarouselScrollChange?: (isActive: boolean) => void;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -113,7 +112,6 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   listType,
   onSelect,
   onToggleFavorite,
-  onCarouselScrollChange,
 }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
@@ -226,27 +224,19 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
     if (dx > 5 || dy > 5) {
       hasImageDragged.current = true;
     }
-    // Smart direction lock:
-    // If movement is horizontal (even with diagonal tilt dx >= dy * 0.7), notify parent bottom sheet
-    // to lock out vertical scrolling/sheet dragging!
-    if (dx > 4 && dx >= dy * 0.7) {
-      onCarouselScrollChange?.(true);
-    }
   };
 
   const handleImageTouchEnd = (e: GestureResponderEvent) => {
-    onCarouselScrollChange?.(false);
     const dx = Math.abs(e.nativeEvent.pageX - imageTouchStart.current.x);
     const dy = Math.abs(e.nativeEvent.pageY - imageTouchStart.current.y);
     const dt = Date.now() - imageTouchStart.current.time;
-    // Pure intentional tap on photo: no dragging (dx <= 5, dy <= 5) and quick (< 300ms)
-    if (!hasImageDragged.current && dx <= 5 && dy <= 5 && dt < 300) {
+    // Pure intentional tap on photo: no dragging (dx <= 5, dy <= 5) and quick (< 250ms)
+    if (!hasImageDragged.current && dx <= 5 && dy <= 5 && dt < 250) {
       handleCardPress();
     }
   };
 
   const handleImageTouchCancel = () => {
-    onCarouselScrollChange?.(false);
     hasImageDragged.current = false;
   };
 
@@ -267,9 +257,6 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
           onTouchMove={handleImageTouchMove}
           onTouchEnd={handleImageTouchEnd}
           onTouchCancel={handleImageTouchCancel}
-          onScrollBeginDrag={() => onCarouselScrollChange?.(true)}
-          onScrollEndDrag={() => onCarouselScrollChange?.(false)}
-          onMomentumScrollEnd={() => onCarouselScrollChange?.(false)}
         >
           {photos.map((photoUrl, idx) => (
             <Image
@@ -446,18 +433,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const isSwipingDownHandledRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
-
-  // Direction coordination: locks out vertical gestures when photo carousel is active
-  const isPhotoCarouselActiveRef = useRef(false);
-  const [isPhotoCarouselActive, setIsPhotoCarouselActive] = useState(false);
-  const handleCarouselScrollChange = useCallback((isActive: boolean) => {
-    isPhotoCarouselActiveRef.current = isActive;
-    setIsPhotoCarouselActive(isActive);
-  }, []);
-
-  // Sheet dragging lock: disables list scrolling while sheet is being physically dragged
-  const isSheetDraggingRef = useRef(false);
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
+  const listTouchStartY = useRef(0);
+  const listTouchStartedAtTop = useRef(false);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -578,41 +555,16 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     [snapState, triggerGlideToDual]
   );
 
-  // Universal PanResponder for PEEK, DUAL, and FULL modes (swiping anywhere on container drags sheet)
+  // Universal PanResponder for PEEK and DUAL modes (swiping anywhere on container drags sheet)
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
-        onStartShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponderCapture: (_, gesture) => {
-          // If photo carousel is actively swiping horizontally, DO NOT capture vertically!
-          if (isPhotoCarouselActiveRef.current) return false;
-
-          if (snapState === 'FULL') {
-            // In FULL mode: capture if at top of listings, moving DOWN, and vertical dominates horizontal:
-            const isAtTop = scrollYRef.current <= 5;
-            const isDownward = gesture.dy > 5;
-            const isVerticalDominant = Math.abs(gesture.dy) > Math.abs(gesture.dx);
-            return isAtTop && isDownward && isVerticalDominant;
-          }
-          // In PEEK or DUAL mode: capture vertical drag if dy > 4 and vertical dominates horizontal
-          return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
-        },
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (isPhotoCarouselActiveRef.current) return false;
-
-          if (snapState === 'FULL') {
-            const isAtTop = scrollYRef.current <= 5;
-            const isDownward = gesture.dy > 5;
-            const isVerticalDominant = Math.abs(gesture.dy) > Math.abs(gesture.dx);
-            return isAtTop && isDownward && isVerticalDominant;
-          }
+          if (snapState === 'FULL') return false; // In FULL mode, FlatList handles native scrolling
           return Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx);
         },
-        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
-          isSheetDraggingRef.current = true;
-          setIsSheetDragging(true);
           dragStartTranslateY.current = currentTranslateYRef.current;
         },
         onPanResponderMove: (_, gesture) => {
@@ -624,35 +576,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           translateYAnim.setValue(clamped);
         },
         onPanResponderRelease: (_, gesture) => {
-          isSheetDraggingRef.current = false;
-          setIsSheetDragging(false);
           const vy = gesture.vy;
           const dy = gesture.dy;
-          const currentY = currentTranslateYRef.current;
           let nextState: SheetSnapState = snapState;
 
-          if (snapState === 'FULL') {
-            if (currentY > dualY) {
-              // Dragged past DUAL mode down towards PEEK mode:
-              const midDualPeek = (dualY + peekY) / 2;
-              // If pushed back up towards DUAL ("undoing" back towards DUAL) or near DUAL:
-              if (vy < -0.2 || currentY < midDualPeek) {
-                nextState = 'DUAL';
-              } else {
-                // Dragged all the way down towards PEEK and released near bottom:
-                nextState = 'PEEK';
-              }
-            } else {
-              // Between FULL (0) and DUAL (dualY):
-              // If pushed back up towards top ("undoing" back to FULL):
-              if (vy < -0.2 || currentY < 25) {
-                nextState = 'FULL';
-              } else {
-                // Releasing after dragging down even a little bit (or downward flick):
-                nextState = 'DUAL';
-              }
-            }
-          } else if (snapState === 'DUAL') {
+          if (snapState === 'DUAL') {
             if (dy < -20 || vy < -0.15) {
               nextState = 'FULL';
             } else if (dy > 20 || vy > 0.15) {
@@ -660,7 +588,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             } else {
               nextState = 'DUAL';
             }
-          } else {
+          } else if (snapState === 'PEEK') {
             if (dy < -8 || vy < -0.1) {
               nextState = 'DUAL';
             } else {
@@ -677,13 +605,40 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           }
           animateToState(nextState);
         },
-        onPanResponderTerminate: () => {
-          isSheetDraggingRef.current = false;
-          setIsSheetDragging(false);
-          animateToState(snapState);
+      }),
+    [snapState, onSnapChange, animateToState, peekY, translateYAnim, resetListToTop]
+  );
+
+  // Subheader PanResponder for FULL mode downward pull
+  const headerPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          if (snapState !== 'FULL') return false;
+          return gesture.dy > 6 && gesture.dy > Math.abs(gesture.dx);
+        },
+        onPanResponderGrant: () => {
+          dragStartTranslateY.current = 0;
+        },
+        onPanResponderMove: (_, gesture) => {
+          if (gesture.dy > 0) {
+            const clamped = Math.min(dualY, Math.max(0, gesture.dy));
+            currentTranslateYRef.current = clamped;
+            translateYAnim.setValue(clamped);
+          }
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dy > 15 || gesture.vy > 0.15) {
+            resetListToTop();
+            onSnapChange('DUAL');
+            animateToState('DUAL');
+          } else {
+            animateToState('FULL');
+          }
         },
       }),
-    [snapState, onSnapChange, animateToState, peekY, dualY, translateYAnim, resetListToTop]
+    [snapState, onSnapChange, animateToState, dualY, translateYAnim, resetListToTop]
   );
 
   const handleHeaderPress = () => {
@@ -808,7 +763,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         ]}
       >
         {/* Subheader Row: Cross-fades between count+handle and sort+save */}
-        <View style={styles.subHeaderRowContainer}>
+        <View style={styles.subHeaderRowContainer} {...headerPanResponder.panHandlers}>
           {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
           <Animated.View
             style={[
@@ -879,6 +834,30 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           scrollEventThrottle={16}
           bounces={false}
           overScrollMode="never"
+          onTouchStart={(e) => {
+            listTouchStartY.current = e.nativeEvent.pageY;
+            listTouchStartedAtTop.current = scrollYRef.current <= 5;
+          }}
+          onTouchMove={(e) => {
+            if (snapState === 'FULL' && listTouchStartedAtTop.current) {
+              if (listTouchStartY.current === 0) {
+                listTouchStartY.current = e.nativeEvent.pageY;
+                return;
+              }
+              const dy = e.nativeEvent.pageY - listTouchStartY.current;
+              if (dy > 15) {
+                triggerGlideToDual();
+              }
+            }
+          }}
+          onTouchEnd={() => {
+            listTouchStartY.current = 0;
+            listTouchStartedAtTop.current = false;
+          }}
+          onTouchCancel={() => {
+            listTouchStartY.current = 0;
+            listTouchStartedAtTop.current = false;
+          }}
           getItemLayout={(_, index) => ({
             length: 356,
             offset: 356 * index,
@@ -888,7 +867,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           maxToRenderPerBatch={4}
           windowSize={5}
           removeClippedSubviews={Platform.OS === 'android'}
-          scrollEnabled={snapState === 'FULL' && !isSheetDragging && !isPhotoCarouselActive}
+          scrollEnabled={snapState === 'FULL'}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: snapState === 'FULL' ? insets.bottom + 80 + computedSearchRowTotalHeight : 32 },
@@ -901,7 +880,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               listType={listType}
               onSelect={() => onSelectProperty(item)}
               onToggleFavorite={() => onToggleFavorite(item.id)}
-              onCarouselScrollChange={handleCarouselScrollChange}
             />
           )}
           ListEmptyComponent={
