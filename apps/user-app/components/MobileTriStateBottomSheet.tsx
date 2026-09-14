@@ -389,6 +389,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const animatingToStateRef = useRef<SheetSnapState | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
+  const [listScrollEnabled, setListScrollEnabled] = useState(true);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -554,14 +555,17 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             return false;
           }
 
-          // Swiping DOWN (gesture.dy > 3):
-          if (gesture.dy > 3) {
-            // Subheader touch: gesture.y0 <= fullY + 54. If gesture.dy > 3, ALWAYS capture immediately and drag the sheet down, regardless of list scroll.
+          // Swiping DOWN in FULL mode at top of list:
+          // Use sub-pixel threshold (0.5) to preempt Android's native 8px touch slop
+          if (gesture.dy > 0.5) {
+            // Subheader touch: ALWAYS capture immediately regardless of list scroll
             if (gesture.y0 <= fullY + 54) {
+              setListScrollEnabled(false);
               return true;
             }
-            // Card touch: gesture.y0 > fullY + 54. If gesture.dy > 3 and scrollYRef.current <= 5, capture immediately and drag the sheet down.
-            if (scrollYRef.current <= 5) {
+            // Card/list touch: capture only when list is scrolled to top
+            if (scrollYRef.current <= 1) {
+              setListScrollEnabled(false);
               return true;
             }
           }
@@ -584,11 +588,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             return false;
           }
 
-          if (gesture.dy > 3) {
+          if (gesture.dy > 0.5) {
             if (gesture.y0 <= fullY + 54) {
+              setListScrollEnabled(false);
               return true;
             }
-            if (scrollYRef.current <= 5) {
+            if (scrollYRef.current <= 1) {
+              setListScrollEnabled(false);
               return true;
             }
           }
@@ -599,6 +605,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         onPanResponderGrant: () => {
           animatingToStateRef.current = null;
           dragStartTranslateY.current = currentTranslateYRef.current;
+          setListScrollEnabled(false);
         },
         onPanResponderMove: (_, gesture) => {
           const target = dragStartTranslateY.current + gesture.dy;
@@ -609,19 +616,23 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           translateYAnim.setValue(clamped);
         },
         onPanResponderRelease: (_, gesture) => {
+          setListScrollEnabled(true);
           const vy = gesture.vy;
           const dy = gesture.dy;
           let nextState: SheetSnapState = snapState;
 
           if (snapState === 'FULL') {
-            // From FULL: if dy > 20 || vy > 0.15, glide to DUAL (or PEEK if dy > (dualY - fullY) + 60); otherwise return to FULL
+            // From FULL: use currentTranslateYRef position for multi-step snapping
             if (dy > 20 || vy > 0.15) {
-              if (dy > (dualY - fullY) + 60) {
+              if (currentTranslateYRef.current > dualY + 30 || vy > 0.8) {
+                // Dragged past DUAL into lower area → snap to PEEK
                 nextState = 'PEEK';
               } else {
+                // Quick drag & lift or dragged to around DUAL → snap to DUAL
                 nextState = 'DUAL';
               }
             } else {
+              // Aborted drag → spring back to FULL
               nextState = 'FULL';
             }
           } else if (snapState === 'DUAL') {
@@ -864,7 +875,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           maxToRenderPerBatch={6}
           windowSize={7}
           decelerationRate="normal"
-          scrollEnabled={snapState === 'FULL'}
+          scrollEnabled={snapState === 'FULL' && listScrollEnabled}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: insets.bottom + 90 },
