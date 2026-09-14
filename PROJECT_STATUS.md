@@ -1,10 +1,10 @@
 # Real Estate Monorepo — Project Status & Brain Memory
 
-> **Last Updated**: September 12, 2026  
+> **Last Updated**: September 14, 2026  
 > **Repository**: `banarasikumar/real_estate`  
-> **Active Branch**: `main` (clean working tree, 7 commits ahead of `origin/main` — local commits only, remote push prevented)  
+> **Active Branch**: `main` (clean working tree, 10 commits ahead of `origin/main` — local commits only, remote push prevented)  
 > **Active Environment**: Windows (PowerShell) | Node.js / Turborepo / Expo SDK 57 / Next.js 15 / Supabase / Mapbox GL JS v3  
-> **Active Metro Daemon**: Port `8081` (`task-568`)
+> **Active Metro Bundler**: Port `8081` (`apps/user-app`)
 
 ---
 
@@ -13,13 +13,16 @@
 This monorepo houses a multi-platform, end-to-end luxury Real Estate platform connecting Property Owners, Property Seekers, and Platform Admins.
 
 ### Current System Health & Stability
-- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. The Zillow-identical single-surface bottom sheet, Mapbox 3D WebGL discovery map, gesture physics, locked container dimensions, and 76-listing demo dataset are 100% stable.
+- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, and 76-listing demo dataset across LA, NY, and Mumbai.
 - **TypeScript Type Safety**: 0 errors across the monorepo (`npm run check-types --workspace=user-app` passes cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed locally on `main` up to commit `d68af35e`.
+- **Git Working Tree**: 100% clean. All changes are committed locally on `main` up to commit `749c8445`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
+| `749c8445` | `feat(user-app): implement iOS-grade Zillow gesture engine, spring physics, and seamless borderless fusion` | user-app |
+| `37732f8b` | `fix(ui): remove blue and persistent selection borders on mobile property cards` | user-app |
+| `1ab72956` | `docs: update PROJECT_STATUS.md with comprehensive past, current, and future roadmap` | root / docs |
 | `d68af35e` | `fix(user-app): refine gesture handlers and card container layout in bottom sheet` | user-app |
 | `642c1d63` | `fix(user-app): restore 60fps native momentum scrolling and smooth dual/full gesture transitions` | user-app |
 | `450453e2` | `fix(user-app): implement smart direction locking, eliminate miss-clicks, and enable 1:1 downward sheet drag` | user-app |
@@ -27,7 +30,6 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 | `504779e4` | `fix(user-app): lock bottom sheet and property card container widths across full and dual modes` | user-app |
 | `670bd3c7` | `feat(user-app): expand demo properties dataset with 20+ listings for LA, NY, and Mumbai` | user-app / data |
 | `a0fcf3c5` | `feat(user-app): implement Zillow unified bottom sheet animations and instant swipe-down return` | user-app |
-| `abd0e923` | `feat: Zillow-identical smooth header transition and universal DUAL swipe-up` | user-app |
 
 - **Security Note**: All Mapbox access tokens were purged from Git commit history. Tokens reside strictly in gitignored `.env` files (`apps/user-app/.env` and `apps/customer-web/.env.local`). Remote git push is disabled per instructions.
 
@@ -57,37 +59,48 @@ real_estate/
 
 ### 3.1 Seeker Mobile Application (`apps/user-app`)
 
-1. **Zillow Unified Single-Surface Bottom Sheet (`MobileTriStateBottomSheet.tsx`)**:
-   - **Snap States**:
-     - `PEEK` (72px): Handle bar `—` with centered `{count} rentals available`.
-     - `DUAL` (44% screen height): Split screen with map visible in top 56% and scrollable cards in bottom 44%.
-     - `FULL` (100% available height): Sheet glides all the way to `y = 0` at top of screen, sliding directly beneath the stationary top search bar with zero border or line.
-   - **Stationary Top Search & Filter Bar**:
-     - Rendered stationarily at `zIndex: 50` in `index.tsx`. The search bar and circular filter button never move or jump during gestures.
-   - **GPU-Accelerated Native Driver Interpolations (60–120fps)**:
-     - Implemented with `transform: [{ translateY }]` using **`useNativeDriver: true`**, running directly on the native GPU compositor thread.
-     - Snappy spring constants (`damping: 28, stiffness: 300, mass: 0.8`) with zero rubbery jitter.
-     - `countRowOpacity` & `sortRowOpacity`: The drag handle `—` and `{count} rentals available` cross-fade into `Sort: {sortOption} ⇅` and `Save search` at the exact same screen position without any flicker or flash.
-     - `hudOpacity`: Floating map HUD (Layer, Draw, GPS) and 3D button smoothly dissolve when swiping above DUAL mode.
-     - `containerBorderRadius`: Top corners smoothly transition between `24px` (in DUAL/PEEK) and `0px` (in FULL mode).
-     - `bottomMapButtonOpacity`: Floating black pill `[ 🗺️ Map ]` at bottom center in FULL mode smoothly glides down into PEEK mode when tapped.
+1. **iOS-Grade Zillow Gesture Engine & Physics (`MobileTriStateBottomSheet.tsx`)**:
+   - **Screen-Coordinate Touch Targeting (`gesture.y0`)**:
+     - Eliminates unpredictable child-relative `locationY` bugs in React Native.
+     - **Subheader drag** (`gesture.y0 <= fullY + 54`): Dragging downward (`dy > 3`) **always captures immediately**, moving the sheet 1:1 with the user's finger regardless of whether the card list was scrolled or not.
+     - **Card drag** (`gesture.y0 > fullY + 54`): Dragging down at the top of the list (`scrollY <= 5`) captures immediately and glides down to DUAL mode.
+     - **Upward swipe** (`gesture.dy <= 0`): Never captured by PanResponder, allowing the native card list to scroll smoothly at 60fps on the GPU with momentum.
+   - **1:1 Real-Time Finger Tracking**:
+     - Direct `translateYAnim.setValue(clamped)` tracks the finger with zero latency between `fullY` and `peekY`.
+   - **PEEK to FULL Direct Snap**:
+     - Swiping or flicking up from `PEEK` past the `DUAL` line (`currentTranslateYRef.current < dualY || vy < -0.7`) snaps **directly into FULL view mode**, never bouncing or returning to DUAL mode.
+   - **Critically Damped Spring Dynamics**:
+     - Spring parameters in `animateToState`: `mass: 0.45`, `stiffness: 320`, `damping: 24`, `overshootClamping: true`, velocity clamped to `[-8, 8]` with `useNativeDriver: true`.
 
-2. **60fps Native Momentum Scrolling & Bulletproof Gesture Physics**:
-   - **Universal Swipe-Up in DUAL & PEEK Modes**:
-     - Swiping up anywhere on the property card container (including on cards) lifts the sheet into FULL mode.
-     - Vertical card scroll is locked in DUAL mode (`scrollEnabled={snapState === 'FULL'}`) and unlocked in FULL mode.
-   - **Native 60fps Card Scrolling**: In FULL mode, the card list scrolls with 100% native momentum, zero lag, and zero jitter.
-   - **Reliable Downward Overscroll to DUAL Mode**:
-     - Direct pull-down on the card list when at the top (`scrollY <= 5` and `dy > 12px`) smoothly glides back to DUAL mode.
-     - Header drag down also smoothly glides back to DUAL mode.
-   - **Direction-Locking & Tap Isolation**: Card tap navigation (for details) and horizontal photo carousel paging (`dx > dy`) operate without interference.
+2. **Seamless Borderless Surface Fusion (`index.tsx` & `MobileTriStateBottomSheet.tsx`)**:
+   - **Eliminated Dividing Line/Border in FULL Mode**:
+     - Removed `borderBottomWidth: 1, borderBottomColor: '#f1f5f9'` from the search bar backdrop `Animated.View` in `index.tsx`.
+     - Removed static `borderTopWidth` and static container shadow from `styles.sheetContainer`.
+   - **Native GPU-Interpolated Hairline & Shadow Overlays**:
+     - Added `sheetBorderOpacity` and `sheetShadowOpacity` (`inputRange: [fullY, fullY + 20, dualY], outputRange: [0, 1, 1]`):
+       - In **FULL mode** (`translateY == fullY`): Border and shadow opacities drop to `0`. The stationary search bar and property sheet subheader merge seamlessly into a single, continuous white surface.
+       - In **DUAL and PEEK modes** (`translateY >= dualY`): The hairline border and elevation shadow fade in to full opacity (`1`) over the map.
 
-3. **Container & Card Width Locking (Zero Width Popping)**:
+3. **FlatList & Photo Carousel Touch Isolation**:
+   - In `LuxuryPropertyCard`: horizontal image carousel `<ScrollView>` has `directionalLockEnabled={true}` and `nestedScrollEnabled={false}`, guaranteeing photo swiping never leaks into or gets hijacked by vertical sheet dragging.
+   - In `FlatList`: `overScrollMode="never"` and `bounces={Platform.OS === 'ios'}` prevents native Android scroll glow from swallowing downward touch streams at offset 0.
+   - Removed conflicting drag handlers. In `handleListScroll`:
+     ```ts
+     scrollYRef.current = Math.max(0, offsetY);
+     if (snapState === 'FULL' && offsetY < -20 && animatingToStateRef.current === null) {
+       triggerGlideToDual(2.0);
+     }
+     ```
+
+4. **Card Visual Polish**:
+   - Removed blue and persistent selection borders (`borderWidth: 2, borderColor: '#006aff'`) from `LuxuryPropertyCard` to maintain clean, distraction-free browsing.
+
+5. **Container & Card Width Locking (Zero Width Popping)**:
    - Replaced `borderWidth: 1` on `sheetContainer` with `borderTopWidth: 1` and explicit `borderLeftWidth: 0, borderRightWidth: 0, borderBottomWidth: 0`.
    - Guaranteed that the bottom sheet is 100% full screen width (`left: 0, right: 0`) across all modes (PEEK, DUAL, FULL) with zero horizontal width popping or jumping.
    - Locked `cardContainer` to `CARD_WIDTH = SCREEN_WIDTH - 32` and carousel photos to `CARD_INNER_WIDTH = CARD_WIDTH - 2`, eliminating image clipping and border distortion.
 
-4. **Expanded Demo Dataset (76 Properties Across 3 Key Markets)**:
+6. **Expanded Demo Dataset (76 Properties Across 3 Key Markets)**:
    - Created [`apps/user-app/data/mockProperties.ts`](file:///c:/Users/banar/Desktop/AGY/real_estate/apps/user-app/data/mockProperties.ts):
      - **Los Angeles, CA Homes** (26 listings): Santa Monica, Beverly Hills, Hollywood Hills, Downtown LA, Venice, Brentwood, Malibu, Studio City, etc. (\$2,400/mo – \$38,000/mo).
      - **New York, NY Homes** (25 listings): Midtown Manhattan, Tribeca, Upper West Side, West Village, Chelsea, SoHo, DUMBO, Brooklyn Heights, etc. (\$3,200/mo – \$42M).
@@ -95,30 +108,30 @@ real_estate/
    - Integrated into [`apps/user-app/data/searchRegions.ts`](file:///c:/Users/banar/Desktop/AGY/real_estate/apps/user-app/data/searchRegions.ts) with full region boundaries and polygons.
    - Integrated `getFallbackProperties` in [`apps/user-app/app/(tabs)/index.tsx`](file:///c:/Users/banar/Desktop/AGY/real_estate/apps/user-app/app/(tabs)/index.tsx) for text search, modal region selection, and map bounding box filtering.
 
-5. **Mapbox Standard 3D Discovery Map (`MobileMapboxView.tsx`)**:
+7. **Mapbox Standard 3D Discovery Map (`MobileMapboxView.tsx`)**:
    - Hardware-accelerated WebGL map using Mapbox GL JS v3 inside a React Native WebView.
    - Dynamic Rent (`#7B1FA2` Deep Violet) vs. Sale (`#e11d48` Brand Rose) price markers.
    - 3D perspective camera controls with smooth pitch/bearing easing.
    - Mapbox logo watermark completely hidden via CSS for a clean luxury interface.
    - Wrapped with `React.memo` to eliminate unnecessary map re-renders during gestures.
 
-6. **Feed Performance & Virtualization Optimization**:
+8. **Feed Performance & Virtualization Optimization**:
    - Replaced nested card photo `FlatList` in `LuxuryPropertyCard` with native horizontal `<ScrollView horizontal pagingEnabled>` (eliminated 604ms JS thread freeze).
    - Feed is kept pre-mounted in PEEK (clipped off-screen), ensuring **0ms startup latency** when expanding.
-   - Outer FlatList tuned with `getItemLayout` (356px fixed items), `removeClippedSubviews`, `initialNumToRender={4}`, and `windowSize={5}`.
+   - Outer FlatList tuned with `getItemLayout` (356px fixed items), `removeClippedSubviews`, `initialNumToRender={6}`, `maxToRenderPerBatch={6}`, and `windowSize={7}`.
 
-7. **Zillow Touch Lasso Drawing (`MobileTouchDrawOverlay.tsx` & `ZillowIcons.tsx`)**:
+9. **Zillow Touch Lasso Drawing (`MobileTouchDrawOverlay.tsx` & `ZillowIcons.tsx`)**:
    - Vector pointing finger with drawing loop icon (`ZillowDrawIcon`).
    - Hardware-accelerated continuous SVG `<Path>` with translucent blue fill (`rgba(37, 99, 235, 0.12)`) and active fingertip indicator.
    - Anchored Floating Action HUD (`[🌐 Layer]`, `[👆 Draw]`, `[🎯 GPS]`, `[Save search]`) mounted inside bottom sheet `Animated.View`, moving 1:1 synchronously with the sheet.
 
-8. **Zoom-Dependent Level of Detail (LOD) & Multi-Unit Clustering (`markerClustering.ts`)**:
+10. **Zoom-Dependent Level of Detail (LOD) & Multi-Unit Clustering (`markerClustering.ts`)**:
    - Far zoom: Small dots / purple building badges.
    - Mid zoom: Price capsules with carets.
    - Close zoom: Multi-unit building badges (`{count} units`, building icon + `₹{price}+`) with collision-aware photo thumbnail cards.
    - Multi-unit building bottom drawer modal (`MobileBuildingDrawer.tsx`).
 
-9. **Full-Screen Search Modal (`MobileSearchModal.tsx`)**:
+11. **Full-Screen Search Modal (`MobileSearchModal.tsx`)**:
    - Fullscreen search modal with search history (clock icons), suggested searches, and tabs for For sale / For rent / Sold.
    - Pre-configured search regions with boundary polygons rendered on the map in blue (`#2563eb`).
 
