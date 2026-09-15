@@ -12,8 +12,8 @@ import {
   Dimensions,
   StatusBar,
   Platform,
-  Animated,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MobileMapboxView, MobileMapboxViewRef } from '../../components/MobileMapboxView';
 import {
@@ -532,27 +532,29 @@ export default function UserAppHomeScreen() {
       case 'PEEK': return peekY;
     }
   };
-  const translateYAnim = useRef(new Animated.Value(getSnapTranslateY(sheetSnapState))).current;
+  const animatedPosition = useSharedValue(getSnapTranslateY(sheetSnapState));
 
-  const floating3DOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 60, dualY],
-        outputRange: [0, 0.4, 1],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  const floating3DStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        animatedPosition.value,
+        [fullY, fullY + 60, dualY],
+        [0, 0.4, 1],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
-  const topBarBgOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 40, dualY],
-        outputRange: [1, 0, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  const topBarBgStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        animatedPosition.value,
+        [fullY, fullY + 40, dualY],
+        [1, 0, 0],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
   return (
     <View
@@ -599,10 +601,8 @@ export default function UserAppHomeScreen() {
         <Animated.View
           style={[
             StyleSheet.absoluteFill,
-            {
-              backgroundColor: '#ffffff',
-              opacity: topBarBgOpacity,
-            },
+            { backgroundColor: '#ffffff' },
+            topBarBgStyle,
           ]}
           pointerEvents="none"
         />
@@ -679,7 +679,7 @@ export default function UserAppHomeScreen() {
         pointerEvents={sheetSnapState === 'FULL' ? 'none' : 'auto'}
         style={[
           styles.floating3DWrap,
-          { opacity: floating3DOpacity },
+          floating3DStyle,
         ]}
       >
         <TouchableOpacity
@@ -700,7 +700,7 @@ export default function UserAppHomeScreen() {
               availableHeight={containerHeight}
               searchRowTotalHeight={searchRowTotalHeight}
               snapState={sheetSnapState}
-              translateYAnim={translateYAnim}
+              animatedPosition={animatedPosition}
               onSnapChange={(newState) => {
                 setSheetSnapState(newState);
                 if (newState === 'DUAL' || newState === 'FULL') {

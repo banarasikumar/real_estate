@@ -1,4 +1,5 @@
-import React, { useRef, useState, useMemo, useCallback, useEffect } from "react";
+const fs = require("fs");
+const content = `import React, { useRef, useState, useMemo, useCallback, useEffect } from "react";
 import { View, Text, StyleSheet, Dimensions, Image, TouchableOpacity, Linking, Platform, StatusBar } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -54,29 +55,20 @@ export function formatPropertyPrice(price: number, listType?: string): string {
   if (!price && price !== 0) return "--";
   const isRent = listType === "RENT";
   const suffix = isRent ? "/mo" : "";
-  if (price > 0 && price <= 15000) return `$${price.toLocaleString()}${suffix}`;
+  if (price > 0 && price <= 15000) return \`$\${price.toLocaleString()}\${suffix}\`;
   if (price >= 10000000) {
     const cr = price / 10000000;
-    return `?${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr${suffix}`;
+    return \`?\${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr\${suffix}\`;
   }
   if (price >= 100000) {
     const l = price / 100000;
-    return `?${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L${suffix}`;
+    return \`?\${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L\${suffix}\`;
   }
-  if (price >= 1000) return `?${(price / 1000).toFixed(0)}k${suffix}`;
-  return `?${price.toLocaleString()}${suffix}`;
+  if (price >= 1000) return \`?\${(price / 1000).toFixed(0)}k\${suffix}\`;
+  return \`?\${price.toLocaleString()}\${suffix}\`;
 }
 
-interface LuxuryPropertyCardProps {
-  property: any;
-  isSelected: boolean;
-  isFavorite: boolean;
-  listType: string;
-  onSelect: (property: any) => void;
-  onToggleFavorite: (id: string) => void;
-}
-
-const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({ property, isFavorite, listType, onSelect, onToggleFavorite }) => {
+const LuxuryPropertyCard = React.memo<any>(({ property, isFavorite, listType, onSelect, onToggleFavorite }) => {
   const router = useRouter();
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
 
@@ -107,18 +99,18 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({ property, isFa
 
   const specsText = useMemo(() => {
     const parts: string[] = [];
-    if (property.bedrooms !== undefined && property.bedrooms !== null) parts.push(`${property.bedrooms} bd`);
-    if (property.bathrooms !== undefined && property.bathrooms !== null) parts.push(`${property.bathrooms} ba`);
-    if (property.area_sqft) parts.push(`${property.area_sqft.toLocaleString()} sqft`);
+    if (property.bedrooms !== undefined && property.bedrooms !== null) parts.push(\`\${property.bedrooms} bd\`);
+    if (property.bathrooms !== undefined && property.bathrooms !== null) parts.push(\`\${property.bathrooms} ba\`);
+    if (property.area_sqft) parts.push(\`\${property.area_sqft.toLocaleString()} sqft\`);
     const cleanType = (property.prop_type || "Apartment").charAt(0).toUpperCase() + (property.prop_type || "Apartment").slice(1).toLowerCase();
-    parts.push(`${cleanType} ${listType === "RENT" ? "for rent" : "for sale"}`);
+    parts.push(\`\${cleanType} \${listType === "RENT" ? "for rent" : "for sale"}\`);
     return parts.join(" | ");
   }, [property, listType]);
 
   return (
     <TouchableOpacity style={styles.cardContainer} activeOpacity={0.96} onPress={() => {
       onSelect(property);
-      if (property.id) router.push(`/property/${property.id}`);
+      if (property.id) router.push(\`/property/\${property.id}\`);
     }}>
       <View style={styles.cardImageWrapper}>
         <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} decelerationRate="fast" onScroll={(e) => {
@@ -149,7 +141,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({ property, isFa
         <Text style={styles.specsText} numberOfLines={1}>{specsText}</Text>
         <Text style={styles.addressText} numberOfLines={1}>{property.address || "1530 N Poinsettia Pl, LA"}</Text>
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.availabilityButton} onPress={() => { onSelect(property); if (property.id) router.push(`/property/${property.id}`); }} activeOpacity={0.88}>
+          <TouchableOpacity style={styles.availabilityButton} onPress={() => { onSelect(property); if (property.id) router.push(\`/property/\${property.id}\`); }} activeOpacity={0.88}>
             <Text style={styles.availabilityButtonText}>Check availability</Text>
           </TouchableOpacity>
         </View>
@@ -183,7 +175,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     if (props.snapState === "PEEK") index = 0;
     if (props.snapState === "DUAL") index = 1;
     if (props.snapState === "FULL") index = 2;
-    bottomSheetRef.current?.snapToIndex(index);
+    bottomSheetRef.current?.animateToIndex(index);
   }, [props.snapState]);
 
   const handleSheetChanges = useCallback((index: number) => {
@@ -229,6 +221,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         [1, 0.8, 0],
         Extrapolation.CLAMP
       ),
+      pointerEvents: internalAnimatedPosition.value < computedSearchRowTotalHeight + 40 ? "auto" : "none",
     };
   });
 
@@ -249,7 +242,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const handleFloatingPillPress = () => {
     props.onSnapChange("PEEK");
-    bottomSheetRef.current?.snapToIndex(0);
+    bottomSheetRef.current?.animateToIndex(0);
   };
 
   const renderItem = useCallback(({ item }: { item: any }) => (
@@ -267,13 +260,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   return (
     <>
-      <Animated.View style={[styles.anchoredHudContainer, hudOpacityStyle]} pointerEvents={props.snapState === "FULL" ? "none" : "box-none"}>
+      <Animated.View style={[styles.anchoredHudContainer, hudOpacityStyle]} pointerEvents="box-none">
         <View style={styles.hudLeftGroup}>
           <TouchableOpacity style={styles.hudCircle} onPress={props.onOpenFilters} activeOpacity={0.8}>
             <Ionicons name="options-outline" size={20} color="#0f172a" />
           </TouchableOpacity>
           <TouchableOpacity style={[styles.hudCircle, props.isDrawingMode && styles.hudCircleActive]} onPress={props.onStartDraw} activeOpacity={0.8}>
-            <ZillowDrawIcon color={props.isDrawingMode ? "#ffffff" : "#0f172a"}  />
+            <ZillowDrawIcon color={props.isDrawingMode ? "#ffffff" : "#0f172a"} width={20} height={20} />
           </TouchableOpacity>
         </View>
         <TouchableOpacity
@@ -300,7 +293,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         <View style={{ flex: 1 }}>
           <View style={styles.subHeaderRowContainer}>
             <Animated.View style={[styles.countSubheaderLayer, countRowStyle]} pointerEvents={props.snapState === "FULL" ? "none" : "auto"}>
-              <TouchableOpacity onPress={() => { props.onSnapChange("FULL"); bottomSheetRef.current?.snapToIndex(2); }} style={styles.headerRow} activeOpacity={0.9}>
+              <TouchableOpacity onPress={() => { props.onSnapChange("FULL"); bottomSheetRef.current?.animateToIndex(2); }} style={styles.headerRow} activeOpacity={0.9}>
                 <Text style={styles.headerTitle}>{props.properties.length} homes</Text>
               </TouchableOpacity>
             </Animated.View>
@@ -325,21 +318,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             renderItem={renderItem}
             contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 90 }]}
             showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 48 }}>
-                <Ionicons name="home-outline" size={40} color="#cbd5e1" style={{ marginBottom: 8 }} />
-                <Text style={{ fontSize: 15, fontWeight: "700", color: "#0f172a", marginBottom: 4 }}>No listings in this area</Text>
-                <Text style={{ fontSize: 12, color: "#64748b", textAlign: "center", paddingHorizontal: 32 }}>Try panning the map or removing filters to see more results.</Text>
-              </View>
-            }
           />
         </View>
       </BottomSheet>
 
-      <Animated.View 
-        style={[styles.floatingMapPillWrap, { bottom: insets.bottom + 16 }, mapPillStyle]}
-        pointerEvents={props.snapState === "FULL" ? "auto" : "none"}
-      >
+      <Animated.View style={[styles.floatingMapPillWrap, { bottom: insets.bottom + 16 }, mapPillStyle]}>
         <TouchableOpacity style={styles.floatingMapPill} onPress={handleFloatingPillPress} activeOpacity={0.9}>
           <Ionicons name="map-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
           <Text style={styles.floatingMapPillText}>Map</Text>
@@ -387,8 +370,10 @@ const styles = StyleSheet.create({
   headerDivider: { height: 1, backgroundColor: "#f1f5f9" },
   listContent: { paddingTop: 12, gap: 16 },
   floatingMapPillWrap: { position: "absolute", alignSelf: "center", zIndex: 50 },
-  floatingMapPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24 },
-  floatingMapPillText: { color: "#ffffff", fontSize: 14, fontWeight: "700" }
+  floatingMapPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#0f172a", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 24 }
 });
 
 export default MobileTriStateBottomSheet;
+`
+fs.writeFileSync("apps/user-app/components/MobileTriStateBottomSheet.tsx", content);
+
