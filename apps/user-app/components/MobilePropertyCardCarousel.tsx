@@ -3,17 +3,20 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   Image,
   TouchableOpacity,
   Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export const CARD_WIDTH = Math.min(SCREEN_WIDTH - 48, 340);
 export const CARD_SPACING = 12;
+export const SIDE_INSET = Math.max(16, (SCREEN_WIDTH - CARD_WIDTH) / 2);
 
 export interface CarouselProperty {
   id: string;
@@ -67,12 +70,32 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
   const router = useRouter();
   const listRef = React.useRef<FlatList>(null);
 
+  // Interaction tracking to prevent programmatic scroll feedback loops
+  const isUserInteractingRef = React.useRef(false);
+  const isProgrammaticScrollRef = React.useRef(false);
+  const lastSettledIndexRef = React.useRef(selectedIndex);
+
   React.useEffect(() => {
+    // If the index change was triggered by the user swiping the list, do NOT call scrollToIndex!
+    if (isUserInteractingRef.current || lastSettledIndexRef.current === selectedIndex) {
+      lastSettledIndexRef.current = selectedIndex;
+      return;
+    }
+
     if (selectedIndex >= 0 && selectedIndex < properties.length) {
-      listRef.current?.scrollToIndex({
-        index: selectedIndex,
-        animated: true,
-      });
+      lastSettledIndexRef.current = selectedIndex;
+      isProgrammaticScrollRef.current = true;
+      try {
+        listRef.current?.scrollToIndex({
+          index: selectedIndex,
+          animated: true,
+        });
+      } catch (err) {
+        listRef.current?.scrollToOffset({
+          offset: selectedIndex * (CARD_WIDTH + CARD_SPACING),
+          animated: true,
+        });
+      }
     }
   }, [selectedIndex, properties.length]);
 
@@ -189,22 +212,63 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={CARD_WIDTH + CARD_SPACING}
-        snapToAlignment="center"
+        snapToAlignment="start"
         decelerationRate="fast"
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingHorizontal: SIDE_INSET }]}
+        onScrollBeginDrag={() => {
+          isUserInteractingRef.current = true;
+        }}
         onMomentumScrollEnd={(e) => {
+          isUserInteractingRef.current = false;
+          if (isProgrammaticScrollRef.current) {
+            isProgrammaticScrollRef.current = false;
+            return;
+          }
+
           const offsetX = e.nativeEvent.contentOffset.x;
           const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
-          if (index >= 0 && index < properties.length && index !== selectedIndex) {
-            onSnapToIndex(index);
+          const clampedIndex = Math.max(0, Math.min(index, properties.length - 1));
+
+          if (clampedIndex !== lastSettledIndexRef.current) {
+            lastSettledIndexRef.current = clampedIndex;
+            onSnapToIndex(clampedIndex);
           }
         }}
-        renderItem={renderCard}
+        onScrollEndDrag={(e) => {
+          setTimeout(() => {
+            if (!isUserInteractingRef.current) return;
+            isUserInteractingRef.current = false;
+            if (isProgrammaticScrollRef.current) {
+              isProgrammaticScrollRef.current = false;
+              return;
+            }
+            const offsetX = e.nativeEvent.contentOffset.x;
+            const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
+            const clampedIndex = Math.max(0, Math.min(index, properties.length - 1));
+            if (clampedIndex !== lastSettledIndexRef.current) {
+              lastSettledIndexRef.current = clampedIndex;
+              onSnapToIndex(clampedIndex);
+            }
+          }, 60);
+        }}
+        renderItem={({ item, index }) => (
+          <View style={{ marginRight: index === properties.length - 1 ? 0 : CARD_SPACING }}>
+            {renderCard({ item })}
+          </View>
+        )}
         getItemLayout={(_, index) => ({
           length: CARD_WIDTH + CARD_SPACING,
           offset: (CARD_WIDTH + CARD_SPACING) * index,
           index,
         })}
+        onScrollToIndexFailed={(info) => {
+          setTimeout(() => {
+            listRef.current?.scrollToOffset({
+              offset: info.index * (CARD_WIDTH + CARD_SPACING),
+              animated: true,
+            });
+          }, 80);
+        }}
       />
     </View>
   );
@@ -238,8 +302,7 @@ const styles = StyleSheet.create({
     marginLeft: 3,
   },
   listContent: {
-    paddingHorizontal: 24,
-    gap: CARD_SPACING,
+    paddingVertical: 4,
   },
   cardContainer: {
     width: CARD_WIDTH,

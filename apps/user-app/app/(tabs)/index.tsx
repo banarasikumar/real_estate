@@ -416,6 +416,9 @@ export default function UserAppHomeScreen() {
       if (prop) {
         setSelectedPropertyId(prop.id);
         setViewedPropertyIds((prev) => new Set(prev).add(prop.id));
+        if (prop.latitude && prop.longitude) {
+          mapboxRef.current?.flyToRegion([prop.longitude, prop.latitude], 15.5);
+        }
       }
     },
     [displayedProperties]
