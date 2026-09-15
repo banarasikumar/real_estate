@@ -20,12 +20,12 @@ import { MobileMapboxView, MobileMapboxViewRef } from '../../components/MobileMa
 import {
   clusterPropertiesByBuilding,
   calculateThumbnailCollision,
-  ClusteredMarker,
   MultiUnitBuildingMarker,
 } from '../../utils/markerClustering';
 import { MobileBuildingDrawer } from '../../components/MobileBuildingDrawer';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   searchProperties,
   getPublishedProperties,
@@ -405,7 +405,7 @@ export default function UserAppHomeScreen() {
       const singleId = marker.rawProperty?.id || marker.id;
       setSelectedPropertyId(singleId);
       setViewedPropertyIds((prev) => new Set(prev).add(singleId));
-      setSheetSnapState('DUAL');
+      setSheetSnapState('MINI_PEEK');
     }
   }, []);
 
@@ -520,18 +520,20 @@ export default function UserAppHomeScreen() {
 
   // Shared translateYAnim between index.tsx and MobileTriStateBottomSheet
   const fullHeight = containerHeight || (SCREEN_HEIGHT - 60);
-  const isCarouselMode = !!selectedPropertyId && !selectedBuilding;
+  const MINI_PEEK_HEIGHT = 48;
   const PEEK_HEIGHT = 72;
-  const DUAL_HEIGHT = isCarouselMode ? 320 : Math.round(fullHeight * 0.44);
+  const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
   const fullY = searchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
+  const miniPeekY = fullHeight - MINI_PEEK_HEIGHT;
 
   const getSnapTranslateY = (state: SheetSnapState) => {
     switch (state) {
       case 'FULL': return fullY;
       case 'DUAL': return dualY;
       case 'PEEK': return peekY;
+      case 'MINI_PEEK': return miniPeekY;
     }
   };
   const animatedPosition = useSharedValue(getSnapTranslateY(sheetSnapState));
@@ -566,6 +568,24 @@ export default function UserAppHomeScreen() {
       ),
     };
   });
+
+  // Property Card Gesture (Swipe down to dismiss)
+  const cardDismissGesture = useMemo(() => {
+    return Gesture.Pan()
+      .runOnJS(true)
+      .activeOffsetY(15) // Active on downward drag
+      .failOffsetY(-15) // Fail on upward drag
+      .failOffsetX([-25, 25]) // Fail on horizontal drag (let FlatList scroll)
+      .onEnd((e) => {
+        if (e.translationY > 40 || e.velocityY > 400) {
+          setSelectedPropertyId(null);
+          setSelectedBuilding(null);
+          if (sheetSnapState === 'MINI_PEEK') {
+            setSheetSnapState('PEEK');
+          }
+        }
+      });
+  }, [sheetSnapState]);
 
   return (
     <View
@@ -709,7 +729,7 @@ export default function UserAppHomeScreen() {
       {/* 5. Map View Bottom Controls & Sheets (When in Map Mode) */}
       {viewMode === 'map' && (
         <>
-          {/* Zillow Tri-State Bottom Sheet with Anchored HUD (PEEK, DUAL, FULL) */}
+          {/* Zillow Tri-State Bottom Sheet with Anchored HUD (PEEK, DUAL, FULL, MINI_PEEK) */}
           {!selectedBuilding && (
             <MobileTriStateBottomSheet
               availableHeight={containerHeight}
@@ -720,8 +740,14 @@ export default function UserAppHomeScreen() {
                 setSheetSnapState(newState);
                 if (newState === 'DUAL' || newState === 'FULL') {
                   setPreferredMode('DUAL');
+                  if (selectedPropertyId) {
+                    setSelectedPropertyId(null);
+                  }
                 } else if (newState === 'PEEK') {
                   setPreferredMode('PEEK');
+                  if (selectedPropertyId) {
+                    setSelectedPropertyId(null);
+                  }
                 }
               }}
               properties={displayedProperties}
@@ -757,6 +783,25 @@ export default function UserAppHomeScreen() {
               }}
               regionName={activeRegion?.name}
             />
+          )}
+
+          {/* Single Property Floating Card Carousel */}
+          {!selectedBuilding && selectedPropertyId && (
+            <GestureDetector gesture={cardDismissGesture}>
+              <View style={[styles.carouselAbsoluteWrap, { bottom: 64 }]}>
+                <MobilePropertyCardCarousel
+                  properties={displayedProperties}
+                  selectedIndex={selectedIndex}
+                  onSnapToIndex={handleCarouselSnap}
+                  onToggleSaved={handleToggleFavorite}
+                  isPropertySaved={(id) => savedPropertyIds.has(id)}
+                  onClosePreview={() => {
+                    setSelectedPropertyId(null);
+                    setSheetSnapState('PEEK');
+                  }}
+                />
+              </View>
+            </GestureDetector>
           )}
         </>
       )}
@@ -1250,6 +1295,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    marginBottom: 6,
+  },
+  carouselAbsoluteWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 50,
   },
   sheetTitle: {
     fontSize: 15,

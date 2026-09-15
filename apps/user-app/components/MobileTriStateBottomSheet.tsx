@@ -25,7 +25,7 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
 const CARD_INNER_WIDTH = CARD_WIDTH - 2;
 
-export type SheetSnapState = 'PEEK' | 'DUAL' | 'FULL';
+export type SheetSnapState = 'MINI_PEEK' | 'PEEK' | 'DUAL' | 'FULL';
 
 export interface MobileTriStateBottomSheetProps {
   availableHeight?: number;
@@ -366,12 +366,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   // Calibrated Heights & Snap Point Geometry
   const fullHeight = availableHeight || (SCREEN_HEIGHT - 60);
-  const isCarouselMode = !!selectedPropertyId;
+  const MINI_PEEK_HEIGHT = 48; // Subheader row height
   const PEEK_HEIGHT = 72;
-  const DUAL_HEIGHT = isCarouselMode ? 320 : Math.round(fullHeight * 0.44); // 320px allows comfortable fit for the card + padding
+  const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
   const fullY = computedSearchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
+  const miniPeekY = fullHeight - MINI_PEEK_HEIGHT;
   const midY = (dualY + fullY) / 2;
 
   const getSnapTranslateY = useCallback(
@@ -383,9 +384,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           return dualY;
         case 'PEEK':
           return peekY;
+        case 'MINI_PEEK':
+          return miniPeekY;
       }
     },
-    [fullY, dualY, peekY]
+    [fullY, dualY, peekY, miniPeekY]
   );
 
   const internalTranslateY = useRef(new Animated.Value(getSnapTranslateY(snapState))).current;
@@ -574,12 +577,17 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           nextState = currentY >= midDualPeek ? 'PEEK' : 'DUAL';
         } else if (fromState === 'DUAL') {
           nextState = 'PEEK';
-        } else {
+        } else if (fromState === 'PEEK') {
           nextState = 'PEEK';
+        } else {
+          nextState = 'MINI_PEEK';
         }
       } else if (vy < -0.25 || delta < -40) {
         // Upward flick or significant upward drag
-        if (fromState === 'PEEK') {
+        if (fromState === 'MINI_PEEK') {
+          nextState = currentY <= midFullDual ? 'FULL' : 'DUAL';
+          // Clearing property selection is handled via onSnapChange in parent
+        } else if (fromState === 'PEEK') {
           nextState = currentY <= midFullDual ? 'FULL' : 'DUAL';
         } else if (fromState === 'DUAL') {
           nextState = 'FULL';
@@ -592,8 +600,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           nextState = 'FULL';
         } else if (currentY < midDualPeek) {
           nextState = 'DUAL';
-        } else {
+        } else if (currentY < peekY + 12) {
           nextState = 'PEEK';
+        } else {
+          nextState = 'MINI_PEEK';
         }
       }
 
@@ -847,21 +857,9 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         </TouchableOpacity>
       </Animated.View>
 
-      {/* 1C. Subheader Row & Feed Container OR Property Carousel */}
-      {selectedPropertyId ? (
-        <View style={{ flex: 1, paddingTop: 16 }}>
-          <MobilePropertyCardCarousel
-            properties={properties}
-            selectedIndex={properties.findIndex((p) => p.id === selectedPropertyId)}
-            onSnapToIndex={(idx) => onSelectProperty(properties[idx])}
-            onToggleSaved={onToggleFavorite}
-            isPropertySaved={isSaved}
-            onClosePreview={() => onSelectProperty(null)}
-          />
-        </View>
-      ) : (
-        <View style={styles.mainContentContainer}>
-          {/* Subheader Row: Cross-fades between count+handle and sort+save */}
+      {/* 1C. Subheader Row & Feed Container */}
+      <View style={styles.mainContentContainer}>
+        {/* Subheader Row: Cross-fades between count+handle and sort+save */}
         <GestureDetector gesture={subHeaderGesture}>
           <View style={styles.subHeaderRowContainer}>
             {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
@@ -967,8 +965,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             />
           </View>
         </GestureDetector>
-        </View>
-      )}
+      </View>
 
       {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - instantly switches to PEEK mode! */}
       <Animated.View
