@@ -588,10 +588,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   }, [snapState, onSnapChange, animateToState]);
 
   const handleGestureRelease = useCallback(
-    (currentY: number, delta: number) => {
-      const distFull = Math.abs(currentY - fullY);
-      const distDual = Math.abs(currentY - dualY);
-      const distPeek = Math.abs(currentY - peekY);
+    (currentY: number, delta: number, velocityY: number = 0) => {
+      // Calculate projected Y using standard friction (velocity * decay constant)
+      const projectedY = currentY + velocityY * 0.2;
+
+      const distFull = Math.abs(projectedY - fullY);
+      const distDual = Math.abs(projectedY - dualY);
+      const distPeek = Math.abs(projectedY - peekY);
 
       let closest: SheetSnapState = 'DUAL';
       let minDist = Math.min(distFull, distDual, distPeek);
@@ -600,14 +603,28 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
       let nextState: SheetSnapState = closest;
 
-      if (closest === startingSnapState.current) {
-        if (startingSnapState.current === 'FULL' && delta > 80) {
+      // STRICT CAP: Prevent skipping states!
+      // If we start at FULL, we cannot skip to PEEK unless we literally dragged it physically past DUAL
+      if (startingSnapState.current === 'FULL') {
+        if (nextState === 'PEEK' && currentY < dualY) {
           nextState = 'DUAL';
-        } else if (startingSnapState.current === 'PEEK' && delta < -80) {
+        }
+      } else if (startingSnapState.current === 'PEEK') {
+        // If we start at PEEK, we cannot skip to FULL unless we physically dragged it past DUAL
+        if (nextState === 'FULL' && currentY > dualY) {
+          nextState = 'DUAL';
+        }
+      }
+
+      // Allow intentional velocity/distance bumps if projected position wasn't enough to cross midpoint
+      if (nextState === startingSnapState.current) {
+        if (startingSnapState.current === 'FULL' && (delta > 80 || velocityY > 500)) {
+          nextState = 'DUAL';
+        } else if (startingSnapState.current === 'PEEK' && (delta < -80 || velocityY < -500)) {
           nextState = 'DUAL';
         } else if (startingSnapState.current === 'DUAL') {
-          if (delta > 60) nextState = 'PEEK';
-          else if (delta < -60) nextState = 'FULL';
+          if (delta > 60 || velocityY > 500) nextState = 'PEEK';
+          else if (delta < -60 || velocityY < -500) nextState = 'FULL';
         }
       }
 
@@ -663,7 +680,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           handleHeaderPress();
           return;
         }
-        handleGestureRelease(currentTranslateYRef.current, e.translationY);
+        handleGestureRelease(currentTranslateYRef.current, e.translationY, e.velocityY);
       })
       .onFinalize(() => {
         isDraggingSheetFromList.current = false;
@@ -746,7 +763,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         if (!isDraggingSheetFromList.current) return;
         isDraggingSheetFromList.current = false;
         isActivelyInteractingRef.current = false;
-        handleGestureRelease(currentTranslateYRef.current, e.translationY);
+        handleGestureRelease(currentTranslateYRef.current, e.translationY, e.velocityY);
       })
       .onFinalize(() => {
         isDraggingSheetFromList.current = false;
