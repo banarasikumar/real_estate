@@ -1,8 +1,8 @@
 # Real Estate Monorepo — Project Status & Brain Memory
 
-> **Last Updated**: September 14, 2026  
+> **Last Updated**: September 15, 2026  
 > **Repository**: `banarasikumar/real_estate`  
-> **Active Branch**: `main` (clean working tree, 10 commits ahead of `origin/main` — local commits only, remote push prevented)  
+> **Active Branch**: `main` (clean working tree, in sync with `origin/main` — remote push successful)  
 > **Active Environment**: Windows (PowerShell) | Node.js / Turborepo / Expo SDK 57 / Next.js 15 / Supabase / Mapbox GL JS v3  
 > **Active Metro Bundler**: Port `8081` (`apps/user-app`)
 
@@ -15,11 +15,12 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 ### Current System Health & Stability
 - **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, and 76-listing demo dataset across LA, NY, and Mumbai.
 - **TypeScript Type Safety**: 0 errors across the monorepo (`npm run check-types --workspace=user-app` passes cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed locally on `main` up to commit `749c8445`.
+- **Git Working Tree**: 100% clean. All changes are committed and pushed to `main` up to commit `79156ab1`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
+| `79156ab1` | `feat(bottom-sheet): unified gesture handling with RNGH and rapid swipe support` | user-app |
 | `749c8445` | `feat(user-app): implement iOS-grade Zillow gesture engine, spring physics, and seamless borderless fusion` | user-app |
 | `37732f8b` | `fix(ui): remove blue and persistent selection borders on mobile property cards` | user-app |
 | `1ab72956` | `docs: update PROJECT_STATUS.md with comprehensive past, current, and future roadmap` | root / docs |
@@ -31,7 +32,7 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 | `670bd3c7` | `feat(user-app): expand demo properties dataset with 20+ listings for LA, NY, and Mumbai` | user-app / data |
 | `a0fcf3c5` | `feat(user-app): implement Zillow unified bottom sheet animations and instant swipe-down return` | user-app |
 
-- **Security Note**: All Mapbox access tokens were purged from Git commit history. Tokens reside strictly in gitignored `.env` files (`apps/user-app/.env` and `apps/customer-web/.env.local`). Remote git push is disabled per instructions.
+- **Security Note**: All Mapbox access tokens were purged from Git commit history. Tokens reside strictly in gitignored `.env` files (`apps/user-app/.env` and `apps/customer-web/.env.local`).
 
 ---
 
@@ -59,18 +60,21 @@ real_estate/
 
 ### 3.1 Seeker Mobile Application (`apps/user-app`)
 
-1. **iOS-Grade Zillow Gesture Engine & Physics (`MobileTriStateBottomSheet.tsx`)**:
-   - **Screen-Coordinate Touch Targeting (`gesture.y0`)**:
-     - Eliminates unpredictable child-relative `locationY` bugs in React Native.
-     - **Subheader drag** (`gesture.y0 <= fullY + 54`): Dragging downward (`dy > 3`) **always captures immediately**, moving the sheet 1:1 with the user's finger regardless of whether the card list was scrolled or not.
-     - **Card drag** (`gesture.y0 > fullY + 54`): Dragging down at the top of the list (`scrollY <= 5`) captures immediately and glides down to DUAL mode.
-     - **Upward swipe** (`gesture.dy <= 0`): Never captured by PanResponder, allowing the native card list to scroll smoothly at 60fps on the GPU with momentum.
+1. **Unified RNGH Gesture Engine & Physics (`MobileTriStateBottomSheet.tsx`)**:
+   - **React Native Gesture Handler Integration**:
+     - Eliminated `PanResponder` in favor of declarative `Gesture.Pan()` for `listPanGesture` and `subHeaderGesture`.
+     - App rooted with `GestureHandlerRootView` and imported `react-native-gesture-handler` globally.
+   - **Mid-Motion Freezing & Rapid Swiping**:
+     - Added `.onBegin()` hooks that instantly stop `translateYAnim` and cache the exact pixel position (`dragStartTranslateY`).
+     - This guarantees the sheet freezes instantly when caught mid-flight, and prevents visual jumping or skipping during rapid, successive swipes.
+   - **Coordinated Scroll View & Pan Handlers**:
+     - Replaced standard RN `FlatList` with RNGH's `FlatList`, setting `disallowInterruption={false}`.
+     - Enables flawless co-existence of native GPU-accelerated vertical momentum scrolling with the bottom sheet's downward drag gesture when `isAtTop` is true.
    - **1:1 Real-Time Finger Tracking**:
-     - Direct `translateYAnim.setValue(clamped)` tracks the finger with zero latency between `fullY` and `peekY`.
-   - **PEEK to FULL Direct Snap**:
-     - Swiping or flicking up from `PEEK` past the `DUAL` line (`currentTranslateYRef.current < dualY || vy < -0.7`) snaps **directly into FULL view mode**, never bouncing or returning to DUAL mode.
-   - **Critically Damped Spring Dynamics**:
-     - Spring parameters in `animateToState`: `mass: 0.45`, `stiffness: 320`, `damping: 24`, `overshootClamping: true`, velocity clamped to `[-8, 8]` with `useNativeDriver: true`.
+     - Direct `translateYAnim.setValue` updates inside `.onUpdate()` accurately track downward dragging from `FULL` view without sudden "wipes" or delays.
+   - **PEEK to FULL Direct Snap & Critically Damped Springs**:
+     - Uses highly tuned native spring physics (`mass: 0.45, stiffness: 320, damping: 24`).
+     - Snaps directly from `PEEK` to `FULL` when velocity or displacement crosses the threshold.
 
 2. **Seamless Borderless Surface Fusion (`index.tsx` & `MobileTriStateBottomSheet.tsx`)**:
    - **Eliminated Dividing Line/Border in FULL Mode**:

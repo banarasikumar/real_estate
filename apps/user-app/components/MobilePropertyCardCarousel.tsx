@@ -212,10 +212,7 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
 
 const styles = StyleSheet.create({
   carouselWrapper: {
-    position: 'absolute',
-    bottom: 80,
-    left: 0,
-    right: 0,
+    width: '100%',
     zIndex: 40,
   },
   closeCapsule: {

@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Gesture, GestureDetector, FlatList } from 'react-native-gesture-handler';
 import { ZillowDrawIcon } from './ZillowIcons';
+import { MobilePropertyCardCarousel } from './MobilePropertyCardCarousel';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -365,8 +366,9 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   // Calibrated Heights & Snap Point Geometry
   const fullHeight = availableHeight || (SCREEN_HEIGHT - 60);
+  const isCarouselMode = !!selectedPropertyId;
   const PEEK_HEIGHT = 72;
-  const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
+  const DUAL_HEIGHT = isCarouselMode ? 320 : Math.round(fullHeight * 0.44); // 320px allows comfortable fit for the card + padding
   const fullY = computedSearchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
@@ -448,13 +450,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     };
   }, [translateYAnim]);
 
-  // React to snapState changes from parent
+  // React to snapState changes from parent or when entering/exiting carousel mode
   useEffect(() => {
     if (snapState !== 'FULL') {
       resetListToTop();
     }
     animateToState(snapState);
-  }, [snapState, animateToState, resetListToTop]);
+  }, [snapState, animateToState, resetListToTop, selectedPropertyId]);
 
   // 60fps GPU Native Driver Animated Interpolations
   const countRowOpacity = useMemo(
@@ -845,9 +847,21 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         </TouchableOpacity>
       </Animated.View>
 
-      {/* 1C. Subheader Row & Feed Container */}
-      <View style={styles.mainContentContainer}>
-        {/* Subheader Row: Cross-fades between count+handle and sort+save */}
+      {/* 1C. Subheader Row & Feed Container OR Property Carousel */}
+      {selectedPropertyId ? (
+        <View style={{ flex: 1, paddingTop: 16 }}>
+          <MobilePropertyCardCarousel
+            properties={properties}
+            selectedIndex={properties.findIndex((p) => p.id === selectedPropertyId)}
+            onSnapToIndex={(idx) => onSelectProperty(properties[idx])}
+            onToggleSaved={onToggleFavorite}
+            isPropertySaved={isSaved}
+            onClosePreview={() => onSelectProperty(null)}
+          />
+        </View>
+      ) : (
+        <View style={styles.mainContentContainer}>
+          {/* Subheader Row: Cross-fades between count+handle and sort+save */}
         <GestureDetector gesture={subHeaderGesture}>
           <View style={styles.subHeaderRowContainer}>
             {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
@@ -953,7 +967,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             />
           </View>
         </GestureDetector>
-      </View>
+        </View>
+      )}
 
       {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - instantly switches to PEEK mode! */}
       <Animated.View

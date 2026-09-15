@@ -12,6 +12,7 @@ import {
   Dimensions,
   StatusBar,
   Platform,
+  Animated as RNAnimated,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -519,8 +520,9 @@ export default function UserAppHomeScreen() {
 
   // Shared translateYAnim between index.tsx and MobileTriStateBottomSheet
   const fullHeight = containerHeight || (SCREEN_HEIGHT - 60);
+  const isCarouselMode = !!selectedPropertyId && !selectedBuilding;
   const PEEK_HEIGHT = 72;
-  const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
+  const DUAL_HEIGHT = isCarouselMode ? 320 : Math.round(fullHeight * 0.44);
   const fullY = searchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
@@ -533,6 +535,15 @@ export default function UserAppHomeScreen() {
     }
   };
   const animatedPosition = useSharedValue(getSnapTranslateY(sheetSnapState));
+  const translateYAnim = useRef(new RNAnimated.Value(getSnapTranslateY(sheetSnapState))).current;
+  
+  // Keep the shared value updated for 3D/TopBar styles
+  useEffect(() => {
+    const id = translateYAnim.addListener(({ value }) => {
+      animatedPosition.value = value;
+    });
+    return () => translateYAnim.removeListener(id);
+  }, [translateYAnim, animatedPosition]);
 
   const floating3DStyle = useAnimatedStyle(() => {
     return {
@@ -583,6 +594,10 @@ export default function UserAppHomeScreen() {
         onRegionChange={handleRegionChangeComplete}
         onPolygonCreated={handlePolygonCreated}
         onMapTouch={() => {
+          if (selectedPropertyId || selectedBuilding) {
+            setSelectedPropertyId(null);
+            setSelectedBuilding(null);
+          }
           if (sheetSnapState !== 'PEEK') {
             setSheetSnapState('PEEK');
           }
@@ -700,7 +715,7 @@ export default function UserAppHomeScreen() {
               availableHeight={containerHeight}
               searchRowTotalHeight={searchRowTotalHeight}
               snapState={sheetSnapState}
-              animatedPosition={animatedPosition}
+              translateYAnim={translateYAnim}
               onSnapChange={(newState) => {
                 setSheetSnapState(newState);
                 if (newState === 'DUAL' || newState === 'FULL') {
@@ -712,6 +727,10 @@ export default function UserAppHomeScreen() {
               properties={displayedProperties}
               selectedPropertyId={selectedPropertyId}
               onSelectProperty={(prop) => {
+                if (!prop) {
+                  setSelectedPropertyId(null);
+                  return;
+                }
                 setSelectedPropertyId(prop.id);
                 if (prop.latitude && prop.longitude) {
                   mapboxRef.current?.flyToRegion([prop.longitude, prop.latitude], 15.5);
