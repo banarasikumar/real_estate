@@ -5,8 +5,6 @@ import {
   StyleSheet,
   Dimensions,
   Animated,
-  PanResponder,
-  FlatList,
   ScrollView,
   Image,
   TouchableOpacity,
@@ -19,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Gesture, GestureDetector, FlatList } from 'react-native-gesture-handler';
 import { ZillowDrawIcon } from './ZillowIcons';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -100,8 +99,8 @@ interface LuxuryPropertyCardProps {
   isSelected: boolean;
   isFavorite: boolean;
   listType: string;
-  onSelect: () => void;
-  onToggleFavorite: () => void;
+  onSelect: (property: any) => void;
+  onToggleFavorite: (id: string) => void;
 }
 
 const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
@@ -192,12 +191,20 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
     [photos.length, activePhotoIndex]
   );
 
-  const handleCardPress = () => {
-    onSelect();
+  const handleCardPress = useCallback(() => {
+    onSelect(property);
     if (property.id) {
       router.push(`/property/${property.id}`);
     }
-  };
+  }, [property, onSelect, router]);
+
+  const handleFavoritePress = useCallback(
+    (e: any) => {
+      e.stopPropagation();
+      onToggleFavorite(property.id);
+    },
+    [property.id, onToggleFavorite]
+  );
 
   const handleCallPress = () => {
     const phone = property.phone || '+1234567890';
@@ -241,10 +248,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
         {/* Top-Right Favorite Heart */}
         <TouchableOpacity
           style={styles.cardHeartBtn}
-          onPress={(e) => {
-            e.stopPropagation();
-            onToggleFavorite();
-          }}
+          onPress={handleFavoritePress}
           activeOpacity={0.8}
         >
           <Ionicons
@@ -389,10 +393,18 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const animatingToStateRef = useRef<SheetSnapState | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
-  const [listScrollEnabled, setListScrollEnabled] = useState(true);
+  const [isAtTop, setIsAtTop] = useState(true);
+  const isAtTopRef = useRef(true);
+  const [isSettledAtFull, setIsSettledAtFull] = useState(snapState === 'FULL');
+  const isSettledAtFullRef = useRef(snapState === 'FULL');
+  const isDraggingSheetFromList = useRef(false);
+  const isActivelyInteractingRef = useRef(false);
+  const lastAnimatedStateRef = useRef<SheetSnapState>(snapState);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
+    isAtTopRef.current = true;
+    setIsAtTop(true);
     try {
       flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
     } catch (e) {
@@ -405,18 +417,14 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     (state: SheetSnapState, velocity?: number) => {
       const targetY = getSnapTranslateY(state);
 
-      // If already actively animating to this target state, prevent duplicate trigger
-      if (animatingToStateRef.current === state) {
-        return;
+      if (state !== 'FULL') {
+        isSettledAtFullRef.current = false;
+        setIsSettledAtFull(false);
       }
 
-      // If already settled at this target position and not animating, no-op
-      if (animatingToStateRef.current === null && currentTranslateYRef.current === targetY) {
-        return;
-      }
-
-      animatingToStateRef.current = state;
+      // Stop any running animation immediately so the new animation takes over
       translateYAnim.stopAnimation();
+      animatingToStateRef.current = state;
 
       const clampedVelocity =
         velocity !== undefined ? Math.max(-8, Math.min(8, velocity)) : undefined;
@@ -426,30 +434,41 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         damping: 24,
         stiffness: 320,
         mass: 0.45,
-        overshootClamping: true, // Mathematically eliminates any bounce/rebound past target
+        overshootClamping: true, // Eliminates bounce past target
         velocity: clampedVelocity,
         useNativeDriver: true,
-      }).start(() => {
-        currentTranslateYRef.current = targetY;
-        animatingToStateRef.current = null;
+      }).start(({ finished }) => {
+        if (finished) {
+          currentTranslateYRef.current = targetY;
+          animatingToStateRef.current = null;
+          const settled = state === 'FULL';
+          isSettledAtFullRef.current = settled;
+          setIsSettledAtFull(settled);
+        }
       });
     },
     [getSnapTranslateY, translateYAnim]
   );
 
-  const triggerGlideToDual = useCallback(
-    (velocity?: number) => {
-      if (animatingToStateRef.current === null) {
-        resetListToTop();
-        onSnapChange('DUAL');
-        animateToState('DUAL', velocity !== undefined ? velocity : 2.0);
-      }
-    },
-    [resetListToTop, onSnapChange, animateToState]
-  );
-
-  // React to snapState changes from parent
+  // Synchronize currentTranslateYRef with real-time animated values across any frame or driver
   useEffect(() => {
+    const id = translateYAnim.addListener(({ value }) => {
+      currentTranslateYRef.current = value;
+    });
+    return () => {
+      translateYAnim.removeListener(id);
+    };
+  }, [translateYAnim]);
+
+  // React to snapState changes from parent (only if not already animated by active user gesture)
+  useEffect(() => {
+    if (snapState === lastAnimatedStateRef.current) {
+      return;
+    }
+    lastAnimatedStateRef.current = snapState;
+    if (isActivelyInteractingRef.current) {
+      return;
+    }
     if (snapState !== 'FULL') {
       resetListToTop();
     }
@@ -520,155 +539,45 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const handleListScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offsetY = e.nativeEvent.contentOffset.y;
-      scrollYRef.current = Math.max(0, offsetY);
-      if (snapState === 'FULL' && offsetY < -20 && animatingToStateRef.current === null) {
-        triggerGlideToDual(2.0);
+      const y = e.nativeEvent.contentOffset.y;
+
+      // Suppress any list scrolling if the sheet is not physically at FULL view
+      if (currentTranslateYRef.current > fullY + 2) {
+        if (y > 0) {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+          scrollYRef.current = 0;
+          return;
+        }
+      }
+
+      scrollYRef.current = y;
+      if (y <= 0 && !isAtTopRef.current) {
+        isAtTopRef.current = true;
+        setIsAtTop(true);
+      } else if (y > 0 && isAtTopRef.current) {
+        isAtTopRef.current = false;
+        setIsAtTop(false);
       }
     },
-    [snapState, triggerGlideToDual]
+    [fullY]
   );
 
-  // Universal PanResponder across ALL modes (PEEK, DUAL, and FULL)
-  // Always prioritizes user gesture tracking with 1:1 direct finger following
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => false,
-        onStartShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponderCapture: (_, gesture) => {
-          if (animatingToStateRef.current !== null) {
-            return false;
-          }
-
-          const isVertical = Math.abs(gesture.dy) > Math.abs(gesture.dx);
-          if (!isVertical) return false;
-
-          // In PEEK or DUAL mode: any vertical drag captures the bottom sheet
-          if (snapState !== 'FULL') {
-            return Math.abs(gesture.dy) > 4;
-          }
-
-          // In FULL mode:
-          // Swiping UP (gesture.dy < 0): never capture, letting FlatList scroll smoothly at 60fps
-          if (gesture.dy <= 0) {
-            return false;
-          }
-
-          // Swiping DOWN in FULL mode at top of list:
-          // Use sub-pixel threshold (0.5) to preempt Android's native 8px touch slop
-          if (gesture.dy > 0.5) {
-            // Subheader touch: ALWAYS capture immediately regardless of list scroll
-            if (gesture.y0 <= fullY + 54) {
-              setListScrollEnabled(false);
-              return true;
-            }
-            // Card/list touch: capture only when list is scrolled to top
-            if (scrollYRef.current <= 1) {
-              setListScrollEnabled(false);
-              return true;
-            }
-          }
-
-          return false;
-        },
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          if (animatingToStateRef.current !== null) {
-            return false;
-          }
-
-          const isVertical = Math.abs(gesture.dy) > Math.abs(gesture.dx);
-          if (!isVertical) return false;
-
-          if (snapState !== 'FULL') {
-            return Math.abs(gesture.dy) > 4;
-          }
-
-          if (gesture.dy <= 0) {
-            return false;
-          }
-
-          if (gesture.dy > 0.5) {
-            if (gesture.y0 <= fullY + 54) {
-              setListScrollEnabled(false);
-              return true;
-            }
-            if (scrollYRef.current <= 1) {
-              setListScrollEnabled(false);
-              return true;
-            }
-          }
-
-          return false;
-        },
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: () => {
-          animatingToStateRef.current = null;
-          dragStartTranslateY.current = currentTranslateYRef.current;
-          setListScrollEnabled(false);
-        },
-        onPanResponderMove: (_, gesture) => {
-          const target = dragStartTranslateY.current + gesture.dy;
-          const minTranslate = fullY;
-          const maxTranslate = peekY;
-          const clamped = Math.min(maxTranslate, Math.max(minTranslate, target));
-          currentTranslateYRef.current = clamped;
-          translateYAnim.setValue(clamped);
-        },
-        onPanResponderRelease: (_, gesture) => {
-          setListScrollEnabled(true);
-          const vy = gesture.vy;
-          const dy = gesture.dy;
-          let nextState: SheetSnapState = snapState;
-
-          if (snapState === 'FULL') {
-            // From FULL: use currentTranslateYRef position for multi-step snapping
-            if (dy > 20 || vy > 0.15) {
-              if (currentTranslateYRef.current > dualY + 30 || vy > 0.8) {
-                // Dragged past DUAL into lower area → snap to PEEK
-                nextState = 'PEEK';
-              } else {
-                // Quick drag & lift or dragged to around DUAL → snap to DUAL
-                nextState = 'DUAL';
-              }
-            } else {
-              // Aborted drag → spring back to FULL
-              nextState = 'FULL';
-            }
-          } else if (snapState === 'DUAL') {
-            // From DUAL: standard snappy transitions
-            if (dy < -20 || vy < -0.15) {
-              nextState = 'FULL';
-            } else if (dy > 20 || vy > 0.15) {
-              nextState = 'PEEK';
-            } else {
-              nextState = 'DUAL';
-            }
-          } else {
-            // From PEEK: if currentTranslateYRef.current < dualY || vy < -0.7, snap DIRECTLY to FULL view mode. If dy < -8 || vy < -0.1, snap to DUAL. Otherwise stay PEEK
-            if (currentTranslateYRef.current < dualY || vy < -0.7) {
-              nextState = 'FULL';
-            } else if (dy < -8 || vy < -0.1) {
-              nextState = 'DUAL';
-            } else {
-              nextState = 'PEEK';
-            }
-          }
-
-          if (nextState !== 'FULL') {
-            resetListToTop();
-          }
-
-          if (nextState !== snapState) {
-            onSnapChange(nextState);
-          }
-          animateToState(nextState, vy);
-        },
-      }),
-    [snapState, onSnapChange, animateToState, fullY, dualY, peekY, translateYAnim, resetListToTop]
+  const handleMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const offsetY = e.nativeEvent.contentOffset.y;
+      scrollYRef.current = offsetY <= 2 ? 0 : Math.max(0, offsetY);
+      const atTop = offsetY <= 2;
+      if (atTop !== isAtTopRef.current) {
+        isAtTopRef.current = atTop;
+        setIsAtTop(atTop);
+      }
+    },
+    []
   );
 
-  const handleHeaderPress = () => {
+  const startingSnapState = useRef<SheetSnapState>(snapState);
+
+  const handleHeaderPress = useCallback(() => {
     if (snapState === 'PEEK') {
       onSnapChange('DUAL');
       animateToState('DUAL');
@@ -676,7 +585,184 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       onSnapChange('FULL');
       animateToState('FULL');
     }
-  };
+  }, [snapState, onSnapChange, animateToState]);
+
+  const handleGestureRelease = useCallback(
+    (currentY: number, delta: number) => {
+      const distFull = Math.abs(currentY - fullY);
+      const distDual = Math.abs(currentY - dualY);
+      const distPeek = Math.abs(currentY - peekY);
+
+      let closest: SheetSnapState = 'DUAL';
+      let minDist = Math.min(distFull, distDual, distPeek);
+      if (minDist === distFull) closest = 'FULL';
+      else if (minDist === distPeek) closest = 'PEEK';
+
+      let nextState: SheetSnapState = closest;
+
+      if (closest === startingSnapState.current) {
+        if (startingSnapState.current === 'FULL' && delta > 80) {
+          nextState = 'DUAL';
+        } else if (startingSnapState.current === 'PEEK' && delta < -80) {
+          nextState = 'DUAL';
+        } else if (startingSnapState.current === 'DUAL') {
+          if (delta > 60) nextState = 'PEEK';
+          else if (delta < -60) nextState = 'FULL';
+        }
+      }
+
+      if (nextState !== 'FULL') {
+        resetListToTop();
+      }
+
+      lastAnimatedStateRef.current = nextState;
+
+      if (nextState !== snapState) {
+        onSnapChange(nextState);
+      }
+
+      animateToState(nextState);
+    },
+    [fullY, dualY, peekY, snapState, onSnapChange, animateToState, resetListToTop]
+  );
+
+  // Dedicated subheader PanGesture from react-native-gesture-handler:
+  // Intercepts immediately on touch-down, stops previous animation synchronously, and follows finger 1:1
+  const subHeaderGesture = useMemo(() => {
+    return Gesture.Pan()
+      .runOnJS(true)
+      .activeOffsetY([-4, 4])
+      .onBegin(() => {
+        isActivelyInteractingRef.current = true;
+        translateYAnim.stopAnimation();
+        animatingToStateRef.current = null;
+        isSettledAtFullRef.current = false;
+        setIsSettledAtFull(false);
+        dragStartTranslateY.current = currentTranslateYRef.current;
+        startingSnapState.current = snapState;
+      })
+      .onStart(() => {
+        translateYAnim.stopAnimation();
+        animatingToStateRef.current = null;
+        isSettledAtFullRef.current = false;
+        setIsSettledAtFull(false);
+        dragStartTranslateY.current = currentTranslateYRef.current;
+        isDraggingSheetFromList.current = true;
+      })
+      .onUpdate((e) => {
+        const target = dragStartTranslateY.current + e.translationY;
+        const clamped = Math.min(peekY, Math.max(fullY, target));
+        currentTranslateYRef.current = clamped;
+        translateYAnim.setValue(clamped);
+      })
+      .onEnd((e) => {
+        isDraggingSheetFromList.current = false;
+        isActivelyInteractingRef.current = false;
+        const totalMove = Math.abs(e.translationX) + Math.abs(e.translationY);
+        if (totalMove < 6) {
+          handleHeaderPress();
+          return;
+        }
+        handleGestureRelease(currentTranslateYRef.current, e.translationY);
+      })
+      .onFinalize(() => {
+        isDraggingSheetFromList.current = false;
+        isActivelyInteractingRef.current = false;
+      });
+  }, [snapState, fullY, peekY, translateYAnim, handleGestureRelease, handleHeaderPress]);
+
+  // Unified PanGesture on the listing feed for ALL modes (FULL, DUAL, PEEK):
+  // - When NOT settled at FULL (DUAL, PEEK, or mid-flight toward FULL): activeOffsetY([-6, 6])
+  //   catches the sheet on any drag up/down and tracks finger 1:1.
+  // - If dragging continues upward past fullY, seamlessly scrolls the FlatList without lifting finger.
+  // - Once settled at FULL: activeOffsetY(6) activates on downward drag when at top (isAtTop),
+  //   while upward drags are handled natively by FlatList.
+  const nativeGesture = useMemo(() => Gesture.Native(), []);
+
+  const listPanGesture = useMemo(() => {
+    return Gesture.Pan()
+      .runOnJS(true)
+      .activeOffsetY([-4, 4])
+      .failOffsetX([-25, 25])
+      .onBegin(() => {
+        isActivelyInteractingRef.current = true;
+        translateYAnim.stopAnimation();
+        animatingToStateRef.current = null;
+        if (currentTranslateYRef.current > fullY + 2) {
+          isSettledAtFullRef.current = false;
+          setIsSettledAtFull(false);
+        }
+        dragStartTranslateY.current = currentTranslateYRef.current;
+        startingSnapState.current = snapState;
+      })
+      .onStart(() => {
+        translateYAnim.stopAnimation();
+        animatingToStateRef.current = null;
+        if (currentTranslateYRef.current > fullY + 2) {
+          isSettledAtFullRef.current = false;
+          setIsSettledAtFull(false);
+        }
+        dragStartTranslateY.current = currentTranslateYRef.current;
+        isDraggingSheetFromList.current = true;
+      })
+      .onUpdate((e) => {
+        if (!isDraggingSheetFromList.current) return;
+
+        if (scrollYRef.current > 0) {
+          // List is natively scrolling (offset > 0). Sheet MUST stay at FULL.
+          currentTranslateYRef.current = fullY;
+          translateYAnim.setValue(fullY);
+          // Keep drag anchor exactly fullY relative to current touch to allow seamless pull-down handoff.
+          dragStartTranslateY.current = fullY - e.translationY;
+        } else {
+          // List is at top (offset <= 0).
+          let target = dragStartTranslateY.current + e.translationY;
+          
+          if (target < fullY) {
+            // Trying to drag above FULL. Clamp to FULL.
+            target = fullY;
+            // Shift anchor so pulling back down doesn't jump.
+            dragStartTranslateY.current = fullY - e.translationY;
+          }
+          
+          const clamped = Math.min(peekY, Math.max(fullY, target));
+          currentTranslateYRef.current = clamped;
+          translateYAnim.setValue(clamped);
+
+          // If the sheet is physically below FULL, actively force list to stay at top.
+          if (clamped > fullY + 2) {
+            if (scrollYRef.current > 0) {
+              flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+              scrollYRef.current = 0;
+            }
+            if (!isAtTopRef.current) {
+              isAtTopRef.current = true;
+              setIsAtTop(true);
+            }
+          }
+        }
+      })
+      .onEnd((e) => {
+        if (!isDraggingSheetFromList.current) return;
+        isDraggingSheetFromList.current = false;
+        isActivelyInteractingRef.current = false;
+        handleGestureRelease(currentTranslateYRef.current, e.translationY);
+      })
+      .onFinalize(() => {
+        isDraggingSheetFromList.current = false;
+        isActivelyInteractingRef.current = false;
+      });
+  }, [
+    fullY,
+    peekY,
+    translateYAnim,
+    handleGestureRelease,
+  ]);
+
+  const composedListGesture = useMemo(
+    () => Gesture.Simultaneous(listPanGesture, nativeGesture),
+    [listPanGesture, nativeGesture]
+  );
 
   const handleSortToggle = () => {
     if (sortOption === 'Recommended') setSortOption('Price: Low');
@@ -699,6 +785,28 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     listType === 'RENT' ? 'rentals' : 'homes'
   } available`;
 
+  const renderItem = useCallback(
+    ({ item }: { item: any }) => (
+      <View style={styles.cardItemWrapper}>
+        <LuxuryPropertyCard
+          property={item}
+          isSelected={item.id === selectedPropertyId}
+          isFavorite={isSaved(item.id)}
+          listType={listType}
+          onSelect={onSelectProperty}
+          onToggleFavorite={onToggleFavorite}
+        />
+      </View>
+    ),
+    [
+      selectedPropertyId,
+      isSaved,
+      listType,
+      onSelectProperty,
+      onToggleFavorite,
+    ]
+  );
+
   return (
     <Animated.View
       style={[
@@ -708,7 +816,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           transform: [{ translateY: translateYAnim }],
         },
       ]}
-      {...panResponder.panHandlers}
     >
       {/* Animated Sheet Shadow Overlay - fades out completely at fullY so no shadow bleeds into search bar */}
       <Animated.View
@@ -800,106 +907,110 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       {/* 1C. Subheader Row & Feed Container */}
       <View style={styles.mainContentContainer}>
         {/* Subheader Row: Cross-fades between count+handle and sort+save */}
-        <View style={styles.subHeaderRowContainer}>
-          {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
-          <Animated.View
-            style={[
-              styles.countSubheaderLayer,
-              { opacity: countRowOpacity },
-            ]}
-            pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
-          >
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={handleHeaderPress}
-              style={styles.handleTouchable}
+        <GestureDetector gesture={subHeaderGesture}>
+          <View style={styles.subHeaderRowContainer}>
+            {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
+            <Animated.View
+              style={[
+                styles.countSubheaderLayer,
+                { opacity: countRowOpacity },
+              ]}
+              pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
             >
-              <View style={styles.grabHandle} />
-              <View style={styles.headerRow}>
-                <Text style={styles.headerTitle}>{countText}</Text>
-              </View>
-            </TouchableOpacity>
-          </Animated.View>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={handleHeaderPress}
+                style={styles.handleTouchable}
+              >
+                <View style={styles.grabHandle} />
+                <View style={styles.headerRow}>
+                  <Text style={styles.headerTitle}>{countText}</Text>
+                </View>
+              </TouchableOpacity>
+            </Animated.View>
 
-          {/* Layer B (FULL): Sort: {sortOption} ⇅ | Save Search */}
-          <Animated.View
-            style={[
-              styles.sortSubheaderLayer,
-              { opacity: sortRowOpacity },
-            ]}
-            pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
-          >
-            <TouchableOpacity
-              style={styles.zillowSortButton}
-              onPress={handleSortToggle}
-              activeOpacity={0.7}
+            {/* Layer B (FULL): Sort: {sortOption} ⇅ | Save Search */}
+            <Animated.View
+              style={[
+                styles.sortSubheaderLayer,
+                { opacity: sortRowOpacity },
+              ]}
+              pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
             >
-              <Text style={styles.zillowSortText}>
-                Sort: {sortOption}
-              </Text>
-              <Ionicons name="swap-vertical" size={14} color="#006aff" style={{ marginLeft: 4 }} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zillowSortButton}
+                onPress={handleSortToggle}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.zillowSortText}>
+                  Sort: {sortOption}
+                </Text>
+                <Ionicons name="swap-vertical" size={14} color="#006aff" style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.zillowSaveButton}
-              onPress={handleToggleSaveSearch}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={isSearchSaved ? 'checkmark-circle' : 'search'}
-                size={14}
-                color="#006aff"
-                style={{ marginRight: 5 }}
-              />
-              <Text style={styles.zillowSaveText}>
-                {isSearchSaved ? 'Saved' : 'Save search'}
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-        </View>
+              <TouchableOpacity
+                style={styles.zillowSaveButton}
+                onPress={handleToggleSaveSearch}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={isSearchSaved ? 'checkmark-circle' : 'search'}
+                  size={14}
+                  color="#006aff"
+                  style={{ marginRight: 5 }}
+                />
+                <Text style={styles.zillowSaveText}>
+                  {isSearchSaved ? 'Saved' : 'Save search'}
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </GestureDetector>
 
         {/* Thin Divider Border below the subheader */}
         <View style={styles.headerDivider} />
 
-        {/* Property Cards Feed - ALWAYS mounted to eliminate unmounting/mounting freeze! */}
-        <FlatList
-          ref={flatListRef}
-          data={sortedProperties}
-          keyExtractor={(item) => String(item.id)}
-          showsVerticalScrollIndicator={false}
-          onScroll={handleListScroll}
-          scrollEventThrottle={16}
-          overScrollMode="never"
-          bounces={Platform.OS === 'ios'}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={7}
-          decelerationRate="normal"
-          scrollEnabled={snapState === 'FULL' && listScrollEnabled}
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: insets.bottom + 90 },
-          ]}
-          renderItem={({ item }) => (
-            <LuxuryPropertyCard
-              property={item}
-              isSelected={item.id === selectedPropertyId}
-              isFavorite={isSaved(item.id)}
-              listType={listType}
-              onSelect={() => onSelectProperty(item)}
-              onToggleFavorite={() => onToggleFavorite(item.id)}
+        {/* Property Cards Feed */}
+        <View style={styles.listWrapper}>
+          <GestureDetector gesture={composedListGesture}>
+            <FlatList
+              ref={flatListRef}
+              disallowInterruption={false}
+              data={sortedProperties}
+              keyExtractor={(item) => String(item.id)}
+              showsVerticalScrollIndicator={false}
+              onScroll={handleListScroll}
+              onMomentumScrollEnd={handleMomentumScrollEnd}
+              scrollEventThrottle={16}
+              overScrollMode="never"
+              bounces={false}
+              initialNumToRender={4}
+              maxToRenderPerBatch={4}
+              windowSize={5}
+              removeClippedSubviews={false}
+              getItemLayout={(_, index) => ({
+                length: 346,
+                offset: 346 * index,
+                index,
+              })}
+              decelerationRate="normal"
+              contentContainerStyle={[
+                styles.listContent,
+                { paddingBottom: insets.bottom + 90 },
+              ]}
+              renderItem={renderItem}
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Ionicons name="home-outline" size={40} color="#cbd5e1" style={{ marginBottom: 8 }} />
+                  <Text style={styles.emptyTitle}>No listings in this area</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Try zooming out or moving the map to discover homes.
+                  </Text>
+                </View>
+              }
             />
-          )}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="home-outline" size={40} color="#cbd5e1" style={{ marginBottom: 8 }} />
-              <Text style={styles.emptyTitle}>No listings in this area</Text>
-              <Text style={styles.emptySubtitle}>
-                Try zooming out or moving the map to discover homes.
-              </Text>
-            </View>
-          }
-        />
+          </GestureDetector>
+        </View>
       </View>
 
       {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - instantly switches to PEEK mode! */}
@@ -977,6 +1088,10 @@ const styles = StyleSheet.create({
     zIndex: 45,
   },
   mainContentContainer: {
+    flex: 1,
+    width: '100%',
+  },
+  listWrapper: {
     flex: 1,
     width: '100%',
   },
@@ -1217,6 +1332,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   // Luxury Property Card
+  cardItemWrapper: {
+    width: '100%',
+    alignItems: 'center',
+  },
   cardContainer: {
     width: CARD_WIDTH,
     backgroundColor: '#ffffff',

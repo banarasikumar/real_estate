@@ -49,7 +49,11 @@ import {
 import { ZillowFilterIcon } from '../../components/ZillowIcons';
 import { MobileSearchModal } from '../../components/MobileSearchModal';
 import { SearchRegion, SEARCH_REGIONS } from '../../data/searchRegions';
-import { ALL_DEMO_PROPERTIES } from '../../data/mockProperties';
+import {
+  ALL_DEMO_PROPERTIES,
+  adaptPropertyForListType,
+  getPropertiesForMode,
+} from '../../data/mockProperties';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -62,48 +66,82 @@ type MapBounds = SearchBounds;
 // Comprehensive Demo Real Estate Properties (Los Angeles: 26, New York: 25, Mumbai: 25)
 const SEED_PROPERTIES: PropertyItem[] = ALL_DEMO_PROPERTIES as PropertyItem[];
 
-function getFallbackProperties(queryText: string, bounds: MapBounds | null): PropertyItem[] {
+function getFallbackProperties(
+  queryText: string,
+  bounds: MapBounds | null,
+  listType: string = 'RENT',
+  activeRegion?: SearchRegion | null
+): PropertyItem[] {
   let list = SEED_PROPERTIES;
   const trimmed = (queryText || '').trim().toLowerCase();
+  const matchedRegion = activeRegion || null;
+
   if (trimmed) {
-    const words = trimmed.split(/[\s,]+/).filter(Boolean);
+    const hasLA =
+      trimmed.includes('los angeles') ||
+      trimmed.includes('ca home') ||
+      trimmed.includes('santa monica') ||
+      trimmed.includes('beverly hills') ||
+      trimmed.includes('la home');
+    const hasNY =
+      trimmed.includes('new york') ||
+      trimmed.includes('ny home') ||
+      trimmed.includes('manhattan') ||
+      trimmed.includes('brooklyn') ||
+      trimmed.includes('nyc');
+    const hasMumbai =
+      trimmed.includes('mumbai') ||
+      trimmed.includes('bandra') ||
+      trimmed.includes('worli') ||
+      trimmed.includes('juhu');
+
     const matched = SEED_PROPERTIES.filter((p) => {
       const city = (p.city || '').toLowerCase();
-      const state = (p.state || '').toLowerCase();
+      if (hasLA) return city.includes('los angeles');
+      if (hasNY) return city.includes('new york');
+      if (hasMumbai) return city.includes('mumbai');
+
+      const stopWords = new Set([
+        'luxury', 'homes', 'home', 'house', 'for', 'rent', 'sale',
+        'apartment', 'flat', 'residence', 'residences'
+      ]);
+      const words = trimmed
+        .split(/[\s,]+/)
+        .filter((w) => w.length > 2 && !stopWords.has(w));
       const address = (p.address || '').toLowerCase();
       const title = (p.title || '').toLowerCase();
+      const state = (p.state || '').toLowerCase();
       const haystack = `${title} ${address} ${city} ${state}`.toLowerCase();
       if (haystack.includes(trimmed)) return true;
 
-      if (
-        (trimmed.includes('los angeles') || trimmed.includes('ca home') || trimmed.includes('santa monica') || trimmed.includes('beverly hills') || trimmed.includes('la home')) &&
-        city.includes('los angeles')
-      ) {
-        return true;
-      }
-      if (
-        (trimmed.includes('new york') || trimmed.includes('ny home') || trimmed.includes('manhattan') || trimmed.includes('brooklyn') || trimmed.includes('nyc')) &&
-        city.includes('new york')
-      ) {
-        return true;
-      }
-      if (
-        (trimmed.includes('mumbai') || trimmed.includes('bandra') || trimmed.includes('worli') || trimmed.includes('juhu')) &&
-        city.includes('mumbai')
-      ) {
-        return true;
-      }
-
-      return words.some(
-        (w) => w.length > 2 && (city.includes(w) || address.includes(w) || title.includes(w))
-      );
+      return words.some((w) => city.includes(w) || address.includes(w) || title.includes(w));
     });
+
     if (matched.length > 0) {
       list = matched;
     }
+  } else if (matchedRegion && matchedRegion.sampleProperties && matchedRegion.sampleProperties.length > 0) {
+    list = matchedRegion.sampleProperties as PropertyItem[];
   }
 
-  if (bounds) {
+  // If a city/region query matched or activeRegion is set, do NOT truncate by camera viewport bounds!
+  // The user searched for that city/region, so all 20+ properties in that region must remain visible.
+  const isCitySearch = Boolean(
+    matchedRegion ||
+    (trimmed && (
+      trimmed.includes('los angeles') ||
+      trimmed.includes('ca home') ||
+      trimmed.includes('new york') ||
+      trimmed.includes('ny home') ||
+      trimmed.includes('mumbai') ||
+      trimmed.includes('bangalore') ||
+      trimmed.includes('delhi') ||
+      trimmed.includes('goa')
+    ))
+  );
+
+  // Only apply camera viewport bounds during open map exploration (no active region / city query)
+  if (!isCitySearch && bounds) {
     const { north, south, east, west } = bounds;
     const inBounds = list.filter(
       (p) =>
@@ -112,9 +150,13 @@ function getFallbackProperties(queryText: string, bounds: MapBounds | null): Pro
         p.longitude! >= west &&
         p.longitude! <= east
     );
-    return inBounds.length > 0 ? inBounds : list;
+    if (inBounds.length > 0) {
+      list = inBounds;
+    }
   }
-  return list;
+
+  // Ensure all properties reflect the current viewing mode (RENT vs SALE) with calibrated pricing
+  return list.map((p) => adaptPropertyForListType(p, listType) as PropertyItem);
 }
 
 interface QuickFilter {
@@ -226,7 +268,7 @@ export default function UserAppHomeScreen() {
         const params: SearchPropertiesParams = {};
 
         // Merge quick filters and advanced modal filters
-        const listType = advancedFilters.list_type || quick?.list_type;
+        const listType = advancedFilters.list_type || quick?.list_type || (activeQuickFilter === 'rent' ? 'RENT' : 'SALE');
         if (listType) params.list_type = listType;
 
         const propType = advancedFilters.prop_type || quick?.prop_type;
@@ -256,7 +298,22 @@ export default function UserAppHomeScreen() {
           params.query = queryText.trim();
         }
 
-        if (bounds) {
+        // If searching a known city/region, do NOT pass camera viewport bounds to API
+        const isCityOrRegion = Boolean(
+          activeRegion ||
+          (queryText.trim() && (
+            queryText.toLowerCase().includes('angeles') ||
+            queryText.toLowerCase().includes('ca home') ||
+            queryText.toLowerCase().includes('york') ||
+            queryText.toLowerCase().includes('ny home') ||
+            queryText.toLowerCase().includes('mumbai') ||
+            queryText.toLowerCase().includes('bangalore') ||
+            queryText.toLowerCase().includes('delhi') ||
+            queryText.toLowerCase().includes('goa')
+          ))
+        );
+
+        if (bounds && !isCityOrRegion) {
           params.bounds = bounds;
         }
 
@@ -286,18 +343,19 @@ export default function UserAppHomeScreen() {
           });
           setProperties(withCoords as PropertyItem[]);
         } else {
-          // Client-side fallback filtered by search query & map bounds
-          setProperties(getFallbackProperties(queryText, bounds));
+          // Client-side fallback filtered by search query & calibrated to listType
+          setProperties(getFallbackProperties(queryText, bounds, listType, activeRegion));
         }
       } catch (err) {
         console.warn('[UserApp] searchProperties fallback:', err);
-        setProperties(getFallbackProperties(queryText, bounds));
+        const fallbackListType = advancedFilters.list_type || (activeQuickFilter === 'rent' ? 'RENT' : 'SALE');
+        setProperties(getFallbackProperties(queryText, bounds, fallbackListType, activeRegion));
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [searchQuery, activeQuickFilter, modalFilters]
+    [searchQuery, activeQuickFilter, modalFilters, activeRegion]
   );
 
   useEffect(() => {
@@ -386,6 +444,12 @@ export default function UserAppHomeScreen() {
     if (!searchAsMove) return;
 
     mapBoundsRef.current = bounds;
+
+    // When viewing an active city/region or focusing on a selected property,
+    // camera movement within the city must NOT truncate or wipe out the listings.
+    if (activeRegion || selectedPropertyId) {
+      return;
+    }
 
     if (debounceRegionTimerRef.current) {
       clearTimeout(debounceRegionTimerRef.current);
@@ -697,29 +761,37 @@ export default function UserAppHomeScreen() {
         onSelectRegion={(region, listType) => {
           setActiveRegion(region);
           setSearchQuery(region.name);
-          if (region.center) {
-            mapboxRef.current?.flyToRegion(region.center, region.zoom || 11);
-          }
-          if (region.sampleProperties && region.sampleProperties.length > 0) {
-            setProperties(region.sampleProperties);
-          }
+          const effectiveMode = listType === 'RENT' ? 'RENT' : 'SALE';
           if (listType === 'RENT') {
             setActiveQuickFilter('rent');
           } else if (listType === 'SALE') {
             setActiveQuickFilter('sale');
+          }
+          if (region.center) {
+            mapboxRef.current?.flyToRegion(region.center, region.zoom || 11);
+          }
+          if (region.sampleProperties && region.sampleProperties.length > 0) {
+            const adapted = getPropertiesForMode(region.sampleProperties, effectiveMode) as PropertyItem[];
+            setProperties(adapted);
+          } else {
+            fetchHomes(region.name, effectiveMode === 'RENT' ? 'rent' : 'sale');
           }
           // Apply remembered mode (DUAL or PEEK)
           setSheetSnapState(preferredMode);
         }}
         onSelectQuery={(queryText, listType) => {
-          setActiveRegion(null);
+          const matched = SEARCH_REGIONS.find(
+            (r) => r.name.toLowerCase() === queryText.toLowerCase() || r.city.toLowerCase() === queryText.toLowerCase()
+          ) || null;
+          setActiveRegion(matched);
           setSearchQuery(queryText);
-          fetchHomes(queryText);
+          const filterId = listType === 'RENT' ? 'rent' : 'sale';
           if (listType === 'RENT') {
             setActiveQuickFilter('rent');
           } else if (listType === 'SALE') {
             setActiveQuickFilter('sale');
           }
+          fetchHomes(queryText, filterId);
           setSheetSnapState(preferredMode);
         }}
         onListTypeChange={(listType) => {

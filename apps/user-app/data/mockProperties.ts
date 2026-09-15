@@ -2,6 +2,10 @@ export interface DemoProperty {
   id: string;
   title: string;
   price: number;
+  rentPrice?: number;
+  salePrice?: number;
+  rent_price?: number;
+  sale_price?: number;
   list_type: 'SALE' | 'RENT';
   prop_type: 'APARTMENT' | 'VILLA' | 'HOUSE' | 'PENTHOUSE' | string;
   bedrooms: number;
@@ -22,6 +26,32 @@ export interface DemoProperty {
   thumbnailUrl?: string;
   imageUrl?: string;
   phone?: string;
+}
+
+/**
+ * Adapts a demo property to the requested listType ('RENT' vs 'SALE').
+ * When in RENT mode, uses rental price. When in SALE mode, uses purchase price.
+ * Guarantees every demo property is fully available and formatted for both modes.
+ */
+export function adaptPropertyForListType<T extends Record<string, any>>(prop: T, listType: string = 'RENT'): T {
+  const isRent = listType === 'RENT';
+  const rawProp = prop as any;
+  const effectivePrice = isRent
+    ? (rawProp.rent_price ?? rawProp.rentPrice ?? (rawProp.list_type === 'RENT' ? rawProp.price : Math.round((rawProp.price || 1000000) * 0.0035)))
+    : (rawProp.sale_price ?? rawProp.salePrice ?? (rawProp.list_type === 'SALE' ? rawProp.price : Math.round((rawProp.price || 3000) * 320)));
+
+  return {
+    ...prop,
+    list_type: isRent ? 'RENT' : 'SALE',
+    price: effectivePrice,
+  };
+}
+
+/**
+ * Bulk adapts an array of demo properties to the given listType.
+ */
+export function getPropertiesForMode<T extends Record<string, any>>(properties: T[], listType: string = 'RENT'): T[] {
+  return (properties || []).map((p) => adaptPropertyForListType(p, listType));
 }
 
 // -------------------------------------------------------------

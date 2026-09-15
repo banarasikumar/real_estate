@@ -52,23 +52,38 @@ export interface MobileMapboxViewProps {
 
 export function formatRawPrice(price: number): string {
   if (!price && price !== 0) return '--';
+  // USD rents & prices (< 100,000)
+  if (price > 0 && price < 100000) {
+    if (price >= 1000) {
+      return `$${(price / 1000).toFixed(price % 1000 === 0 ? 0 : 1)}k`;
+    }
+    return `$${price}`;
+  }
+  // US millions ($1M - $100M)
+  if (price >= 1000000 && price < 100000000 && price % 100000 === 0) {
+    const m = price / 1000000;
+    return `$${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)}M`;
+  }
+  // INR Crores
   if (price >= 10000000) {
     const cr = price / 10000000;
-    return `${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr`;
+    return `₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr`;
   }
   if (price >= 100000) {
     const l = price / 100000;
-    return `${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L`;
+    return `₹${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L`;
   }
   if (price >= 1000) {
-    return `${(price / 1000).toFixed(0)}k`;
+    return `₹${(price / 1000).toFixed(0)}k`;
   }
   return `${price.toLocaleString()}`;
 }
 
 export function formatPricePill(price: number): string {
-  if (!price && price !== 0) return '₹--';
-  return `₹${formatRawPrice(price)}`;
+  if (!price && price !== 0) return '--';
+  const raw = formatRawPrice(price);
+  if (raw.startsWith('$') || raw.startsWith('₹')) return raw;
+  return `₹${raw}`;
 }
 
 const MobileMapboxViewComponent = forwardRef<MobileMapboxViewRef, MobileMapboxViewProps>(
@@ -124,6 +139,14 @@ const MobileMapboxViewComponent = forwardRef<MobileMapboxViewRef, MobileMapboxVi
     }));
 
     const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
+    const initialCenterRef = useRef<[number, number] | null>(null);
+    if (!initialCenterRef.current) {
+      const firstMarker = effectiveMarkers.find((m: any) => typeof m.latitude === 'number' && typeof m.longitude === 'number');
+      if (firstMarker) {
+        initialCenterRef.current = [firstMarker.longitude, firstMarker.latitude];
+      }
+    }
+    const [initialLng, initialLat] = initialCenterRef.current || [-118.2437, 34.0522];
 
     // Markers payload formatted for Mapbox injection
     const markersPayload = useMemo(() => {
@@ -594,7 +617,7 @@ const MobileMapboxViewComponent = forwardRef<MobileMapboxViewRef, MobileMapboxVi
     const map = new mapboxgl.Map({
       container: 'map',
       style: 'mapbox://styles/mapbox/standard',
-      center: [72.8777, 19.076],
+      center: [${initialLng}, ${initialLat}],
       zoom: 11,
       pitch: 0,
       attributionControl: false
