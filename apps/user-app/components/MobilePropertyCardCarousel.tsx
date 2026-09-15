@@ -225,7 +225,7 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
             return;
           }
 
-          const offsetX = e.nativeEvent.contentOffset.x;
+          const offsetX = e?.nativeEvent?.contentOffset?.x ?? 0;
           const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
           const clampedIndex = Math.max(0, Math.min(index, properties.length - 1));
 
@@ -235,21 +235,27 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
           }
         }}
         onScrollEndDrag={(e) => {
-          setTimeout(() => {
-            if (!isUserInteractingRef.current) return;
-            isUserInteractingRef.current = false;
-            if (isProgrammaticScrollRef.current) {
-              isProgrammaticScrollRef.current = false;
-              return;
-            }
-            const offsetX = e.nativeEvent.contentOffset.x;
-            const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
-            const clampedIndex = Math.max(0, Math.min(index, properties.length - 1));
-            if (clampedIndex !== lastSettledIndexRef.current) {
-              lastSettledIndexRef.current = clampedIndex;
-              onSnapToIndex(clampedIndex);
-            }
-          }, 60);
+          // If there is significant horizontal velocity, momentum scrolling will follow and fire onMomentumScrollEnd
+          const velocityX = e?.nativeEvent?.velocity?.x ?? 0;
+          if (Math.abs(velocityX) > 0.1) {
+            return;
+          }
+
+          // If released without momentum, settle immediately using the current contentOffset
+          isUserInteractingRef.current = false;
+          if (isProgrammaticScrollRef.current) {
+            isProgrammaticScrollRef.current = false;
+            return;
+          }
+
+          const offsetX = e?.nativeEvent?.contentOffset?.x ?? 0;
+          const index = Math.round(offsetX / (CARD_WIDTH + CARD_SPACING));
+          const clampedIndex = Math.max(0, Math.min(index, properties.length - 1));
+
+          if (clampedIndex !== lastSettledIndexRef.current) {
+            lastSettledIndexRef.current = clampedIndex;
+            onSnapToIndex(clampedIndex);
+          }
         }}
         renderItem={({ item, index }) => (
           <View style={{ marginRight: index === properties.length - 1 ? 0 : CARD_SPACING }}>
@@ -262,9 +268,10 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
           index,
         })}
         onScrollToIndexFailed={(info) => {
+          const targetOffset = info.index * (CARD_WIDTH + CARD_SPACING);
           setTimeout(() => {
             listRef.current?.scrollToOffset({
-              offset: info.index * (CARD_WIDTH + CARD_SPACING),
+              offset: targetOffset,
               animated: true,
             });
           }, 80);
