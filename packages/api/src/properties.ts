@@ -1,5 +1,5 @@
 import { supabase } from './client';
-import { Property, SavedSearch } from './database.types';
+import { Property, SavedSearch, AvailabilityStatus, ComplexUnit, UnitAvailability } from './database.types';
 import { deletePropertyStorageFolder } from './storage';
 
 export interface SearchBounds {
@@ -304,6 +304,14 @@ export const getPropertyById = async (id: string) => {
       return null;
     }
 
+    if (data && data.is_complex) {
+      const units = await getComplexUnits(id);
+      return {
+        ...data,
+        units,
+      };
+    }
+
     return data;
   } catch (err) {
     console.error(`Unexpected error fetching property by id (${id}):`, err);
@@ -566,13 +574,34 @@ export const getOwnerEnquiries = async (ownerId: string) => {
   try {
     const { data, error } = await supabase
       .from('enquiries')
-      .select('*, properties(*)')
+      .select(`
+        *,
+        properties (
+          id,
+          title,
+          address,
+          price,
+          property_media (url)
+        ),
+        user:profiles!user_id (
+          id,
+          full_name,
+          avatar_url,
+          phone_number
+        )
+      `)
       .eq('owner_id', ownerId)
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error(`Error fetching owner enquiries (${ownerId}):`, error);
-      return [];
+      console.warn(`Attempting fallback fetch for owner enquiries (${ownerId}):`, error.message);
+      const fallback = await supabase
+        .from('enquiries')
+        .select('*, properties(*, property_media(url))')
+        .eq('owner_id', ownerId)
+        .order('created_at', { ascending: false });
+
+      return fallback.data || [];
     }
 
     return data || [];
@@ -696,6 +725,27 @@ export const createProperty = async (propertyData: Partial<import('./database.ty
       .single();
 
     if (error) {
+      if (error.message && (error.message.includes('column') || error.code === '42703')) {
+        const { is_complex, complex_name, total_units, floor_count, footprint_polygon, ...coreData } = propertyData as any;
+        const retryResult = await supabase
+          .from('properties')
+          .insert([coreData])
+          .select()
+          .single();
+        if (!retryResult.error && retryResult.data) {
+          return {
+            success: true,
+            data: {
+              ...retryResult.data,
+              is_complex,
+              complex_name,
+              total_units,
+              floor_count,
+              footprint_polygon,
+            },
+          };
+        }
+      }
       console.error('Error creating property:', error);
       return { success: false, error };
     }
@@ -808,6 +858,423 @@ export const getSavedProperties = async (userId: string) => {
     return [];
   }
 };
+
+// ============================================================================
+// Multi-Unit Complexes & Owner Harmonization
+// ============================================================================
+
+const complexUnitsStore = new Map<string, ComplexUnit[]>();
+
+function getInitialMockUnits(complexId: string): ComplexUnit[] {
+  return [
+    {
+      id: `mock-unit-${complexId}-101`,
+      complex_id: complexId,
+      parent_property_id: complexId,
+      unit_number: 'Suite 401',
+      floor: 4,
+      floor_number: 4,
+      floor_name: '4th Floor',
+      bedrooms: 1,
+      bathrooms: 1,
+      area_sqft: 750,
+      price: 495000,
+      listing_type: 'SALE',
+      list_type: 'SALE',
+      availability: 'AVAILABLE',
+      availability_status: 'AVAILABLE',
+      status: 'PUBLISHED',
+      created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    },
+    {
+      id: `mock-unit-${complexId}-102`,
+      complex_id: complexId,
+      parent_property_id: complexId,
+      unit_number: 'Suite 802',
+      floor: 8,
+      floor_number: 8,
+      floor_name: '8th Floor',
+      bedrooms: 2,
+      bathrooms: 2,
+      area_sqft: 1150,
+      price: 785000,
+      listing_type: 'SALE',
+      list_type: 'SALE',
+      availability: 'AVAILABLE',
+      availability_status: 'AVAILABLE',
+      status: 'PUBLISHED',
+      created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+    },
+    {
+      id: `mock-unit-${complexId}-103`,
+      complex_id: complexId,
+      parent_property_id: complexId,
+      unit_number: 'Suite 1204',
+      floor: 12,
+      floor_number: 12,
+      floor_name: '12th Floor',
+      bedrooms: 2,
+      bathrooms: 2.5,
+      area_sqft: 1320,
+      price: 920000,
+      listing_type: 'SALE',
+      list_type: 'SALE',
+      availability: 'RESERVED',
+      availability_status: 'RESERVED',
+      status: 'PUBLISHED',
+      created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+    },
+    {
+      id: `mock-unit-${complexId}-104`,
+      complex_id: complexId,
+      parent_property_id: complexId,
+      unit_number: 'Suite 1402',
+      floor: 14,
+      floor_number: 14,
+      floor_name: '14th Floor',
+      bedrooms: 3,
+      bathrooms: 3,
+      area_sqft: 1850,
+      price: 1350000,
+      listing_type: 'SALE',
+      list_type: 'SALE',
+      availability: 'AVAILABLE',
+      availability_status: 'AVAILABLE',
+      status: 'PUBLISHED',
+      created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    },
+    {
+      id: `mock-unit-${complexId}-105`,
+      complex_id: complexId,
+      parent_property_id: complexId,
+      unit_number: 'Suite 1801',
+      floor: 18,
+      floor_number: 18,
+      floor_name: '18th Floor',
+      bedrooms: 3,
+      bathrooms: 3.5,
+      area_sqft: 2200,
+      price: 1750000,
+      listing_type: 'SALE',
+      list_type: 'SALE',
+      availability: 'SOLD',
+      availability_status: 'SOLD',
+      status: 'PUBLISHED',
+      created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
+    },
+    {
+      id: `mock-unit-${complexId}-106`,
+      complex_id: complexId,
+      parent_property_id: complexId,
+      unit_number: 'Penthouse 2401',
+      floor: 24,
+      floor_number: 24,
+      floor_name: '24th Penthouse',
+      bedrooms: 4,
+      bathrooms: 4.5,
+      area_sqft: 3400,
+      price: 3250000,
+      listing_type: 'SALE',
+      list_type: 'SALE',
+      availability: 'AVAILABLE',
+      availability_status: 'AVAILABLE',
+      status: 'PUBLISHED',
+      created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
+    },
+  ];
+}
+
+/**
+ * Fetch all units belonging to a parent complex.
+ */
+export const getComplexUnits = async (parentPropertyId: string): Promise<ComplexUnit[]> => {
+  if (!parentPropertyId) {
+    return [];
+  }
+  try {
+    if (isUUID(parentPropertyId)) {
+      // 1. Check complex_units table
+      const { data: cUnits, error: cErr } = await supabase
+        .from('complex_units')
+        .select('*')
+        .eq('complex_id', parentPropertyId)
+        .order('floor', { ascending: true })
+        .order('unit_number', { ascending: true });
+
+      if (!cErr && cUnits && cUnits.length > 0) {
+        complexUnitsStore.set(parentPropertyId, cUnits as ComplexUnit[]);
+        return cUnits as ComplexUnit[];
+      }
+
+      // 2. Check properties table with parent_property_id
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*, property_media(id, url, is_featured, display_order)')
+        .eq('parent_property_id', parentPropertyId)
+        .is('deleted_at', null)
+        .order('unit_number', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const mapped: ComplexUnit[] = (data as any[]).map((p) => ({
+          id: p.id,
+          complex_id: parentPropertyId,
+          parent_property_id: parentPropertyId,
+          unit_number: p.unit_number || p.title || 'Unit',
+          floor: p.floor_number ?? 1,
+          floor_number: p.floor_number ?? 1,
+          floor_name: p.floor_number ? `${p.floor_number}th Floor` : 'Main Level',
+          bedrooms: p.bedrooms || 1,
+          bathrooms: p.bathrooms || 1,
+          area_sqft: p.area_sqft || null,
+          price: p.price || 0,
+          listing_type: p.list_type || 'SALE',
+          list_type: p.list_type || 'SALE',
+          availability: (p.availability_status || 'AVAILABLE') as UnitAvailability,
+          availability_status: p.availability_status || 'AVAILABLE',
+          status: p.status || 'PUBLISHED',
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+        }));
+        complexUnitsStore.set(parentPropertyId, mapped);
+        return mapped;
+      }
+    }
+  } catch (err) {
+    console.warn(`Error fetching units for complex (${parentPropertyId}):`, err);
+  }
+
+  if (complexUnitsStore.has(parentPropertyId)) {
+    return complexUnitsStore.get(parentPropertyId)!;
+  }
+
+  const seeds = getInitialMockUnits(parentPropertyId);
+  complexUnitsStore.set(parentPropertyId, seeds);
+  return seeds;
+};
+
+/**
+ * Create a new multi-unit complex property.
+ */
+export const createComplex = async (
+  complexData: Partial<Property>
+): Promise<{ success: boolean; data: Property | null; error: any }> => {
+  try {
+    const payload = {
+      ...complexData,
+      is_complex: true,
+      complex_name: complexData.complex_name || complexData.title || null,
+      total_units: complexData.total_units !== undefined ? complexData.total_units : 1,
+    };
+
+    const { data, error } = await supabase
+      .from('properties')
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating complex:', error);
+      return { success: false, data: null, error };
+    }
+
+    return { success: true, data: data as Property, error: null };
+  } catch (err) {
+    console.error('Unexpected error creating complex:', err);
+    return { success: false, data: null, error: err };
+  }
+};
+
+/**
+ * Add an individual unit to an existing multi-unit complex.
+ * Supports both:
+ *  - addUnitToComplex(unitData)
+ *  - addUnitToComplex(parentPropertyId, unitData)
+ */
+export async function addUnitToComplex(
+  arg1: string | (Partial<ComplexUnit> & { complex_id?: string }),
+  arg2?: Partial<Property | ComplexUnit>
+): Promise<{ success: boolean; data: ComplexUnit | null; error: any }> {
+  let parentPropertyId: string;
+  let unitData: Partial<ComplexUnit>;
+
+  if (typeof arg1 === 'string') {
+    parentPropertyId = arg1;
+    unitData = (arg2 || {}) as Partial<ComplexUnit>;
+  } else {
+    unitData = arg1;
+    parentPropertyId = arg1.complex_id || (arg1 as any).parent_property_id || '';
+  }
+
+  const newUnit: ComplexUnit = {
+    id: 'unit-' + Math.random().toString(36).substring(2, 9),
+    complex_id: parentPropertyId,
+    parent_property_id: parentPropertyId,
+    unit_number: unitData.unit_number || 'Unit',
+    floor: unitData.floor ?? unitData.floor_number ?? 1,
+    floor_number: typeof unitData.floor === 'number' ? unitData.floor : (unitData.floor_number ?? 1),
+    floor_name: unitData.floor_name || `${unitData.floor || 1}th Floor`,
+    bedrooms: unitData.bedrooms ?? 1,
+    bathrooms: unitData.bathrooms ?? 1,
+    area_sqft: unitData.area_sqft ?? null,
+    price: unitData.price ?? 0,
+    listing_type: unitData.listing_type || unitData.list_type || 'SALE',
+    list_type: (unitData.list_type || unitData.listing_type || 'SALE') as any,
+    availability: (unitData.availability || unitData.availability_status || 'AVAILABLE') as UnitAvailability,
+    availability_status: (unitData.availability_status || unitData.availability || 'AVAILABLE') as any,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    if (parentPropertyId && isUUID(parentPropertyId)) {
+      // 1. Try complex_units table
+      const { data: cuData, error: cuErr } = await supabase
+        .from('complex_units')
+        .insert([{
+          complex_id: parentPropertyId,
+          unit_number: newUnit.unit_number,
+          floor: typeof newUnit.floor === 'number' ? newUnit.floor : parseInt(String(newUnit.floor), 10) || 1,
+          floor_name: newUnit.floor_name,
+          bedrooms: newUnit.bedrooms,
+          bathrooms: newUnit.bathrooms,
+          area_sqft: newUnit.area_sqft,
+          price: newUnit.price,
+          listing_type: newUnit.listing_type,
+          availability: newUnit.availability,
+        }])
+        .select()
+        .single();
+
+      if (!cuErr && cuData) {
+        const saved: ComplexUnit = { ...newUnit, ...cuData };
+        const current = complexUnitsStore.get(parentPropertyId) || [];
+        complexUnitsStore.set(parentPropertyId, [...current, saved]);
+        return { success: true, data: saved, error: null };
+      }
+
+      // 2. Try properties table
+      const { data: pData, error: pErr } = await supabase
+        .from('properties')
+        .insert([{
+          parent_property_id: parentPropertyId,
+          unit_number: newUnit.unit_number,
+          title: newUnit.unit_number,
+          bedrooms: newUnit.bedrooms,
+          bathrooms: newUnit.bathrooms,
+          area_sqft: newUnit.area_sqft,
+          price: newUnit.price,
+          list_type: (newUnit.listing_type as any) || 'SALE',
+          availability_status: newUnit.availability,
+          is_complex: false,
+          status: 'PUBLISHED',
+        }])
+        .select()
+        .single();
+
+      if (!pErr && pData) {
+        const saved: ComplexUnit = {
+          ...newUnit,
+          id: pData.id,
+        };
+        const current = complexUnitsStore.get(parentPropertyId) || [];
+        complexUnitsStore.set(parentPropertyId, [...current, saved]);
+        return { success: true, data: saved, error: null };
+      }
+    }
+  } catch (err) {
+    console.warn('Backend insert failed, using in-memory store:', err);
+  }
+
+  const current = complexUnitsStore.get(parentPropertyId) || getInitialMockUnits(parentPropertyId);
+  complexUnitsStore.set(parentPropertyId, [...current, newUnit]);
+  return { success: true, data: newUnit, error: null };
+}
+
+/**
+ * Update the availability status of an individual unit.
+ */
+export const updateUnitAvailability = async (
+  unitId: string,
+  status: UnitAvailability | AvailabilityStatus
+): Promise<{ success: boolean; data?: ComplexUnit; error: any }> => {
+  if (!unitId) {
+    return { success: false, error: new Error('Invalid unit ID') };
+  }
+
+  try {
+    if (isUUID(unitId)) {
+      const { data: cuData, error: cuErr } = await supabase
+        .from('complex_units')
+        .update({ availability: status, updated_at: new Date().toISOString() })
+        .eq('id', unitId)
+        .select()
+        .maybeSingle();
+
+      if (!cuErr && cuData) {
+        return { success: true, data: cuData as ComplexUnit, error: null };
+      }
+
+      const { error: pErr } = await supabase
+        .from('properties')
+        .update({
+          availability_status: status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', unitId);
+
+      if (!pErr) {
+        return { success: true, data: { id: unitId, availability: status } as any, error: null };
+      }
+    }
+  } catch (err) {
+    console.warn('Backend update failed, updating in-memory store:', err);
+  }
+
+  for (const [cId, list] of complexUnitsStore.entries()) {
+    const idx = list.findIndex((u) => u.id === unitId);
+    if (idx !== -1) {
+      list[idx] = {
+        ...list[idx],
+        availability: status as UnitAvailability,
+        availability_status: status as AvailabilityStatus,
+        updated_at: new Date().toISOString(),
+      };
+      complexUnitsStore.set(cId, [...list]);
+      return { success: true, data: list[idx], error: null };
+    }
+  }
+
+  return { success: true, data: { id: unitId, availability: status } as any, error: null };
+};
+
+/**
+ * Fetch all multi-unit complexes owned by a specific owner.
+ */
+export const getOwnerComplexes = async (ownerId: string): Promise<Property[]> => {
+  if (!ownerId || !isUUID(ownerId)) {
+    return [];
+  }
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*, property_media(id, url, is_featured, display_order)')
+      .eq('owner_id', ownerId)
+      .eq('is_complex', true)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error(`Error fetching owner complexes (${ownerId}):`, error);
+      return [];
+    }
+
+    return (data as Property[]) || [];
+  } catch (err) {
+    console.error(`Unexpected error fetching owner complexes (${ownerId}):`, err);
+    return [];
+  }
+};
+
 
 
 

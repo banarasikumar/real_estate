@@ -415,6 +415,9 @@ export default function PropertiesScreen() {
           const isLive = item.status === 'PUBLISHED';
           const isBusy = updatingId === item.id;
           const isTrash = activeTab === 'trash' || !!item.deleted_at;
+          const isComplex = Boolean(
+            item.is_complex || (item.total_units && item.total_units > 1) || item.complex_name
+          );
 
           return (
             <View style={[styles.card, isTrash && styles.trashCard]}>
@@ -434,6 +437,16 @@ export default function PropertiesScreen() {
                     {item.prop_type} • {item.list_type}
                   </Text>
                 </View>
+
+                {/* Stylish Multi-Unit Tower Badge */}
+                {isComplex && (
+                  <View style={styles.complexBadge}>
+                    <Ionicons name="business" size={12} color="#3730a3" />
+                    <Text style={styles.complexBadgeText}>
+                      🏢 Multi-Unit Tower ({item.total_units || 'Multi'} units)
+                    </Text>
+                  </View>
+                )}
 
                 <Text style={styles.cardTitle} numberOfLines={1}>
                   {item.title}
@@ -553,6 +566,18 @@ export default function PropertiesScreen() {
                             />
                           </View>
                         )}
+
+                      {/* Primary CTA for Complexes: Manage Units ➔ */}
+                      {isComplex && (
+                        <TouchableOpacity
+                          style={styles.manageUnitsCTA}
+                          onPress={() => router.push(('/complex/' + item.id) as any)}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="grid" size={16} color="#ffffff" />
+                          <Text style={styles.manageUnitsCTAText}>Manage Units ➔</Text>
+                        </TouchableOpacity>
+                      )}
 
                       {/* Dedicated Edit & Delete Buttons */}
                       <View style={styles.cardActionsRow}>
@@ -925,4 +950,44 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   emptyButtonText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
+  // Multi-Unit Complex Styles
+  complexBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#eef2ff',
+    borderWidth: 1,
+    borderColor: '#c7d2fe',
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    gap: 5,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  complexBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#3730a3',
+  },
+  manageUnitsCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4338ca',
+    borderRadius: 10,
+    paddingVertical: 11,
+    gap: 7,
+    shadowColor: '#4338ca',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  manageUnitsCTAText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
 });

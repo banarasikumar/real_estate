@@ -8,6 +8,8 @@ export type EnquiryStatus = 'NEW' | 'READ' | 'RESPONDED' | 'CLOSED';
 export type NotificationFrequency = 'INSTANT' | 'DAILY' | 'NEVER';
 export type NotificationType = 'NEW_MATCH' | 'PRICE_DROP' | 'TOUR_REQUEST' | 'MESSAGE' | 'SYSTEM';
 
+export type AvailabilityStatus = 'AVAILABLE' | 'RESERVED' | 'SOLD' | 'RENTED';
+
 export interface Profile {
   id: string;
   full_name: string | null;
@@ -37,8 +39,41 @@ export interface Property {
   status: PropertyStatus;
   is_approved?: boolean | null;
   deleted_at?: string | null;
+  parent_property_id?: string | null;
+  is_complex?: boolean;
+  complex_name?: string | null;
+  total_units?: number | null;
+  floor_count?: number | null;
+  footprint_polygon?: any | null;
+  unit_number?: string | null;
+  floor_number?: number | null;
+  availability_status?: AvailabilityStatus | null;
+  units?: (Property | ComplexUnit)[];
   created_at: string;
   updated_at: string;
+}
+
+export type UnitAvailability = 'AVAILABLE' | 'RESERVED' | 'SOLD';
+
+export interface ComplexUnit {
+  id: string;
+  complex_id: string;
+  parent_property_id?: string | null;
+  unit_number: string;
+  floor?: number | string | null;
+  floor_number?: number | null;
+  floor_name?: string | null;
+  bedrooms: number;
+  bathrooms: number;
+  area_sqft?: number | null;
+  price: number;
+  listing_type: ListingType | string;
+  list_type?: ListingType | string;
+  availability: UnitAvailability;
+  availability_status?: AvailabilityStatus | null;
+  status?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PropertyMedia {

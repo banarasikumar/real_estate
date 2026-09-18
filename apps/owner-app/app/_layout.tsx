@@ -16,6 +16,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="edit-property/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="complex/[id]" options={{ headerShown: false }} />
           </Stack>
           <InAppNotificationBanner />
         </NotificationProvider>

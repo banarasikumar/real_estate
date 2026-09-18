@@ -9,6 +9,8 @@ import {
   Image,
   ActivityIndicator,
   TouchableOpacity,
+  Switch,
+  Vibration,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { createProperty, uploadPropertyImage, addPropertyMedia, useAuth, geocodeAddress } from '@repo/api';
@@ -17,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { ImageCropperModal, CroppedImageResult, CropperImageInput } from '../../components/ImageCropperModal';
+import { OwnerMapPinPickerModal, FootprintPoint } from '../../components/OwnerMapPinPickerModal';
 
 export default function CreatePropertyScreen() {
   const { session } = useAuth();
@@ -34,6 +37,16 @@ export default function CreatePropertyScreen() {
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
   const [isGeocoding, setIsGeocoding] = useState(false);
+
+  // Map Pin Picker & Footprint State
+  const [isMapModalVisible, setIsMapModalVisible] = useState(false);
+  const [footprintPolygon, setFootprintPolygon] = useState<FootprintPoint[] | null>(null);
+
+  // Multi-Unit Building / Tower State
+  const [isComplex, setIsComplex] = useState(false);
+  const [complexName, setComplexName] = useState('');
+  const [totalUnits, setTotalUnits] = useState('48');
+  const [floorCount, setFloorCount] = useState('16');
 
   // Cropped images with base64 WebP data ready for high-speed binary upload
   const [croppedImages, setCroppedImages] = useState<CroppedImageResult[]>([]);
@@ -146,6 +159,11 @@ export default function CreatePropertyScreen() {
     setAddress('');
     setLatitude(null);
     setLongitude(null);
+    setFootprintPolygon(null);
+    setIsComplex(false);
+    setComplexName('');
+    setTotalUnits('48');
+    setFloorCount('16');
     setCroppedImages([]);
     setPendingRawImages([]);
   };
@@ -201,6 +219,11 @@ export default function CreatePropertyScreen() {
         longitude: effectiveLng,
         status: submitStatus,
         is_approved: false,
+        is_complex: isComplex,
+        complex_name: isComplex ? (complexName.trim() || title.trim()) : null,
+        total_units: isComplex ? (parseInt(totalUnits, 10) || 1) : null,
+        floor_count: isComplex ? (parseInt(floorCount, 10) || null) : null,
+        footprint_polygon: footprintPolygon || null,
       };
 
       const { success, data: property, error } = await createProperty(propertyData);
@@ -233,20 +256,43 @@ export default function CreatePropertyScreen() {
         }
       }
 
-      const successMsg =
-        submitStatus === 'PENDING_APPROVAL'
-          ? 'Property submitted for Admin approval! Once approved, it will be published live to buyers.'
-          : 'Property saved as Draft in your properties list.';
+      if (isComplex) {
+        Alert.alert(
+          '🏢 Multi-Unit Complex Saved!',
+          'Your complex record and building footprint have been saved. You can now manage individual unit inventory, pricing, and availability.',
+          [
+            {
+              text: 'Manage Units Now ➔',
+              onPress: () => {
+                resetForm();
+                router.push(('/complex/' + property.id) as any);
+              },
+            },
+            {
+              text: 'View My Properties',
+              onPress: () => {
+                resetForm();
+                router.push('/(tabs)/properties');
+              },
+            },
+          ]
+        );
+      } else {
+        const successMsg =
+          submitStatus === 'PENDING_APPROVAL'
+            ? 'Property submitted for Admin approval! Once approved, it will be published live to buyers.'
+            : 'Property saved as Draft in your properties list.';
 
-      Alert.alert('Success', successMsg, [
-        {
-          text: 'View My Properties',
-          onPress: () => {
-            resetForm();
-            router.push('/(tabs)/properties');
+        Alert.alert('Success', successMsg, [
+          {
+            text: 'View My Properties',
+            onPress: () => {
+              resetForm();
+              router.push('/(tabs)/properties');
+            },
           },
-        },
-      ]);
+        ]);
+      }
     } catch (err: any) {
       console.error(err);
       Alert.alert('Error', err.message || 'Something went wrong while submitting.');
@@ -366,26 +412,176 @@ export default function CreatePropertyScreen() {
             placeholderTextColor="#94a3b8"
           />
 
-          {/* Location Preview Box */}
-          {latitude !== null && longitude !== null ? (
-            <View style={styles.locationPreviewBox}>
-              <View style={styles.coordsInfoRow}>
-                <Ionicons name="location-sharp" size={16} color="#059669" />
-                <Text style={styles.coordsText}>
-                  📍 Coordinates: {latitude.toFixed(4)}, {longitude.toFixed(4)}
+          {/* Interactive Mini-Map Preview Card */}
+          <View style={styles.miniMapCard}>
+            <View style={styles.miniMapHeaderRow}>
+              <View style={styles.miniMapTitleGroup}>
+                <Ionicons name="map" size={18} color="#059669" />
+                <Text style={styles.miniMapTitle}>Geographic Location</Text>
+              </View>
+              {latitude !== null && longitude !== null ? (
+                <View style={styles.verifiedBadge}>
+                  <Ionicons name="shield-checkmark" size={13} color="#059669" />
+                  <Text style={styles.verifiedBadgeText}>GPS Precise</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.miniMapTactileCanvas}>
+              {latitude !== null && longitude !== null ? (
+                <View style={styles.coordsCardContent}>
+                  <View style={styles.miniMapPinCircle}>
+                    <Ionicons name="location-sharp" size={22} color="#ffffff" />
+                  </View>
+                  <View style={styles.coordsCardTextGroup}>
+                    <Text style={styles.coordsDisplayTitle}>
+                      📍 {Math.abs(latitude).toFixed(4)}° {latitude >= 0 ? 'N' : 'S'}, {Math.abs(longitude).toFixed(4)}° {longitude >= 0 ? 'E' : 'W'}
+                    </Text>
+                    <Text style={styles.coordsDisplaySubtitle} numberOfLines={1}>
+                      {address.trim() || 'Custom Pinned Coordinates'}
+                    </Text>
+                  </View>
+                </View>
+              ) : isGeocoding ? (
+                <View style={styles.miniMapResolvingBox}>
+                  <ActivityIndicator size="small" color="#059669" />
+                  <Text style={styles.miniMapResolvingText}>Locating on 3D Mapbox...</Text>
+                </View>
+              ) : (
+                <View style={styles.coordsCardEmpty}>
+                  <Ionicons name="navigate-circle-outline" size={26} color="#94a3b8" />
+                  <Text style={styles.coordsCardEmptyText}>
+                    No pin placed yet. Tap below to adjust pin and outline footprint on 3D Mapbox.
+                  </Text>
+                </View>
+              )}
+
+              {footprintPolygon && footprintPolygon.length >= 3 && (
+                <View style={styles.footprintSummaryBadge}>
+                  <Ionicons name="crop" size={13} color="#059669" />
+                  <Text style={styles.footprintSummaryBadgeText}>
+                    Building Footprint: {footprintPolygon.length} corners calibrated
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.adjustPinButton}
+              onPress={() => {
+                try {
+                  Vibration.vibrate(10);
+                } catch (e) {}
+                setIsMapModalVisible(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="pin" size={16} color="#059669" />
+              <Text style={styles.adjustPinButtonText}>
+                {latitude !== null && longitude !== null
+                  ? '📍 Adjust Pin on Map'
+                  : '📍 Pin Location on Map'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Multi-Unit Building / Tower Section */}
+        <View style={styles.sectionCard}>
+          <View style={styles.complexToggleRow}>
+            <View style={styles.complexToggleIconCircle}>
+              <Ionicons name="business" size={22} color="#059669" />
+            </View>
+            <View style={styles.complexToggleTextGroup}>
+              <Text style={styles.complexToggleTitle}>Multi-Unit Building / Tower</Text>
+              <Text style={styles.complexToggleSubtitle}>
+                Residential tower, condominium, or apartment complex with multiple units
+              </Text>
+            </View>
+            <Switch
+              value={isComplex}
+              onValueChange={(val) => {
+                try {
+                  Vibration.vibrate(10);
+                } catch (e) {}
+                setIsComplex(val);
+                if (val && !complexName && title) {
+                  setComplexName(title);
+                }
+              }}
+              trackColor={{ false: '#cbd5e1', true: '#86efac' }}
+              thumbColor={isComplex ? '#059669' : '#94a3b8'}
+            />
+          </View>
+
+          {isComplex && (
+            <View style={styles.complexExpandedContainer}>
+              <View style={styles.complexDivider} />
+
+              <Text style={styles.label}>Tower / Complex Name *</Text>
+              <TextInput
+                style={styles.input}
+                value={complexName}
+                onChangeText={setComplexName}
+                placeholder="e.g. Skyline Residences Tower B"
+                placeholderTextColor="#94a3b8"
+              />
+
+              <View style={styles.row}>
+                <View style={styles.col}>
+                  <Text style={styles.label}>Total Planned Units</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={totalUnits}
+                    onChangeText={setTotalUnits}
+                    placeholder="e.g. 48"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.col}>
+                  <Text style={styles.label}>Total Floors</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={floorCount}
+                    onChangeText={setFloorCount}
+                    placeholder="e.g. 18"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              {/* Footprint Summary Badge */}
+              <View style={styles.footprintStatusBox}>
+                <Ionicons
+                  name={footprintPolygon && footprintPolygon.length >= 3 ? 'checkmark-circle' : 'information-circle'}
+                  size={18}
+                  color={footprintPolygon && footprintPolygon.length >= 3 ? '#059669' : '#0284c7'}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.footprintStatusTitle}>
+                    {footprintPolygon && footprintPolygon.length >= 3
+                      ? `Building Footprint Calibrated (${footprintPolygon.length} corners)`
+                      : 'Building Footprint Polygon'}
+                  </Text>
+                  <Text style={styles.footprintStatusDesc}>
+                    {footprintPolygon && footprintPolygon.length >= 3
+                      ? 'Perimeter polygon recorded for 3D extrusion on Mapbox.'
+                      : 'Tap "Adjust Pin on Map" above to outline the 4 corners of the building footprint.'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Explanatory iOS Alert Card */}
+              <View style={styles.complexExplainerCard}>
+                <Ionicons name="layers-outline" size={20} color="#2563eb" />
+                <Text style={styles.complexExplainerText}>
+                  You can add individual unit floor plans, pricing, and availability after saving this complex.
                 </Text>
               </View>
-              <View style={styles.verifiedBadge}>
-                <Ionicons name="checkmark-circle" size={14} color="#059669" />
-                <Text style={styles.verifiedBadgeText}>Verified</Text>
-              </View>
             </View>
-          ) : isGeocoding ? (
-            <View style={styles.locationLoadingBox}>
-              <ActivityIndicator size="small" color="#059669" />
-              <Text style={styles.locationLoadingText}>Resolving coordinates...</Text>
-            </View>
-          ) : null}
+          )}
         </View>
 
         {/* Photos Section */}
@@ -507,6 +703,23 @@ export default function CreatePropertyScreen() {
           setPendingRawImages([]);
         }}
         onComplete={handleCropperComplete}
+      />
+
+      {/* iOS-Grade Mapbox Pin-Dropper & Footprint Selector Modal */}
+      <OwnerMapPinPickerModal
+        visible={isMapModalVisible}
+        onClose={() => setIsMapModalVisible(false)}
+        onConfirm={(result) => {
+          setLatitude(result.latitude);
+          setLongitude(result.longitude);
+          if (result.footprint) {
+            setFootprintPolygon(result.footprint);
+          }
+        }}
+        initialLatitude={latitude}
+        initialLongitude={longitude}
+        initialFootprint={footprintPolygon}
+        address={address}
       />
     </SafeAreaView>
   );
@@ -805,5 +1018,206 @@ const styles = StyleSheet.create({
   locationLoadingText: {
     fontSize: 12,
     color: '#64748b',
+  },
+  // Mini-Map Preview Card Styles
+  miniMapCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  miniMapHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  miniMapTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniMapTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  miniMapTactileCanvas: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    marginBottom: 12,
+  },
+  coordsCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  miniMapPinCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#059669',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  coordsCardTextGroup: {
+    flex: 1,
+  },
+  coordsDisplayTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  coordsDisplaySubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  miniMapResolvingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+  },
+  miniMapResolvingText: {
+    fontSize: 13,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  coordsCardEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  coordsCardEmptyText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 16,
+  },
+  footprintSummaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    gap: 5,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  footprintSummaryBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  adjustPinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
+    borderColor: '#bbf7d0',
+    borderRadius: 10,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  adjustPinButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  // Multi-Unit Building & Complex Styles
+  complexToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  complexToggleIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#ecfdf5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  complexToggleTextGroup: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  complexToggleTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  complexToggleSubtitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  complexExpandedContainer: {
+    marginTop: 12,
+  },
+  complexDivider: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+    marginBottom: 12,
+  },
+  footprintStatusBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 12,
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  footprintStatusTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  footprintStatusDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  complexExplainerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 10,
+    padding: 12,
+    gap: 10,
+  },
+  complexExplainerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1d4ed8',
+    lineHeight: 16,
   },
 });

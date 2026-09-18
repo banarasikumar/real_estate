@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface MessageStatusTicksProps {
@@ -13,9 +13,29 @@ export interface MessageStatusTicksProps {
 export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
   status,
   deliveredAt,
+  isRead = false,
   color = 'rgba(255, 255, 255, 0.95)',
   onRetry,
 }) => {
+  const scaleAnim = useRef(new Animated.Value(0.7)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 120,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [status, isRead, deliveredAt]);
+
   // If failed: red alert circle with TouchableOpacity calling onRetry
   if (status === 'failed') {
     return (
@@ -26,7 +46,7 @@ export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
         style={styles.container}
         testID="message-status-failed"
       >
-        <Ionicons name="alert-circle" size={15} color="#fca5a5" />
+        <Ionicons name="alert-circle" size={15} color="#f87171" />
       </TouchableOpacity>
     );
   }
@@ -35,25 +55,52 @@ export const MessageStatusTicks: React.FC<MessageStatusTicksProps> = ({
   if (status === 'sending') {
     return (
       <View style={styles.container} testID="message-status-sending">
-        <Ionicons name="time-outline" size={14} color={color} />
+        <Ionicons name="time-outline" size={13} color={color} />
       </View>
     );
   }
 
-  // If delivered: Double High-Contrast Ticks
+  // If read: Blue Double Ticks with pop animation
+  if (isRead) {
+    return (
+      <Animated.View
+        style={[
+          styles.container,
+          { transform: [{ scale: scaleAnim }], opacity: opacityAnim },
+        ]}
+        testID="message-status-read"
+      >
+        <Ionicons name="checkmark-done" size={16} color="#38bdf8" />
+      </Animated.View>
+    );
+  }
+
+  // If delivered: Double Ticks
   if (deliveredAt || status === 'delivered') {
     return (
-      <View style={styles.container} testID="message-status-delivered">
+      <Animated.View
+        style={[
+          styles.container,
+          { transform: [{ scale: scaleAnim }], opacity: opacityAnim },
+        ]}
+        testID="message-status-delivered"
+      >
         <Ionicons name="checkmark-done" size={16} color={color} />
-      </View>
+      </Animated.View>
     );
   }
 
-  // Else (status === 'sent' or default): Single High-Contrast Tick
+  // Else (status === 'sent' or default): Single Tick
   return (
-    <View style={styles.container} testID="message-status-sent">
+    <Animated.View
+      style={[
+        styles.container,
+        { transform: [{ scale: scaleAnim }], opacity: opacityAnim },
+      ]}
+      testID="message-status-sent"
+    >
       <Ionicons name="checkmark" size={15} color={color} />
-    </View>
+    </Animated.View>
   );
 };
 
@@ -63,6 +110,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginLeft: 5,
+    marginLeft: 4,
   },
 });
+

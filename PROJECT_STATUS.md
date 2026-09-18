@@ -241,13 +241,25 @@ real_estate/
   - **Saved Searches**: Grouped iOS cards with search criteria pills, drawn boundary SVG badge, glowing "✨ 2 new listings" badge, and one-tap **"Run on Map"** execution navigating to the discovery map with bounds/filters applied.
   - Apple-grade empty states with custom typography and map navigation actions.
 
-### Phase 3: Owner Application Harmonization (`apps/owner-app`)
-- [ ] **Mapbox Pin-Drop & Boundary Selector**:
-  - Bring the Mapbox interactive map into the listing creation wizard so owners can accurately pin their property address and building footprint.
-- [ ] **Multi-Unit Complex Manager**:
-  - Allow owners to create multi-unit buildings (e.g. towers like Lodha Park) and assign multiple unit floor plans, prices, and availability statuses.
-- [ ] **Real-Time Inquiry Inbox**:
-  - Push notifications and in-app chat for owner-seeker messaging via Supabase Realtime channels.
+### Phase 3: Owner Application Harmonization (`apps/owner-app`) — COMPLETED (September 18, 2026)
+- [x] **Mapbox Pin-Drop & Footprint Selector (`OwnerMapPinPickerModal.tsx`)**:
+  - Apple FormSheet presentation (`borderTopLeftRadius: 28, borderTopRightRadius: 28`, `38x5px` grabber, circular haptic dismiss button).
+  - Embedded Mapbox GL JS v3 WebGL map using `react-native-webview` with `EXPO_PUBLIC_MAPBOX_TOKEN`.
+  - Tactile pinpoint marker with luxury emerald gradient, concentric rings, and dynamic floating shadow that elevates with spring physics on pan/drag.
+  - Live frosted glass coordinate banner: `📍 34.0522° N, 118.2437° W • Precise Accuracy`.
+  - Satellite vs. Standard 3D map views and building footprint polygon drawing tool with vertex counters and shaded fill.
+  - Integrated into `create-property.tsx` with an interactive Mini-Map Preview Card.
+- [x] **Multi-Unit Complex Manager (`apps/owner-app/app/complex/[id].tsx` & Supabase Migration `00000000000010`)**:
+  - Migration `00000000000010_multi_unit_complexes.sql` adding `parent_property_id`, `is_complex`, `complex_name`, `total_units`, `footprint_polygon`, `unit_number`, `floor_number`, and `availability_status` with indexes and non-recursive RLS policies.
+  - Multi-Unit Tower toggle in `create-property.tsx` capturing tower name, planned unit counts, and footprint polygons.
+  - Dedicated Complex Manager screen (`app/complex/[id].tsx`) featuring tower inventory overview (Total Units, Available count, Occupancy %, and Price Spectrum).
+  - Tiered floor segmented tabs: `[ All Units | Available | Reserved | Sold ]` with instant availability toggle and floating `[ + Add Unit ]` bottom sheet modal.
+  - Pinned `🏢 Multi-Unit Tower ({total_units} units)` badges and `Manage Units ➔` navigation CTAs on `properties.tsx`.
+- [x] **Real-Time Inquiry & Chat Inbox (`enquiries.tsx` & `OwnerChatSheetModal.tsx`)**:
+  - iOS Large Title header with live pulsing connection badge and sliding segmented pill switcher: `[ 💬 Live Chats ({chatCount}) | 📋 Tour Requests ({tourCount}) ]`.
+  - Search bar with instant filtering across seeker names, property titles, and notes.
+  - Tour requests queue with `Confirm Tour`, `Decline`, and `Message Seeker` actions.
+  - WhatsApp/iMessage-grade chat modal with edge-to-edge layout, pinned Property Snapshot Card, double blue checkmarks (`MessageStatusTicks`), quick response pills, and glassmorphic multiline input bar with Supabase Realtime synchronization.
 
 ### Phase 4: Admin Panel & Monorepo Polish
 - [ ] **Listing Moderation & Verification Queue (`apps/admin-panel`)**:

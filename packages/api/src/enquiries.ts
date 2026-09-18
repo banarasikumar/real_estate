@@ -96,6 +96,38 @@ export const markEnquiryAsRead = async (
 };
 
 /**
+ * Updates the status of an enquiry (e.g. 'RESPONDED' when tour is confirmed, 'CLOSED' when declined).
+ */
+export const updateEnquiryStatus = async (
+  enquiryId: string,
+  status: 'NEW' | 'READ' | 'RESPONDED' | 'CLOSED'
+): Promise<{ success: boolean; error?: any }> => {
+  if (!enquiryId) {
+    return { success: false, error: 'Enquiry ID is required' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('enquiries')
+      .update({
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', enquiryId);
+
+    if (error) {
+      console.error('Error updating enquiry status:', error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Unexpected error in updateEnquiryStatus:', err);
+    return { success: false, error: err };
+  }
+};
+
+/**
  * Counts unread (NEW) enquiries for a given property owner.
  */
 export const getOwnerUnreadEnquiryCount = async (ownerId: string): Promise<number> => {

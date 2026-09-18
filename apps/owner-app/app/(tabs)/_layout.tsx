@@ -65,12 +65,12 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="enquiries"
         options={{
-          title: 'Leads',
-          headerTitle: 'Customer Enquiries',
+          title: 'Messages',
+          headerShown: false,
           tabBarBadge: totalUnreadCount > 0 ? totalUnreadCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: '#ef4444', color: '#ffffff', fontSize: 10, fontWeight: '700' },
+          tabBarBadgeStyle: { backgroundColor: '#2563eb', color: '#ffffff', fontSize: 10, fontWeight: '700' },
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'mail' : 'mail-outline'} size={22} color={color} />
+            <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
           ),
         }}
       />
