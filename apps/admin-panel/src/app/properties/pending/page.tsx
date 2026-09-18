@@ -1,12 +1,12 @@
 "use client";
 
 import React from 'react';
-import ApprovalDashboard from '../../../components/ApprovalDashboard';
+import ModerationQueue from '../../../components/ModerationQueue';
 
 export default function PendingPropertiesPage() {
   return (
-    <div className="max-w-6xl mx-auto py-8 px-4">
-      <ApprovalDashboard />
+    <div className="max-w-7xl mx-auto py-2 px-2 sm:px-4">
+      <ModerationQueue initialFilter="PENDING" />
     </div>
   );
 }

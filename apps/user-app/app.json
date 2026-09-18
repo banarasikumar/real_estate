@@ -5,7 +5,12 @@
     "scheme": "userapp",
     "version": "1.0.0",
     "plugins": ["expo-router"],
+    "ios": {
+      "bundleIdentifier": "com.realestate.seeker",
+      "supportsTablet": true
+    },
     "android": {
+      "package": "com.realestate.seeker",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyC1tcsWiybKccHR-ceMjlPXIKO4lxe6g7k"

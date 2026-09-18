@@ -13,6 +13,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   CheckCircle2,
+  Map,
+  CheckCheck,
 } from "lucide-react";
 
 export function AdminAuthGuard({ children }: { children: React.ReactNode }) {
@@ -149,15 +151,27 @@ export function AdminAuthGuard({ children }: { children: React.ReactNode }) {
           </a>
 
           <a
-            href="/properties/pending"
+            href="/properties"
             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
               pathname.startsWith("/properties")
                 ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800/80"
             }`}
           >
-            <Home className="w-4 h-4" />
-            <span>Pending Approvals</span>
+            <CheckCheck className="w-4 h-4" />
+            <span>Listing Moderation</span>
+          </a>
+
+          <a
+            href="/regions"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
+              pathname.startsWith("/regions")
+                ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/80"
+            }`}
+          >
+            <Map className="w-4 h-4" />
+            <span>Boundary Manager</span>
           </a>
 
           {/* Super Admin exclusive Users & Admins tab */}
@@ -225,7 +239,9 @@ export function AdminAuthGuard({ children }: { children: React.ReactNode }) {
                 ? "Overview & Approvals"
                 : pathname === "/users"
                 ? "Admin & User Management"
-                : "Property Approvals"}
+                : pathname.startsWith("/regions")
+                ? "City Boundary & Polygon Manager"
+                : "Listing Moderation & Verification"}
             </h1>
             <span
               className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
@@ -255,7 +271,9 @@ export function AdminAuthGuard({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-auto p-8">{children}</div>
+        <div className={`flex-1 ${pathname.startsWith("/regions") ? "overflow-hidden p-0" : "overflow-auto p-8"}`}>
+          {children}
+        </div>
       </main>
     </div>
   );

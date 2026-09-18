@@ -38,6 +38,9 @@ export interface Property {
   longitude: number | null;
   status: PropertyStatus;
   is_approved?: boolean | null;
+  is_verified?: boolean | null;
+  deed_url?: string | null;
+  verification_notes?: string | null;
   deleted_at?: string | null;
   parent_property_id?: string | null;
   is_complex?: boolean;
@@ -49,6 +52,7 @@ export interface Property {
   floor_number?: number | null;
   availability_status?: AvailabilityStatus | null;
   units?: (Property | ComplexUnit)[];
+  property_media?: (PropertyMedia | any)[];
   created_at: string;
   updated_at: string;
 }
@@ -189,5 +193,20 @@ export interface AppNotification {
   created_at: string;
   property?: Property | null;
   saved_search?: SavedSearch | null;
+}
+
+export interface SearchRegion {
+  id: string;
+  slug: string;
+  name: string;
+  city: string;
+  state?: string | null;
+  center_lat: number;
+  center_lng: number;
+  zoom: number;
+  boundary_polygon: Array<[number, number]> | any;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 

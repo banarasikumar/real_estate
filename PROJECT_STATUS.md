@@ -15,8 +15,9 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 ### Current System Health & Stability
 - **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, 76-listing demo dataset across LA, NY, and Mumbai, next-generation iOS Luxury Property Details Experience, FormSheet Saved Searches modal with customizable frequency alerts, and revamped luxury Saved Portal with animated segmented controls.
 - **Owner App (`apps/owner-app`)**: Upgraded to iOS standards with interactive Mapbox pin-dropping & footprint drawing (`OwnerMapPinPickerModal.tsx`), multi-unit complex & tower manager with tiered floor tabs (`app/complex/[id].tsx`), and WhatsApp/iMessage-grade live chat with Realtime sync (`OwnerChatSheetModal.tsx`).
-- **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `@repo/api` all pass `tsc --noEmit` cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `34ba1a81`.
+- **Admin Panel (`apps/admin-panel`)**: Fully operational with iOS-grade Listing Moderation & Verification Queue (`ModerationQueue.tsx`), interactive City Boundary Polygon Manager with Mapbox GL JS v3 (`CityBoundaryManager.tsx`), User & Admin role management, ownership deed verification workflows, and Supabase-backed dynamic search regions.
+- **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `admin-panel`, `@repo/api` all pass `tsc --noEmit` cleanly with exit code 0).
+- **Git Working Tree**: Changes pending commit for Phase 4.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
@@ -47,6 +48,8 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 
 ```
 real_estate/
+├── .github/
+│   └── workflows/ci.yml        # Monorepo CI: TypeScript check + build
 ├── apps/
 │   ├── owner-app/       # Mobile App for Property Owners (Expo SDK 57 / React Native 0.86)
 │   │   ├── app/
@@ -55,9 +58,10 @@ real_estate/
 │   │   │   │   ├── enquiries.tsx       # iOS Large Title Live Chats ↔ Tour Requests portal
 │   │   │   │   └── properties.tsx      # Complex badges + Manage Units CTA
 │   │   │   └── complex/[id].tsx        # Multi-Unit Complex & Tower inventory manager
-│   │   └── components/
-│   │       ├── OwnerMapPinPickerModal.tsx  # Mapbox WebGL pin-drop & footprint polygon drawing
-│   │       └── OwnerChatSheetModal.tsx    # WhatsApp/iMessage-grade live chat sheet
+│   │   ├── components/
+│   │   │   ├── OwnerMapPinPickerModal.tsx  # Mapbox WebGL pin-drop & footprint polygon drawing
+│   │   │   └── OwnerChatSheetModal.tsx    # WhatsApp/iMessage-grade live chat sheet
+│   │   └── eas.json                       # EAS Build profiles (development, preview, production)
 │   ├── user-app/        # Mobile App for Property Seekers (Expo SDK 57 / React Native 0.86)
 │   │   ├── app/
 │   │   │   ├── (tabs)/
@@ -66,18 +70,32 @@ real_estate/
 │   │   │   └── property/[id].tsx       # iOS Luxury Details: parallax, 3D tours, mortgage calc
 │   │   ├── components/
 │   │   │   └── MobileSaveSearchModal.tsx # Apple FormSheet with frequency pills & HUD
-│   │   └── services/
-│   │       └── savedSearchesStore.ts     # Reactive store + cross-tab Map execution
-│   ├── admin-panel/     # Web Admin Dashboard (Next.js 15 / Tailwind CSS)
+│   │   ├── services/
+│   │   │   └── savedSearchesStore.ts     # Reactive store + cross-tab Map execution
+│   │   └── eas.json                       # EAS Build profiles (development, preview, production)
+│   ├── admin-panel/     # Web Admin Dashboard (Next.js 15 / Tailwind CSS / Mapbox v3)
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   │   ├── page.tsx               # Dashboard overview + ApprovalDashboard
+│   │   │   │   ├── properties/page.tsx    # Listing Moderation & Verification Queue
+│   │   │   │   ├── regions/page.tsx       # City Boundary Polygon Manager
+│   │   │   │   ├── users/page.tsx         # Super Admin User & Role management
+│   │   │   │   └── login/page.tsx         # Admin authentication
+│   │   │   └── components/
+│   │   │       ├── AdminAuthGuard.tsx      # Auth guard + sidebar navigation + header
+│   │   │       ├── ModerationQueue.tsx     # iOS-grade listing moderation with deed verification
+│   │   │       ├── CityBoundaryManager.tsx # Mapbox polygon drawing & region management
+│   │   │       └── ApprovalDashboard.tsx   # Quick approval queue
+│   │   └── .env.local                     # Supabase + Mapbox tokens (gitignored)
 │   └── customer-web/    # Public Discovery Web Portal (Next.js 15 / Tailwind CSS / Mapbox v3)
 ├── packages/
-│   ├── api/             # Supabase client singleton, coordinate queries, mutations, complex APIs
+│   ├── api/             # Supabase client singleton, coordinate queries, mutations, regions, complex APIs
 │   ├── types/           # Shared TypeScript database & application types
 │   └── ui/              # Shared cross-platform design tokens / components
 ├── supabase/
 │   ├── functions/
 │   │   └── match-saved-searches/ # Deno Edge Function with ray-casting point-in-polygon math
-│   └── migrations/               # 10 SQL migrations applied (Schema, Realtime, RLS, Complexes)
+│   └── migrations/               # 11 SQL migrations applied (Schema, Realtime, RLS, Complexes, Regions)
 └── PROJECT_STATUS.md             # Central project status and context memory
 ```
 
@@ -334,11 +352,44 @@ real_estate/
   - Tour requests queue with `Confirm Tour`, `Decline`, and `Message Seeker` actions.
   - WhatsApp/iMessage-grade chat modal with edge-to-edge layout, pinned Property Snapshot Card, double blue checkmarks (`MessageStatusTicks`), quick response pills, and glassmorphic multiline input bar with Supabase Realtime synchronization.
 
-### Phase 4: Admin Panel & Monorepo Polish
-- [ ] **Listing Moderation & Verification Queue (`apps/admin-panel`)**:
-  - Table to review uploaded property media, verify ownership deeds, and toggle the `isVerified` badge.
-- [ ] **City Boundary Polygon Manager**:
-  - Web UI for administrators to draw or update official city/neighborhood boundary polygons stored in `search_regions`.
-- [ ] **Production CI/CD & Build Pipelines**:
-  - Expo Application Services (EAS) configuration for iOS IPA and Android APK/AAB distribution.
-  - Vercel deployments for `customer-web` and `admin-panel`.
+### Phase 4: Admin Panel & Monorepo Polish — COMPLETED (September 18, 2026)
+- [x] **Supabase Migration `00000000000011_search_regions.sql`**:
+  - Created `search_regions` table with `id`, `slug`, `name`, `city`, `state`, `center_lat`, `center_lng`, `zoom`, `boundary_polygon` (JSONB), `is_active`, timestamps.
+  - Added `is_verified`, `deed_url`, `verification_notes` columns to `properties` table.
+  - RLS: Public `SELECT` for all users; `INSERT`/`UPDATE`/`DELETE` restricted to `ADMIN`/`SUPER_ADMIN`.
+  - Realtime replication enabled. Indexes on `slug`, `is_active`, `is_verified`.
+  - Seeded initial 6 regions (Los Angeles, New York, Mumbai, Bangalore, Delhi, Goa) with authentic boundary polygons.
+- [x] **API Layer (`packages/api/src/regions.ts` & `properties.ts`)**:
+  - CRUD functions: `getActiveSearchRegions`, `getAllSearchRegions`, `getSearchRegionBySlug`, `createSearchRegion`, `updateSearchRegion`, `deleteSearchRegion`, `toggleSearchRegionActive`.
+  - Moderation helpers: `verifyProperty(id, isVerified, notes)`, `updatePropertyDeed(id, deedUrl)`, `getModerationProperties(options)`.
+  - `SearchRegion` interface added to `database.types.ts`.
+- [x] **iOS-Grade Listing Moderation & Verification Queue (`ModerationQueue.tsx` — 1620 lines)**:
+  - Apple HIG / iOS 18 aesthetic with frosted glass surfaces, smooth `rounded-2xl` / `rounded-3xl` corners, hairline borders, and tactile micro-interactions.
+  - Animated segmented filter bar: `[ 📋 All Listings | ⏳ Pending Approval | 🛡️ Verified | ❌ Rejected ]` with live counts.
+  - Summary Metrics Bar: 4 Apple-widget style cards (Total Inventory, Awaiting Review, Deed Verified Rate %, Average Listing Price).
+  - Multi-photo interactive thumbnail gallery with full-screen OLED-black lightbox modal for hi-res photo inspection.
+  - Ownership Deed Verification Section: Visual badge (`🛡️ Deed on File` vs `⚠️ Unverified`), deed preview modal, inline `deed_url` editing, `verification_notes` input, and one-click emerald `Toggle Verified` button.
+  - Quick Approval Workflow: `Approve & Publish` (emerald) and `Reject Listing` (rose) with iOS-style rejection reason dialog.
+  - Search & Filter HUD: Search by title/address, filter by property type, deed status, and price range.
+  - Fallback sample properties for offline/empty-database demonstration.
+- [x] **iOS-Grade City Boundary Polygon Manager (`CityBoundaryManager.tsx` — 1622 lines)**:
+  - Embedded Mapbox GL JS v3 WebGL map engine with style toggling (Standard 3D, Satellite, Light Minimal).
+  - Interactive Boundary Drawing & Vertex Editing: Click-to-add vertices, close polygon loop, undo vertex, clear boundary.
+  - Floating Apple pill HUD: `[ 👆 Pan | ✏️ Draw | 🔄 Undo | 🗑️ Clear | 💾 Save ]`.
+  - Real-time GIS Analytics Overlay: Live perimeter, enclosed area, vertex count, bounding box, and centroid computation.
+  - Point-in-Polygon Test HUD with Jordan curve ray-casting algorithm.
+  - Collapsible frosted glass Region Management Sidebar listing all search regions from Supabase with mini SVG polygon previews, iOS-styled active toggle switches, and CRUD operations.
+  - FormSheet modal for adding/editing regions: Name, City, State, Slug, Default Zoom, and boundary polygon persisted to Supabase via `createSearchRegion()` / `updateSearchRegion()`.
+- [x] **Admin Panel Navigation & Layout (`AdminAuthGuard.tsx`)**:
+  - Sidebar links: `Dashboard & Approvals`, `Listing Moderation`, `Boundary Manager`, `Users & Admins` (Super Admin only).
+  - Dynamic header titles per route.
+- [x] **Production CI/CD & Build Pipelines**:
+  - EAS Build profiles (`eas.json`) for both `user-app` and `owner-app` with development, preview, and production configurations.
+  - iOS `bundleIdentifier` and Android `package` added to both `app.json` files.
+  - GitHub Actions CI workflow (`.github/workflows/ci.yml`) for monorepo TypeScript checks and Turbo builds.
+
+### Phase 5: Future Enhancements (Roadmap)
+- [ ] **Push Notification Center (`apps/user-app`)**: In-app notification inbox with unread counts, grouping, and deep-linking to properties/saved searches.
+- [ ] **Owner Analytics Dashboard (`apps/owner-app`)**: Listing view counts, enquiry conversion funnel, price comparison heatmaps.
+- [ ] **AI-Powered Property Recommendations**: ML-based recommendation engine surfacing personalized listings based on browsing history and saved search patterns.
+- [ ] **Vercel Production Deployments**: Automated Vercel deployments for `customer-web` and `admin-panel` with preview URLs on PRs.

@@ -550,11 +550,15 @@ export const deletePropertyMedia = async (mediaId: string) => {
   }
 };
 
-export const rejectProperty = async (id: string) => {
+export const rejectProperty = async (id: string, reason?: string) => {
   try {
+    const updatePayload: Record<string, any> = { status: 'REJECTED' };
+    if (reason !== undefined) {
+      updatePayload.verification_notes = reason;
+    }
     const { data, error } = await supabase
       .from('properties')
-      .update({ status: 'REJECTED' })
+      .update(updatePayload)
       .eq('id', id)
       .select();
 
@@ -1274,6 +1278,118 @@ export const getOwnerComplexes = async (ownerId: string): Promise<Property[]> =>
     return [];
   }
 };
+
+/**
+ * Toggle or set property verification status with optional review notes (Admin only)
+ */
+export const verifyProperty = async (
+  id: string,
+  isVerified: boolean,
+  verificationNotes?: string
+): Promise<{ success: boolean; data?: any; error?: any }> => {
+  try {
+    const updatePayload: Record<string, any> = {
+      is_verified: isVerified,
+      updated_at: new Date().toISOString(),
+    };
+    if (verificationNotes !== undefined) {
+      updatePayload.verification_notes = verificationNotes;
+    }
+
+    const { data, error } = await supabase
+      .from('properties')
+      .update(updatePayload)
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error(`Error updating verification status for property (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    console.error(`Unexpected error verifying property (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+/**
+ * Attach or update ownership deed URL on a property
+ */
+export const updatePropertyDeed = async (
+  id: string,
+  deedUrl: string
+): Promise<{ success: boolean; data?: any; error?: any }> => {
+  try {
+    const { data, error } = await supabase
+      .from('properties')
+      .update({ deed_url: deedUrl, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error(`Error updating deed URL for property (${id}):`, error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    console.error(`Unexpected error updating deed URL (${id}):`, err);
+    return { success: false, error: err };
+  }
+};
+
+/**
+ * Fetch all properties for admin moderation with filter options
+ */
+export const getModerationProperties = async (options?: {
+  status?: string;
+  isVerified?: boolean;
+  searchQuery?: string;
+  limit?: number;
+}): Promise<Property[]> => {
+  try {
+    let query = supabase
+      .from('properties')
+      .select('*, property_media(id, url, is_featured, display_order)')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    if (options?.status && options.status !== 'ALL') {
+      query = query.eq('status', options.status);
+    }
+    if (options?.isVerified !== undefined) {
+      query = query.eq('is_verified', options.isVerified);
+    }
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching moderation properties:', error);
+      return [];
+    }
+
+    let results = (data as Property[]) || [];
+    if (options?.searchQuery) {
+      const q = options.searchQuery.toLowerCase();
+      results = results.filter(
+        (p) =>
+          p.title?.toLowerCase().includes(q) ||
+          p.address?.toLowerCase().includes(q) ||
+          p.complex_name?.toLowerCase().includes(q)
+      );
+    }
+
+    return results;
+  } catch (err) {
+    console.error('Unexpected error fetching moderation properties:', err);
+    return [];
+  }
+};
+
 
 
 
