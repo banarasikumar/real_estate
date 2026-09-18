@@ -2,7 +2,7 @@
 
 > **Last Updated**: September 18, 2026  
 > **Repository**: `banarasikumar/real_estate`  
-> **Active Branch**: `main` (clean working tree, local commit `ba8df60`)  
+> **Active Branch**: `main` (clean working tree, local commit `34ba1a81`)  
 > **Active Environment**: Windows (PowerShell) | Node.js / Turborepo / Expo SDK 57 / Next.js 15 / Supabase / Mapbox GL JS v3  
 > **Active Metro Bundler**: Port `8081` (`apps/user-app` — HTTP 200 OK, LAN: `exp://192.168.31.63:8081`)
 
@@ -14,18 +14,19 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 
 ### Current System Health & Stability
 - **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, 76-listing demo dataset across LA, NY, and Mumbai, next-generation iOS Luxury Property Details Experience, FormSheet Saved Searches modal with customizable frequency alerts, and revamped luxury Saved Portal with animated segmented controls.
-- **Owner App (`apps/owner-app`)**: Upgraded to iOS standards with interactive Mapbox pin-dropping & footprint drawing, multi-unit complex & tower manager with tiered floor tabs, and WhatsApp/iMessage-grade live chat with Realtime sync.
-- **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `@repo/api` all pass `tsc --noEmit` with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `ba8df60`.
+- **Owner App (`apps/owner-app`)**: Upgraded to iOS standards with interactive Mapbox pin-dropping & footprint drawing (`OwnerMapPinPickerModal.tsx`), multi-unit complex & tower manager with tiered floor tabs (`app/complex/[id].tsx`), and WhatsApp/iMessage-grade live chat with Realtime sync (`OwnerChatSheetModal.tsx`).
+- **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `@repo/api` all pass `tsc --noEmit` cleanly with exit code 0).
+- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `34ba1a81`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
-| `ba8df60` | `feat(owner-app): implement iOS-grade mapbox pin-drop, multi-unit complex manager, and realtime chat inbox` | owner-app / api |
-| `b4d5d12` | `feat(user-app): implement iOS-grade saved searches modal, alerts edge function, and luxury saved portal` | user-app / api |
-| `4cff041` | `docs: sync commit hash 0a0caad6 in PROJECT_STATUS.md` | root / docs |
-| `0a0caad` | `docs: update PROJECT_STATUS.md with Phase 1 completion and brain memory` | root / docs |
-| `d13b4f6` | `feat(user-app): implement iOS-grade luxury property details experience, parallax carousel, mortgage calculator, and tour booking` | user-app |
+| `34ba1a81` | `docs: synchronize PROJECT_STATUS.md with Phase 2 and Phase 3 commits` | root / docs |
+| `ba8df60f` | `feat(owner-app): implement iOS-grade mapbox pin-drop, multi-unit complex manager, and realtime chat inbox` | owner-app / api |
+| `b4d5d12d` | `feat(user-app): implement iOS-grade saved searches modal, alerts edge function, and luxury saved portal` | user-app / api |
+| `4cff041a` | `docs: sync commit hash 0a0caad6 in PROJECT_STATUS.md` | root / docs |
+| `0a0caad6` | `docs: update PROJECT_STATUS.md with Phase 1 completion and brain memory` | root / docs |
+| `d13b4f67` | `feat(user-app): implement iOS-grade luxury property details experience, parallax carousel, mortgage calculator, and tour booking` | user-app |
 | `79156ab1` | `feat(bottom-sheet): unified gesture handling with RNGH and rapid swipe support` | user-app |
 | `749c8445` | `feat(user-app): implement iOS-grade Zillow gesture engine, spring physics, and seamless borderless fusion` | user-app |
 | `37732f8b` | `fix(ui): remove blue and persistent selection borders on mobile property cards` | user-app |
@@ -47,17 +48,37 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 ```
 real_estate/
 ├── apps/
-│   ├── owner-app/       # Mobile App for Property Owners (Expo SDK 57 / React Native)
-│   ├── user-app/        # Mobile App for Property Seekers (Expo SDK 57 / React Native)
+│   ├── owner-app/       # Mobile App for Property Owners (Expo SDK 57 / React Native 0.86)
+│   │   ├── app/
+│   │   │   ├── (tabs)/
+│   │   │   │   ├── create-property.tsx # Interactive Mini-Map Preview Card + Multi-Unit Tower toggle
+│   │   │   │   ├── enquiries.tsx       # iOS Large Title Live Chats ↔ Tour Requests portal
+│   │   │   │   └── properties.tsx      # Complex badges + Manage Units CTA
+│   │   │   └── complex/[id].tsx        # Multi-Unit Complex & Tower inventory manager
+│   │   └── components/
+│   │       ├── OwnerMapPinPickerModal.tsx  # Mapbox WebGL pin-drop & footprint polygon drawing
+│   │       └── OwnerChatSheetModal.tsx    # WhatsApp/iMessage-grade live chat sheet
+│   ├── user-app/        # Mobile App for Property Seekers (Expo SDK 57 / React Native 0.86)
+│   │   ├── app/
+│   │   │   ├── (tabs)/
+│   │   │   │   ├── index.tsx           # Zillow-fidelity physics + Freehand Lasso Drawing
+│   │   │   │   └── saved.tsx           # Sliding segmented Saved Homes ↔ Saved Searches portal
+│   │   │   └── property/[id].tsx       # iOS Luxury Details: parallax, 3D tours, mortgage calc
+│   │   ├── components/
+│   │   │   └── MobileSaveSearchModal.tsx # Apple FormSheet with frequency pills & HUD
+│   │   └── services/
+│   │       └── savedSearchesStore.ts     # Reactive store + cross-tab Map execution
 │   ├── admin-panel/     # Web Admin Dashboard (Next.js 15 / Tailwind CSS)
-│   └── customer-web/    # Public Discovery Web Portal (Next.js 15 / Tailwind CSS)
+│   └── customer-web/    # Public Discovery Web Portal (Next.js 15 / Tailwind CSS / Mapbox v3)
 ├── packages/
-│   ├── api/             # Supabase client singleton, coordinate queries, mutations
+│   ├── api/             # Supabase client singleton, coordinate queries, mutations, complex APIs
 │   ├── types/           # Shared TypeScript database & application types
 │   └── ui/              # Shared cross-platform design tokens / components
 ├── supabase/
-│   └── migrations/      # 8 SQL migrations applied (Schema, Realtime Chat, RLS, Indexes)
-└── PROJECT_STATUS.md    # Central project status and context memory
+│   ├── functions/
+│   │   └── match-saved-searches/ # Deno Edge Function with ray-casting point-in-polygon math
+│   └── migrations/               # 10 SQL migrations applied (Schema, Realtime, RLS, Complexes)
+└── PROJECT_STATUS.md             # Central project status and context memory
 ```
 
 ---
@@ -186,6 +207,54 @@ real_estate/
   - Upgraded from MapLibre to Mapbox GL JS v3 with 3D buildings and lighting presets.
   - Floating HUD (`MapControlsOverlay.tsx`) with 3D/2D toggle, dynamic compass rotating to true north, zoom controls, and style toggle.
   - Luxury property preview popups (`MapPropertyPopup.tsx`).
+
+---
+
+### 3.3 Phase 2: Saved Searches, Boundary Alerts & Saved Portal (`apps/user-app` & Supabase)
+
+1. **Apple FormSheet Save Search Modal (`MobileSaveSearchModal.tsx`)**:
+   - iOS FormSheet presentation with `38x5px` grabber, glassmorphic surface, circular haptic close button, and spring slide-up physics.
+   - Context-aware smart titles automatically derived from query, region, or drawn polygon.
+   - One-tap quick suggestion pills: `Dream Villa`, `High ROI Investments`, `Family Home`, `Waterfront Luxury`, `City Penthouse`, `Modern Retreat`.
+   - Search Summary HUD: SVG polygon boundary badge with live point counter and active filter chips for Price, Beds, Baths, and Property Type.
+   - Native segmented frequency selector: `[ ⚡ Instant | 📅 Daily Digest | 🔕 Never ]`.
+   - iOS switches for *New matching homes* and *Price reductions*.
+   - Spring-scale touch feedback and checkmark transition with instant Supabase synchronization.
+
+2. **Revamped Luxury Saved Portal (`apps/user-app/app/(tabs)/saved.tsx`)**:
+   - iOS Large Title header with sliding white pill segmented control: `[ 🏠 Saved Homes ({count}) | 🔍 Saved Searches ({count}) ]`.
+   - **Saved Homes Tab**: High-res photography cards with price drop tags (`Price Reduced -$75,000`), status indicators (`✨ New to Market`), floating **iOS Undo Toast** allowing instant restore after un-saving, and native OS sharing.
+   - **Saved Searches Tab**: Grouped iOS cards with search criteria pills, drawn boundary SVG badge, glowing `✨ 2 new listings` notification badge, and one-tap **"Run on Map"** execution navigating to the discovery map with bounds/filters applied.
+   - Apple-fidelity empty states with custom typography and map navigation actions.
+
+3. **Supabase Schema & Edge Function (`match-saved-searches`)**:
+   - Migration `00000000000009_saved_searches_and_alerts.sql` adding `saved_searches` and `notifications` tables with RLS and realtime publication.
+   - Deno edge function handler accepting `INSERT` and `UPDATE` webhook events with Jordan curve ray-casting algorithm (`isPointInBoundary`) for point-in-polygon math, dispatching notifications and Expo push alerts.
+
+---
+
+### 3.4 Phase 3: Owner Application Harmonization (`apps/owner-app`)
+
+1. **iOS-Grade Mapbox Pin-Dropper & Footprint Selector (`OwnerMapPinPickerModal.tsx`)**:
+   - FormSheet presentation (`borderTopLeftRadius: 28, borderTopRightRadius: 28`, `38x5px` grabber, circular haptic dismiss button).
+   - Embedded Mapbox GL JS v3 WebGL map using `react-native-webview` with `EXPO_PUBLIC_MAPBOX_TOKEN`.
+   - Tactile pinpoint marker with luxury emerald gradient, concentric rings, and dynamic floating shadow that elevates with spring physics on pan/drag.
+   - Live frosted glass coordinate banner: `📍 34.0522° N, 118.2437° W • Precise Accuracy`.
+   - Satellite vs. Standard 3D map views and building footprint polygon drawing tool with vertex counters and shaded fill.
+   - Integrated into `create-property.tsx` with an interactive Mini-Map Preview Card.
+
+2. **Multi-Unit Complex & Tower Manager (`apps/owner-app/app/complex/[id].tsx` & Migration `00000000000010`)**:
+   - Migration `00000000000010_multi_unit_complexes.sql` adding `parent_property_id`, `is_complex`, `complex_name`, `total_units`, `footprint_polygon`, `unit_number`, `floor_number`, and `availability_status` with indexes and non-recursive RLS policies.
+   - Multi-Unit Tower toggle in `create-property.tsx` capturing tower name, planned unit counts, and footprint polygons.
+   - Dedicated Complex Manager screen (`app/complex/[id].tsx`) featuring tower inventory overview (Total Units, Available count, Occupancy %, and Price Spectrum).
+   - Tiered floor segmented tabs: `[ All Units | Available | Reserved | Sold ]` with instant availability toggle and floating `[ + Add Unit ]` bottom sheet modal.
+   - Pinned `🏢 Multi-Unit Tower ({total_units} units)` badges and `Manage Units ➔` navigation CTAs on `properties.tsx`.
+
+3. **Real-Time Inquiry & Chat Inbox (`enquiries.tsx` & `OwnerChatSheetModal.tsx`)**:
+   - iOS Large Title header with live pulsing connection badge and sliding segmented pill switcher: `[ 💬 Live Chats ({chatCount}) | 📋 Tour Requests ({tourCount}) ]`.
+   - Search bar with instant filtering across seeker names, property titles, and notes.
+   - Tour requests queue with `Confirm Tour`, `Decline`, and `Message Seeker` actions.
+   - WhatsApp/iMessage-grade chat modal with edge-to-edge layout, pinned Property Snapshot Card, double blue checkmarks (`MessageStatusTicks`), quick response pills, and glassmorphic multiline input bar with Supabase Realtime synchronization.
 
 ---
 
