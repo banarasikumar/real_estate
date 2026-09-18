@@ -20,3 +20,4 @@ export * from './chat';
 export * from './notifications';
 export * from './saved_searches';
 export * from './regions';
+export * from './analytics';

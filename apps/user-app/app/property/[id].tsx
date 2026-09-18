@@ -23,6 +23,7 @@ import {
   createEnquiry,
   getOrCreateConversation,
   useAuth,
+  trackPropertyView,
 } from '@repo/api';
 import { ALL_DEMO_PROPERTIES } from '../../data/mockProperties';
 import { getEnrichedPropertyDetails, MediaCategory } from '../../types/propertyDetails';
@@ -112,6 +113,13 @@ export default function PropertyDetailScreen() {
     }
     loadData();
   }, [id, user]);
+
+  useEffect(() => {
+    if (id) {
+      const propertyId = Array.isArray(id) ? id[0] : id;
+      trackPropertyView(propertyId, user?.id);
+    }
+  }, [id, user?.id]);
 
   const handleToggleSave = async () => {
     if (!user) {

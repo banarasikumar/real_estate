@@ -210,3 +210,12 @@ export interface SearchRegion {
   updated_at: string;
 }
 
+export interface PropertyView {
+  id: string;
+  property_id: string;
+  viewer_id?: string | null;
+  device_type?: string;
+  source?: string;
+  created_at: string;
+}
+

@@ -394,8 +394,16 @@ real_estate/
   - GitHub Actions CI workflow (`.github/workflows/ci.yml`) for monorepo TypeScript checks and Turbo builds.
 
 ### Phase 5: Future Enhancements (Roadmap)
-- [x] **Push Notification Center (`apps/user-app`)**: In-app notification inbox with unread counts, grouping, and deep-linking to properties/saved searches. (Completed)
-- [ ] **Owner Analytics Dashboard (`apps/owner-app`)**: Listing view counts, enquiry conversion funnel, price comparison heatmaps.
+- [x] **Owner Analytics Dashboard (`apps/owner-app`)**:
+  - Migration `00000000000012_property_analytics.sql`: `property_views` table with RLS, indexing, and `get_owner_dashboard_stats` Postgres stored function.
+  - `@repo/api`: Added `trackPropertyView`, `getOwnerAnalytics`, and `generateDemoOwnerAnalytics` fallback data generator with type definitions.
+  - `apps/user-app`: Real-time view tracking triggered on property detail load (`apps/user-app/app/property/[id].tsx`).
+  - `apps/owner-app`: Apple HIG / iOS 18 Dashboard overhaul (`apps/owner-app/app/(tabs)/index.tsx`):
+    - 4 Apple Fitness / Widget style KPI metric cards (Total Views, Saved Homes, Inquiries, Conversion Rate).
+    - `OwnerAnalyticsChart.tsx`: Hardware-accelerated SVG line chart with cubic bezier spline interpolation, emerald gradient fill, touch scrub/tooltip HUD, and `[ 7D | 30D | 90D | 1Y ]` timeframe switcher.
+    - `ConversionFunnel.tsx`: 4-stage visual conversion funnel (Views -> Saves -> Inquiries -> Tours Scheduled) with drop-off rates and luxury insights.
+    - `MarketPriceComparisonCard.tsx`: Visual price-competitiveness gauge with multi-city comps against local medians.
+    - `TopPerformingProperties.tsx`: Property performance leaderboard with podium rank badges and engagement metrics.
 - [ ] **AI-Powered Property Recommendations**: ML-based recommendation engine surfacing personalized listings based on browsing history and saved search patterns.
 - [ ] **Vercel Production Deployments**: Automated Vercel deployments for `customer-web` and `admin-panel` with preview URLs on PRs.
 - [ ] **Customer Web Portal Polish (`apps/customer-web`)**: Feature parity with mobile app (luxury property details, interactive mortgage calculators, and web-based tour booking).
