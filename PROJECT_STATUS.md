@@ -406,8 +406,13 @@ real_estate/
     - `MarketPriceComparisonCard.tsx`: Visual price-competitiveness gauge with multi-city comps against local medians.
     - `TopPerformingProperties.tsx`: Property performance leaderboard with podium rank badges and engagement metrics.
 - [ ] **AI-Powered Property Recommendations**: ML-based recommendation engine surfacing personalized listings based on browsing history and saved search patterns.
-- [ ] **Vercel Production Deployments**: Automated Vercel deployments for `customer-web` and `admin-panel` with preview URLs on PRs.
-- [ ] **Customer Web Portal Polish (`apps/customer-web`)**: Feature parity with mobile app (luxury property details, interactive mortgage calculators, and web-based tour booking).
+- [x] **Customer Web Portal Polish (`apps/customer-web`)**:
+  - `TabbedMediaViewer.tsx`: iOS 18 segmented control (`[ Photos | Floor Plan | 3D Tour ]`), hero gallery, full-screen OLED black photo lightbox with room filters, architectural 2D floor plans with CAD dimensions, and Matterport-style 360° virtual tour launcher.
+  - `InteractiveMortgageCalculator.tsx`: Dual-mode (Sale Mortgage vs Rental Breakdown), pure interactive SVG Donut Ring chart with hover animations, down payment/interest rate/term sliders, and detailed cost breakdown.
+  - `TourBookingWidget.tsx`: Luxury sticky tour scheduler on desktop with In-Person vs Video Walkthrough switcher, 7-day date strip, time slot selector pills, Supabase `enquiries` synchronization, WhatsApp direct messaging, and `.ics` / Google Calendar integration.
+  - `NeighborhoodScores.tsx`: iOS widget-style colorful score cards (Walk Score 94/100, Transit Score 88/100, Bike Score 82/100), GreatSchools district ratings, and local amenity chips.
+  - Telemetry view tracking (`trackPropertyView`) integrated into Next.js property page.
+  - Full Next.js 16 production build verified cleanly with Turbopack.
 - [ ] **Deep Linking & Universal Links**: Setting up iOS Universal Links and Android App Links for seamless sharing and push notification routing.
 - [ ] **End-to-End (E2E) Testing**: Automated UI testing (Maestro for mobile, Playwright for web) for critical paths.
 - [ ] **Rich Media Chat**: Upgrading the real-time inbox to support image attachments, voice notes, and PDF documents.

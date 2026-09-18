@@ -1234,8 +1234,8 @@ export const updateUnitAvailability = async (
     console.warn('Backend update failed, updating in-memory store:', err);
   }
 
-  for (const [cId, list] of complexUnitsStore.entries()) {
-    const idx = list.findIndex((u) => u.id === unitId);
+  for (const [cId, list] of Array.from(complexUnitsStore.entries())) {
+    const idx = list.findIndex((u: ComplexUnit) => u.id === unitId);
     if (idx !== -1) {
       list[idx] = {
         ...list[idx],

@@ -1,9 +1,12 @@
 import React from "react";
 import { MapPin, Bed, Bath, Square, ShieldCheck, Calendar, Home } from "lucide-react";
-import { getPropertyById, getPublishedProperties } from "@repo/api";
+import { getPropertyById, getPublishedProperties, trackPropertyView } from "@repo/api";
 import SafeImage from "../../../components/SafeImage";
 import EnquiryForm from "../../../components/EnquiryForm";
 import SavePropertyButton from "../../../components/SavePropertyButton";
+import InteractiveMortgageCalculator from "../../../components/property/InteractiveMortgageCalculator";
+import TabbedMediaViewer from "../../../components/property/TabbedMediaViewer";
+import { TourBookingWidget, NeighborhoodScores } from "../../../components/property";
 
 export default async function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,6 +16,9 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
   try {
     if (id) {
       property = await getPropertyById(id);
+      if (property?.id) {
+        trackPropertyView(property.id, null, 'web_discovery', 'desktop').catch(() => {});
+      }
     }
   } catch (error) {
     console.error("Failed to fetch property:", error);
@@ -29,7 +35,14 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
         beds: 3,
         baths: 2,
         sqft: 1200,
-        images: ["https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200&q=80"],
+        images: [
+          "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1613490908836-e05e54d6d654?w=1600&auto=format&fit=crop&q=85"
+        ],
         isVerified: true,
         description: "Welcome to this stunning modern apartment located in the heart of Downtown Mumbai. Featuring an open-concept layout, high-end appliances, and floor-to-ceiling windows that provide incredible natural light and city views. Perfect for urban professionals seeking luxury and convenience.",
         builtYear: 2020,
@@ -43,7 +56,12 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
         beds: 5,
         baths: 6,
         sqft: 4500,
-        images: ["https://images.unsplash.com/photo-1613490908836-e05e54d6d654?w=1200&q=80"],
+        images: [
+          "https://images.unsplash.com/photo-1613490908836-e05e54d6d654?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1600&auto=format&fit=crop&q=85"
+        ],
         isVerified: true,
         description: "An exquisite luxury villa offering unmatched elegance and privacy. Highlights include a private infinity pool, landscaped gardens, a chef's kitchen, and spacious en-suite bedrooms. A true masterpiece of architecture and design.",
         builtYear: 2018,
@@ -57,7 +75,10 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
         beds: 1,
         baths: 1,
         sqft: 550,
-        images: ["https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=1200&q=80"],
+        images: [
+          "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=1600&auto=format&fit=crop&q=85",
+          "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1600&auto=format&fit=crop&q=85"
+        ],
         isVerified: false,
         description: "This cozy and well-maintained studio apartment is perfect for first-time buyers or investors. Located just steps away from the metro station, offering excellent connectivity. Features smart storage solutions and a functional layout.",
         builtYear: 2015,
@@ -67,23 +88,22 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
     property = MOCK_PROPERTIES.find((p) => p.id === id) || MOCK_PROPERTIES[0];
   }
 
-  const defaultImage = property.property_media?.[0]?.url || property.images?.[0] || "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=80";
+  const propertyImages = (property.images && property.images.length > 0)
+    ? property.images
+    : property.property_media?.map((m: any) => m.url) || [];
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50">
-      {/* Hero Image */}
-      <div className="w-full h-[40vh] md:h-[60vh] relative">
-        <SafeImage 
-          src={defaultImage} 
-          alt={property.title}
-          className="w-full h-full object-cover"
+      {/* iOS 18 Tabbed Media Viewer Hero */}
+      <div className="container mx-auto px-4 pt-6 max-w-7xl">
+        <TabbedMediaViewer
+          images={propertyImages}
+          title={property.title}
+          price={property.price}
+          verified={property.isVerified}
+          floorPlanUrl={property.floor_plan_url}
+          virtualTourUrl={property.virtual_tour_url}
         />
-        {property.isVerified && (
-          <div className="absolute top-6 left-6 bg-green-500 text-white font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5" />
-            Verified Listing
-          </div>
-        )}
       </div>
 
       <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -165,24 +185,40 @@ export default async function PropertyDetailPage({ params }: { params: Promise<{
                 </div>
               </div>
             </div>
+
+            {/* Interactive Mortgage & Rental Affordability Calculator */}
+            <InteractiveMortgageCalculator
+              price={property.price}
+              listingType={
+                typeof property.price === 'string' &&
+                (property.price.toLowerCase().includes('/mo') ||
+                  property.price.toLowerCase().includes('rent'))
+                  ? 'RENT'
+                  : 'SALE'
+              }
+            />
+
+            {/* iOS Luxury Neighborhood Scores & Insights */}
+            <NeighborhoodScores
+              propertyName={property.title}
+              address={property.address}
+              walkScore={94}
+              transitScore={88}
+              bikeScore={82}
+            />
           </div>
 
-          {/* Sidebar / Contact Form */}
+          {/* Sidebar: iOS Luxury Tour Scheduling & Inquiry Widget */}
           <div className="lg:col-span-1">
-            <div className="sticky top-8 flex flex-col gap-6">
-              <EnquiryForm propertyId={property.id} ownerId={property.owner_id} />
-              
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <a
-                  href="https://wa.me/1234567890?text=I%20am%20interested%20in%20this%20property"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-lg shadow-md hover:shadow-lg flex items-center justify-center transition-all"
-                >
-                  Chat on WhatsApp
-                </a>
-              </div>
-            </div>
+            <TourBookingWidget
+              propertyId={property.id}
+              propertyTitle={property.title}
+              propertyAddress={property.address}
+              price={property.price}
+              status={property.isVerified ? "Verified Luxury" : "Active Listing"}
+              ownerId={property.owner_id}
+              className="sticky top-6"
+            />
           </div>
           
         </div>
