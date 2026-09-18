@@ -407,7 +407,12 @@ real_estate/
     - `ConversionFunnel.tsx`: 4-stage visual conversion funnel (Views -> Saves -> Inquiries -> Tours Scheduled) with drop-off rates and luxury insights.
     - `MarketPriceComparisonCard.tsx`: Visual price-competitiveness gauge with multi-city comps against local medians.
     - `TopPerformingProperties.tsx`: Property performance leaderboard with podium rank badges and engagement metrics.
-- [ ] **AI-Powered Property Recommendations**: ML-based recommendation engine surfacing personalized listings based on browsing history and saved search patterns.
+- [x] **AI-Powered Property Recommendations**:
+  - Migration `00000000000013_property_recommendations.sql`: PostgreSQL stored function `get_property_recommendations` implementing a hybrid scoring engine (40% Collaborative Filtering from peer graphs, 40% Content Similarity based on implicit user budget & property type, 20% Popularity velocity boost).
+  - `@repo/api`: Added `recommendations.ts` with `getPersonalizedRecommendations`, `generateDemoRecommendations`, and `getRecommendationRails` across the 76 luxury properties dataset.
+  - `RecommendationEditorialCard.tsx`: App Store-grade editorial card with cinematic gradient scrims, glassmorphic `✨ 98% Match` badges, interactive spring heart toggle, and AI match reasoning pills.
+  - `foryou.tsx`: Dedicated Apple-style luxury "Curated for You" Discovery tab screen in `apps/user-app` with dynamic date header, city filter pills (`All | LA | NY | Mumbai`), "Today's Top Pick" editorial hero card, AI Personalized rail, and Trending velocity rails.
+  - Updated `apps/user-app/app/(tabs)/_layout.tsx` to mount the `foryou` Discovery tab with an active Sparkles icon.
 - [x] **Customer Web Portal Polish (`apps/customer-web`)**:
   - `TabbedMediaViewer.tsx`: iOS 18 segmented control (`[ Photos | Floor Plan | 3D Tour ]`), hero gallery, full-screen OLED black photo lightbox with room filters, architectural 2D floor plans with CAD dimensions, and Matterport-style 360° virtual tour launcher.
   - `InteractiveMortgageCalculator.tsx`: Dual-mode (Sale Mortgage vs Rental Breakdown), pure interactive SVG Donut Ring chart with hover animations, down payment/interest rate/term sliders, and detailed cost breakdown.

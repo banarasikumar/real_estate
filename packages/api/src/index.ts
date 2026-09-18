@@ -21,3 +21,5 @@ export * from './notifications';
 export * from './saved_searches';
 export * from './regions';
 export * from './analytics';
+export * from './demoProperties';
+export * from './recommendations';

@@ -46,6 +46,16 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="foryou"
+        options={{
+          title: 'For You',
+          headerShown: false,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'sparkles' : 'sparkles-outline'} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="saved"
         options={{
           title: 'Saved',
@@ -58,6 +68,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="enquiries"
         options={{
+          href: null,
           title: 'Enquiries',
           headerTitle: 'My Enquiries',
           tabBarIcon: ({ color, focused }) => (
