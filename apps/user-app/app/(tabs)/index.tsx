@@ -37,6 +37,8 @@ import {
 } from '@repo/api';
 
 import { MobileFilterModal, MobileFilterState } from '../../components/MobileFilterModal';
+import { MobileSaveSearchModal } from '../../components/MobileSaveSearchModal';
+import { savedSearchesStore, SavedSearchItem } from '../../services/savedSearchesStore';
 import {
   MobilePropertyCardCarousel,
   CarouselProperty,
@@ -238,10 +240,102 @@ export default function UserAppHomeScreen() {
   const [sheetSnapState, setSheetSnapState] = useState<SheetSnapState>('DUAL');
   const [containerHeight, setContainerHeight] = useState(SCREEN_HEIGHT - 60);
 
+  // Save Search Modal / Toast State
+  const [isSaveSearchModalVisible, setIsSaveSearchModalVisible] = useState(false);
+  const [savedSearchToast, setSavedSearchToast] = useState<{
+    name: string;
+    frequency: string;
+  } | null>(null);
+  const toastAnim = useRef(new RNAnimated.Value(-120)).current;
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const showSavedSearchToast = useCallback((name: string, frequency: string) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setSavedSearchToast({ name, frequency });
+    RNAnimated.spring(toastAnim, {
+      toValue: 0,
+      damping: 18,
+      stiffness: 240,
+      useNativeDriver: true,
+    }).start();
+
+    toastTimeoutRef.current = setTimeout(() => {
+      RNAnimated.timing(toastAnim, {
+        toValue: -140,
+        duration: 260,
+        useNativeDriver: true,
+      }).start(() => {
+        setSavedSearchToast(null);
+      });
+    }, 3800);
+  }, [toastAnim]);
+
   // Refs
   const mapboxRef = useRef<MobileMapboxViewRef | null>(null);
   const mapBoundsRef = useRef<MapBounds | null>(null);
   const debounceRegionTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Listen for "Run on Map" from Saved Searches tab
+  useEffect(() => {
+    const handleRunSearch = (search: SavedSearchItem) => {
+      if (search) {
+        if (search.query) {
+          setSearchQuery(search.query);
+        }
+        if (search.filters) {
+          setModalFilters(search.filters as MobileFilterState);
+          if (search.filters.list_type) {
+            setActiveQuickFilter(search.filters.list_type.toLowerCase() === 'rent' ? 'rent' : 'sale');
+          }
+        }
+        if (search.polygon && search.polygon.length > 0) {
+          setDrawnPolygon(search.polygon);
+          setIsDrawingMode(false);
+          const centerLat =
+            search.polygon.reduce((acc: number, p: { latitude: number; longitude: number }) => acc + p.latitude, 0) /
+            search.polygon.length;
+          const centerLng =
+            search.polygon.reduce((acc: number, p: { latitude: number; longitude: number }) => acc + p.longitude, 0) /
+            search.polygon.length;
+          mapboxRef.current?.flyToRegion([centerLng, centerLat], 13);
+        } else {
+          setDrawnPolygon(null);
+          const matched = SEARCH_REGIONS.find((r) =>
+            search.query &&
+            (r.name.toLowerCase().includes(search.query.toLowerCase()) ||
+              search.query.toLowerCase().includes(r.name.toLowerCase()))
+          );
+          if (matched?.center) {
+            setActiveRegion(matched);
+            mapboxRef.current?.flyToRegion(matched.center, matched.zoom || 12);
+          }
+        }
+        setIsSearchSaved(true);
+        const freqLabel =
+          search.notification_frequency === 'DAILY'
+            ? 'Daily digest active'
+            : search.notification_frequency === 'NEVER'
+            ? 'Alerts off'
+            : 'Instant alerts active';
+        showSavedSearchToast(search.name, freqLabel);
+      }
+    };
+
+    const unsubscribe = savedSearchesStore.subscribeToRunOnMap(handleRunSearch);
+
+    // Check if any search was already queued
+    const pending = savedSearchesStore.popPendingSearchToRun();
+    if (pending) {
+      handleRunSearch(pending);
+    }
+
+    return () => {
+      unsubscribe();
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    };
+  }, [showSavedSearchToast]);
 
   // Load Saved Properties for Authenticated User
   useEffect(() => {
@@ -776,7 +870,7 @@ export default function UserAppHomeScreen() {
               onStartDraw={handleStartDraw}
               onRecenter={handleRecenter}
               isSearchSaved={isSearchSaved}
-              onToggleSaveSearch={() => setIsSearchSaved(!isSearchSaved)}
+              onToggleSaveSearch={() => setIsSaveSearchModalVisible(true)}
               searchQuery={searchQuery}
               onOpenSearchModal={() => setIsSearchModalVisible(true)}
               onClearSearch={() => {
@@ -969,6 +1063,62 @@ export default function UserAppHomeScreen() {
           fetchHomes(searchQuery, activeQuickFilter, {});
         }}
       />
+
+      {/* 8. Save Search & Boundary Alert Modal */}
+      <MobileSaveSearchModal
+        visible={isSaveSearchModalVisible}
+        onClose={() => setIsSaveSearchModalVisible(false)}
+        searchQuery={searchQuery}
+        regionName={activeRegion?.name}
+        modalFilters={modalFilters}
+        activeQuickFilter={activeQuickFilter}
+        drawnPolygon={drawnPolygon}
+        onSaved={(savedItem) => {
+          setIsSearchSaved(true);
+          const freqLabel =
+            savedItem.notification_frequency === 'DAILY'
+              ? 'Daily digest active'
+              : savedItem.notification_frequency === 'NEVER'
+              ? 'Alerts off'
+              : 'Instant alerts active';
+          showSavedSearchToast(savedItem.name, freqLabel);
+        }}
+        onDeleted={() => {
+          setIsSearchSaved(false);
+        }}
+      />
+
+      {/* 9. iOS-style Top Floating Toast Banner */}
+      {savedSearchToast && (
+        <RNAnimated.View
+          style={[
+            styles.toastBanner,
+            {
+              top: insets.top + 8,
+              transform: [{ translateY: toastAnim }],
+            },
+          ]}
+        >
+          <View style={styles.toastIconWrap}>
+            <Ionicons name="bookmark" size={17} color="#ffffff" />
+          </View>
+          <View style={styles.toastTextWrap}>
+            <Text style={styles.toastTitle} numberOfLines={1}>
+              Saved "{savedSearchToast.name}"
+            </Text>
+            <Text style={styles.toastSubtitle} numberOfLines={1}>
+              {savedSearchToast.frequency} • Saved to profile
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/saved')}
+            style={styles.toastActionPill}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.toastActionText}>View</Text>
+          </TouchableOpacity>
+        </RNAnimated.View>
+      )}
     </View>
   );
 }
@@ -1432,5 +1582,64 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: -0.2,
+  },
+
+  // iOS Top Floating Toast Banner
+  toastBanner: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 9999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  toastIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  toastTextWrap: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  toastTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: -0.2,
+  },
+  toastSubtitle: {
+    fontSize: 11,
+    color: '#cbd5e1',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  toastActionPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  toastActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ffffff',
   },
 });

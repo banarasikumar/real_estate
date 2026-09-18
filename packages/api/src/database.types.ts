@@ -5,6 +5,8 @@ export type FurnishingStatus = 'FURNISHED' | 'SEMI_FURNISHED' | 'UNFURNISHED';
 export type PropertyStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'PUBLISHED' | 'PAUSED' | 'UNPUBLISHED' | 'REJECTED' | 'SOLD_RENTED';
 export type MediaType = 'IMAGE' | 'VIDEO';
 export type EnquiryStatus = 'NEW' | 'READ' | 'RESPONDED' | 'CLOSED';
+export type NotificationFrequency = 'INSTANT' | 'DAILY' | 'NEVER';
+export type NotificationType = 'NEW_MATCH' | 'PRICE_DROP' | 'TOUR_REQUEST' | 'MESSAGE' | 'SYSTEM';
 
 export interface Profile {
   id: string;
@@ -111,3 +113,46 @@ export interface Conversation {
     phone_number?: string | null;
   } | null;
 }
+
+export interface SavedSearch {
+  id: string;
+  user_id?: string | null;
+  name: string;
+  search_query?: string | null;
+  region_id?: string | null;
+  filters?: Record<string, any> | null;
+  boundary?: any | null;
+  notification_frequency?: NotificationFrequency | string;
+  alert_new_listings?: boolean;
+  alert_price_drops?: boolean;
+  new_matches_count?: number;
+  created_at: string;
+  updated_at?: string;
+
+  // Compatibility aliases for user app and existing stores
+  userId?: string | null;
+  query?: string | null;
+  polygon?: any | null;
+  notificationFrequency?: NotificationFrequency | string;
+  alert_new_matches?: boolean;
+  alert_price_drop?: boolean;
+  alertNewMatches?: boolean;
+  alertPriceDrop?: boolean;
+  match_count?: number;
+}
+
+export interface AppNotification {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string;
+  type: NotificationType;
+  property_id?: string | null;
+  saved_search_id?: string | null;
+  is_read: boolean;
+  data?: Record<string, any> | null;
+  created_at: string;
+  property?: Property | null;
+  saved_search?: SavedSearch | null;
+}
+

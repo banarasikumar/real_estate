@@ -1,5 +1,5 @@
 import { supabase } from './client';
-import { Property } from './database.types';
+import { Property, SavedSearch } from './database.types';
 import { deletePropertyStorageFolder } from './storage';
 
 export interface SearchBounds {
@@ -808,6 +808,7 @@ export const getSavedProperties = async (userId: string) => {
     return [];
   }
 };
+
 
 
 

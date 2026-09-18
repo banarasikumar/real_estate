@@ -224,14 +224,22 @@ real_estate/
   - 340px edge-to-edge photo carousel with overscroll zoom pull-down (`y < 0`) and scroll-driven white sticky navigation bar transition with pinned title and price.
   - Native glassmorphic floating buttons for Back, Share (`Share.share(...)`), and Heart (Saved favorites toggle).
 
-### Phase 2: Saved Searches, Custom Boundaries & Alert Subscriptions
-- [ ] **Supabase Sync for Saved Searches**:
-  - Connect the `Save search` button to the `saved_searches` table in Supabase.
-  - Store active filters, sort preferences, and freehand lasso GeoJSON polygons.
-- [ ] **Notification Triggers**:
-  - Edge function / Postgres trigger to notify users when a newly published property falls inside their saved drawn boundary or search criteria.
-- [ ] **Saved Homes & Favorites Feed (`apps/user-app/app/(tabs)/saved.tsx`)**:
-  - Dedicated screen displaying saved properties with price drop badges and status updates.
+### Phase 2: Saved Searches, Custom Boundaries & Alert Subscriptions — COMPLETED (September 18, 2026)
+- [x] **Supabase Sync for Saved Searches (`MobileSaveSearchModal.tsx` & `savedSearchesStore.ts`)**:
+  - Created `saved_searches` and `notifications` tables in Supabase with RLS, indexes, and realtime publications (`00000000000009_saved_searches_and_alerts.sql`).
+  - Connected `Save search` button in `MobileTriStateBottomSheet` to open an iOS-grade FormSheet modal with Apple-fidelity spring presentation.
+  - Smart pre-populated search titles, one-tap suggestion pills (`Dream Villa`, `High ROI Investments`, `Waterfront Luxury`), and active filter/drawn boundary HUD chips.
+  - Granular notification frequency segmented controls (`[ ⚡ Instant | 📅 Daily Digest | 🔕 Never ]`) and alert toggles for new matches and price drops.
+- [x] **Notification Triggers & Edge Function (`supabase/functions/match-saved-searches/`)**:
+  - Deno edge function handler accepting `INSERT` and `UPDATE` webhook events for properties.
+  - Jordan curve ray-casting algorithm (`isPointInBoundary`) supporting GeoJSON Polygon, MultiPolygon, arrays of coordinate pairs, and point objects.
+  - Filter matcher evaluating price bounds, bedrooms, bathrooms, listing type, and keyword queries.
+  - Automatic insertion into `public.notifications`, `new_matches_count` incrementing, and dispatching Expo push notifications via `https://exp.host/--/api/v2/push/send`.
+- [x] **Saved Homes & Favorites Feed (`apps/user-app/app/(tabs)/saved.tsx`)**:
+  - Elevated iOS-grade portal with custom large titles and an animated sliding segmented control: `[ 🏠 Saved Homes ({count}) | 🔍 Saved Searches ({count}) ]`.
+  - **Saved Homes**: Luxury cards with "Price Reduced -$75,000" and "✨ New to Market" badges, heart un-saving with an iOS floating Undo Toast, and native sharing.
+  - **Saved Searches**: Grouped iOS cards with search criteria pills, drawn boundary SVG badge, glowing "✨ 2 new listings" badge, and one-tap **"Run on Map"** execution navigating to the discovery map with bounds/filters applied.
+  - Apple-grade empty states with custom typography and map navigation actions.
 
 ### Phase 3: Owner Application Harmonization (`apps/owner-app`)
 - [ ] **Mapbox Pin-Drop & Boundary Selector**:
