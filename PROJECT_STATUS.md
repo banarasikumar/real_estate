@@ -1,10 +1,10 @@
 # Real Estate Monorepo — Project Status & Brain Memory
 
-> **Last Updated**: September 15, 2026  
+> **Last Updated**: September 18, 2026  
 > **Repository**: `banarasikumar/real_estate`  
-> **Active Branch**: `main` (clean working tree, in sync with `origin/main` — remote push successful)  
+> **Active Branch**: `main` (clean working tree, local commit `d13b4f67`)  
 > **Active Environment**: Windows (PowerShell) | Node.js / Turborepo / Expo SDK 57 / Next.js 15 / Supabase / Mapbox GL JS v3  
-> **Active Metro Bundler**: Port `8081` (`apps/user-app`)
+> **Active Metro Bundler**: Port `8081` (`apps/user-app` — HTTP 200 OK, LAN: `exp://192.168.31.63:8081`)
 
 ---
 
@@ -13,13 +13,14 @@
 This monorepo houses a multi-platform, end-to-end luxury Real Estate platform connecting Property Owners, Property Seekers, and Platform Admins.
 
 ### Current System Health & Stability
-- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, and 76-listing demo dataset across LA, NY, and Mumbai.
+- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, 76-listing demo dataset across LA, NY, and Mumbai, and the next-generation iOS-grade Luxury Property Details Experience with interactive mortgage/rent calculator, full-screen OLED lightbox, 2D floor plans, 3D tours, and tour booking sheet.
 - **TypeScript Type Safety**: 0 errors across the monorepo (`npm run check-types --workspace=user-app` passes cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed and pushed to `main` up to commit `79156ab1`.
+- **Git Working Tree**: 100% clean. All changes are committed to `main` up to commit `d13b4f67`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
+| `d13b4f67` | `feat(user-app): implement iOS-grade luxury property details experience, parallax carousel, mortgage calculator, and tour booking` | user-app |
 | `79156ab1` | `feat(bottom-sheet): unified gesture handling with RNGH and rapid swipe support` | user-app |
 | `749c8445` | `feat(user-app): implement iOS-grade Zillow gesture engine, spring physics, and seamless borderless fusion` | user-app |
 | `37732f8b` | `fix(ui): remove blue and persistent selection borders on mobile property cards` | user-app |
@@ -139,6 +140,39 @@ real_estate/
    - Fullscreen search modal with search history (clock icons), suggested searches, and tabs for For sale / For rent / Sold.
    - Pre-configured search regions with boundary polygons rendered on the map in blue (`#2563eb`).
 
+12. **Next-Gen iOS-Grade Luxury Property Details Experience (`apps/user-app/app/property/[id].tsx` & `components/property/`)**:
+   - **Hero Parallax Carousel & Glassmorphic Sticky Nav (`PropertyHeroParallaxCarousel.tsx`)**:
+     - 340px edge-to-edge photo carousel with horizontal paging and touch isolation (`directionalLockEnabled`).
+     - Reanimated overscroll pull-down physics (`y < 0`) scaling up to 1.7x elastic zoom.
+     - Scroll-driven transition fading into a solid white navigation bar with pinned title and price pill.
+     - Glassmorphic floating controls for Back (`router.back()`), Native Share (`Share.share(...)`), and Heart (with spring bounce animation).
+     - Bottom-right photo counter badge (`1 / 8`) opening the full lightbox on tap.
+   - **Full-Screen OLED Black Photo Lightbox (`FullScreenPhotoGalleryModal.tsx`)**:
+     - Pure `#000000` immersive viewer with room filter chips (*All, Exterior, Living Room, Kitchen, Master Suite, Bathroom, Views*) with live photo counts.
+     - Pinch-to-zoom (up to 3x), double-tap zoom toggle (1x ↔ 2.5x), and swipe-down-to-dismiss gesture with scale-down and opacity fade.
+     - Auto-centering bottom thumbnail preview strip with white border indicator and tap-to-jump.
+   - **Interactive Monthly Payment & Mortgage Calculator (`InteractiveMortgageCalculator.tsx`)**:
+     - **Dual Mode**: Full mortgage calculation for `SALE` homes ($M = P \cdot \frac{r(1+r)^n}{(1+r)^n - 1} + \text{Taxes} + \text{Insurance} + \text{HOA}$) and itemized rental breakdown for `RENT` listings (Rent, Utilities, Insurance, Parking, Move-In Cost).
+     - **Color-Coded Visualizers**: SVG Donut Ring Chart and horizontal segmented progress bar (Principal & Interest `#2563eb`, Taxes `#e11d48`, Insurance `#f59e0b`, HOA `#10b981`).
+     - **Interactive Live Sliders**: Down payment (0% to 50% with live dollar computation), Interest Rate (3.0% to 9.0% with 0.1% stepper buttons `[-]` / `[+]`), and Loan Term pills (*30-Yr*, *15-Yr*, *5/1 ARM*).
+   - **Tabbed Media & Architectural Layout (`TabbedMediaViewer.tsx`)**:
+     - Segmented iOS pill control: `[ 📷 Photos | 📐 Floor Plan | 🌐 3D Tour ]`.
+     - **Floor Plan**: High-res 2D blueprint with zoom preview toggle and room dimensions grid (*Grand Living Room 24'x18', Primary Suite 20'x16'*).
+     - **3D Tour**: Interactive Matterport preview card with `360° IMMERSIVE TOUR` badge, feature tags (Dollhouse 3D view, Measure tool), and primary launcher button.
+   - **Neighborhood Scores & GreatSchools Ratings (`NeighborhoodScoresSection.tsx`)**:
+     - iOS widget-style colorful score cards: Walk Score (`94/100` Emerald), Transit Score (`88/100` Royal Blue), and Bike Score (`82/100` Amber).
+     - GreatSchools assigned school cards (`9/10`, `10/10`) with distances and grade levels.
+     - Local highlights tags (Organic Grocers, Fine Dining, Botanical Trail, Rapid Transit).
+   - **Tour Scheduling Bottom Sheet (`TourBookingModal.tsx`)**:
+     - Slide-up bottom sheet with `In-Person Tour` vs `Live Video Walkthrough` toggle.
+     - Horizontal 7-day date picker with day-of-week and month cards.
+     - Time slot pills (`9:00 AM`, `11:00 AM`, `1:00 PM`, `3:00 PM`, `5:00 PM`).
+     - Syncs to Supabase `enquiries` table with celebratory confirmation card.
+   - **Instant Demo Property Resolution**:
+     - Checks `ALL_DEMO_PROPERTIES` by ID for immediate 0ms render when opening any of the 76 listings across LA, NY, or Mumbai, falling back gracefully to Supabase.
+   - **Docked Floating Bottom Bar**:
+     - WhatsApp direct message, Contact Agent, and primary **"Request a Tour"** CTA.
+
 ---
 
 ### 3.2 Customer Web Application (`apps/customer-web`)
@@ -154,7 +188,7 @@ real_estate/
 
 | Service | Port | Status | Command |
 |---|---|---|---|
-| Metro Bundler (`user-app`) | `8081` | Running (`task-568`) | `npx expo start --clear` |
+| Metro Bundler (`user-app`) | `8081` | Running (`HTTP 200 OK`, `exp://192.168.31.63:8081`) | `npx expo start --clear` |
 | Customer Web (`customer-web`) | `3000` | Ready | `npm run dev --workspace=customer-web` |
 | Owner App (`owner-app`) | `8082` | Ready | `npm run start --workspace=owner-app` |
 | Admin Panel (`admin-panel`) | `3001` | Ready | `npm run dev --workspace=admin-panel` |
