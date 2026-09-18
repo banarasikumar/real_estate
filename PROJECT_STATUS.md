@@ -394,10 +394,15 @@ real_estate/
   - GitHub Actions CI workflow (`.github/workflows/ci.yml`) for monorepo TypeScript checks and Turbo builds.
 
 ### Phase 5: Future Enhancements (Roadmap)
-- [ ] **Push Notification Center (`apps/user-app`)**: In-app notification inbox with unread counts, grouping, and deep-linking to properties/saved searches.
+- [x] **Push Notification Center (`apps/user-app`)**: In-app notification inbox with unread counts, grouping, and deep-linking to properties/saved searches. (Completed)
 - [ ] **Owner Analytics Dashboard (`apps/owner-app`)**: Listing view counts, enquiry conversion funnel, price comparison heatmaps.
 - [ ] **AI-Powered Property Recommendations**: ML-based recommendation engine surfacing personalized listings based on browsing history and saved search patterns.
 - [ ] **Vercel Production Deployments**: Automated Vercel deployments for `customer-web` and `admin-panel` with preview URLs on PRs.
+- [ ] **Customer Web Portal Polish (`apps/customer-web`)**: Feature parity with mobile app (luxury property details, interactive mortgage calculators, and web-based tour booking).
+- [ ] **Deep Linking & Universal Links**: Setting up iOS Universal Links and Android App Links for seamless sharing and push notification routing.
+- [ ] **End-to-End (E2E) Testing**: Automated UI testing (Maestro for mobile, Playwright for web) for critical paths.
+- [ ] **Rich Media Chat**: Upgrading the real-time inbox to support image attachments, voice notes, and PDF documents.
+- [ ] **Localization (i18n)**: Multi-language and multi-currency support for our global dataset (USD/INR).
 
 ---
 
