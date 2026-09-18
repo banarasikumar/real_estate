@@ -1,9 +1,11 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
+import { TouchableOpacity, View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNotification } from '../../context/NotificationContext';
 
 export default function TabsLayout() {
-  const { unreadMessagesCount } = useNotification();
+  const router = useRouter();
+  const { unreadMessagesCount, unreadNotificationsCount } = useNotification();
 
   return (
     <Tabs
@@ -80,6 +82,47 @@ export default function TabsLayout() {
         options={{
           title: 'Profile',
           headerTitle: 'Profile',
+          tabBarBadge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
+          tabBarBadgeStyle: { backgroundColor: '#e11d48', color: '#ffffff', fontSize: 10, fontWeight: '700' },
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => router.push('/notifications')}
+              activeOpacity={0.75}
+              style={{
+                marginRight: 16,
+                padding: 6,
+                borderRadius: 20,
+                backgroundColor: '#f8fafc',
+                borderWidth: 1,
+                borderColor: '#e2e8f0',
+                position: 'relative',
+              }}
+            >
+              <Ionicons name="notifications-outline" size={20} color="#0f172a" />
+              {unreadNotificationsCount > 0 && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -2,
+                    backgroundColor: '#e11d48',
+                    borderRadius: 9,
+                    minWidth: 17,
+                    height: 17,
+                    paddingHorizontal: 3,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1.5,
+                    borderColor: '#ffffff',
+                  }}
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 9, fontWeight: '700' }}>
+                    {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
           ),

@@ -18,6 +18,7 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="property/[id]" options={{ headerShown: true, title: 'Property Details' }} />
+              <Stack.Screen name="notifications" options={{ headerShown: false }} />
             </Stack>
             <InAppNotificationBanner />
           </NotificationProvider>

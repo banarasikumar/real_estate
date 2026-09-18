@@ -241,3 +241,66 @@ export const subscribeToUserNotifications = (
     supabase.removeChannel(channel);
   };
 };
+
+/**
+ * Deletes a specific notification by ID.
+ *
+ * @param notificationId - UUID of the notification
+ * @returns Object with success flag and optional error
+ */
+export const deleteNotification = async (
+  notificationId: string
+): Promise<{ success: boolean; error?: any }> => {
+  if (!notificationId) {
+    return { success: false, error: 'Notification ID is required' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('Error deleting notification:', error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Unexpected error in deleteNotification:', err);
+    return { success: false, error: err };
+  }
+};
+
+/**
+ * Clears/deletes all notifications for a given user.
+ *
+ * @param userId - UUID of the user
+ * @returns Object with success flag and optional error
+ */
+export const clearAllNotifications = async (
+  userId: string
+): Promise<{ success: boolean; error?: any }> => {
+  if (!userId) {
+    return { success: false, error: 'User ID is required' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('Error clearing all notifications:', error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Unexpected error in clearAllNotifications:', err);
+    return { success: false, error: err };
+  }
+};
+

@@ -16,10 +16,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, supabase, signInWithEmail, signUpWithEmail } from '@repo/api';
+import { useNotification } from '../../context/NotificationContext';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { unreadNotificationsCount } = useNotification();
 
   const [pushNotifications, setPushNotifications] = useState(true);
   const [priceAlerts, setPriceAlerts] = useState(true);
@@ -170,6 +172,40 @@ export default function ProfileScreen() {
           <View style={styles.menuGroup}>
             <TouchableOpacity
               style={styles.menuItem}
+              onPress={() => router.push('/notifications')}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.menuIconBox, { backgroundColor: '#ffe4e6' }]}>
+                <Ionicons name="notifications" size={18} color="#e11d48" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.menuItemLabel}>Notifications & Alerts</Text>
+                <Text style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+                  Saved search matches, price drops & updates
+                </Text>
+              </View>
+              {unreadNotificationsCount > 0 && (
+                <View
+                  style={{
+                    backgroundColor: '#e11d48',
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 12,
+                    marginRight: 8,
+                  }}
+                >
+                  <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>
+                    {unreadNotificationsCount}
+                  </Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
               onPress={() => router.push('/(tabs)/saved')}
             >
               <View style={[styles.menuIconBox, { backgroundColor: '#fff1f2' }]}>
@@ -202,6 +238,24 @@ export default function ProfileScreen() {
                 <Ionicons name="chatbubbles" size={18} color="#16a34a" />
               </View>
               <Text style={styles.menuItemLabel}>Messages with Agents</Text>
+              <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <View style={styles.menuDivider} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => router.push('/notifications' as any)}
+            >
+              <View style={[styles.menuIconBox, { backgroundColor: '#eff6ff' }]}>
+                <Ionicons name="notifications" size={18} color="#2563eb" />
+              </View>
+              <Text style={styles.menuItemLabel}>Notification Center</Text>
+              {unreadNotificationsCount > 0 && (
+                <View style={styles.menuBadge}>
+                  <Text style={styles.menuBadgeText}>{unreadNotificationsCount} new</Text>
+                </View>
+              )}
               <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
             </TouchableOpacity>
           </View>
@@ -573,6 +627,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     marginRight: 6,
+  },
+  menuBadge: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  menuBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563eb',
   },
   menuDivider: {
     height: 1,

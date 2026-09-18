@@ -12,6 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNotification, BannerParams } from '../context/NotificationContext';
 
+export type { BannerParams };
+
 export interface InAppNotificationBannerProps {
   bannerData?: BannerParams | null;
   visible?: boolean;
@@ -72,6 +74,7 @@ export const InAppNotificationBanner: React.FC<InAppNotificationBannerProps> = (
   };
 
   const senderInitial = (bannerData?.title || 'O').charAt(0).toUpperCase();
+  const themeColor = bannerData?.iconColor || '#e11d48';
 
   return (
     <Animated.View
@@ -90,13 +93,27 @@ export const InAppNotificationBanner: React.FC<InAppNotificationBannerProps> = (
         activeOpacity={0.92}
         onPress={handleTap}
       >
-        {/* Left Rose Accent Stripe */}
-        <View style={styles.accentStripe} />
+        {/* Left Accent Stripe */}
+        <View style={[styles.accentStripe, { backgroundColor: themeColor }]} />
 
-        {/* Avatar or Initials */}
+        {/* Avatar, Squircle Icon, or Initials */}
         <View style={styles.avatarContainer}>
           {bannerData?.senderAvatar ? (
             <Image source={{ uri: bannerData.senderAvatar }} style={styles.avatar} />
+          ) : bannerData?.iconName ? (
+            <View
+              style={[
+                styles.iconSquircle,
+                bannerData.iconBg ? { backgroundColor: bannerData.iconBg } : null,
+                bannerData.iconColor ? { borderColor: `${bannerData.iconColor}33` } : null,
+              ]}
+            >
+              <Ionicons
+                name={bannerData.iconName as any}
+                size={22}
+                color={themeColor}
+              />
+            </View>
           ) : (
             <View style={styles.initialsCircle}>
               <Text style={styles.initialsText}>{senderInitial}</Text>
@@ -110,15 +127,28 @@ export const InAppNotificationBanner: React.FC<InAppNotificationBannerProps> = (
             <Text style={styles.title} numberOfLines={1}>
               {bannerData?.title || 'New Message'}
             </Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>Reply</Text>
+            <View
+              style={[
+                styles.badge,
+                bannerData?.iconBg ? { backgroundColor: bannerData.iconBg } : null,
+                bannerData?.iconColor ? { borderColor: `${bannerData.iconColor}33` } : null,
+              ]}
+            >
+              <Text style={[styles.badgeText, { color: themeColor }]}>
+                {bannerData?.badgeText || (bannerData?.iconName ? 'Notice' : 'Reply')}
+              </Text>
             </View>
           </View>
 
           {bannerData?.propertyTitle ? (
             <View style={styles.propertyRow}>
-              <Ionicons name="business-outline" size={11} color="#e11d48" style={{ marginRight: 4 }} />
-              <Text style={styles.propertyTitle} numberOfLines={1}>
+              <Ionicons
+                name="business-outline"
+                size={11}
+                color={themeColor}
+                style={{ marginRight: 4 }}
+              />
+              <Text style={[styles.propertyTitle, { color: themeColor }]} numberOfLines={1}>
                 {bannerData.propertyTitle}
               </Text>
             </View>
@@ -187,6 +217,16 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
+    backgroundColor: '#fff1f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fecdd3',
+  },
+  iconSquircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     backgroundColor: '#fff1f2',
     alignItems: 'center',
     justifyContent: 'center',
