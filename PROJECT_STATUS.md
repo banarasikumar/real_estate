@@ -168,20 +168,26 @@ real_estate/
 
 ## 5. Future Goals, Next Actions & Roadmap
 
-### Phase 1: Property Details Experience (`apps/user-app/app/property/[id].tsx`)
-- [ ] **Full-Screen Photo Gallery Carousel**:
-  - Fullscreen photo modal with high-res zoom (pinch-to-zoom), thumbnail strip, and photo categorizations (Interior, Exterior, Kitchen, Master Bedroom).
-- [ ] **Interactive Monthly Payment Calculator**:
-  - Dynamic breakdown: Principal & Interest, Property Taxes, Homeowners Insurance, HOA Fees.
-  - Interactive sliders for Down Payment (%), Loan Term (15/30 yrs), and Interest Rate (%).
-- [ ] **Floor Plans & 3D Virtual Tour Embed**:
-  - Interactive 2D architectural floor plan viewer.
-  - Matterport / 3D virtual tour iframe/WebView support.
-- [ ] **Neighborhood & Amenities Overlays**:
-  - Walk Score, Transit Score, Schools rating cards, and local dining/parks points of interest.
-- [ ] **Tour Scheduling & Agent Inquiry Modal**:
-  - "Request a Tour" date/time picker (In-person vs. Video tour).
-  - Instant inquiry messaging connected to Supabase `inquiries` table.
+### Phase 1: Property Details Experience (`apps/user-app/app/property/[id].tsx`) — COMPLETED (September 18, 2026)
+- [x] **Full-Screen Photo Gallery Carousel & Lightbox (`FullScreenPhotoGalleryModal.tsx`)**:
+  - Fullscreen OLED black photo modal with pinch-to-zoom (up to 3x), swipe-down-to-dismiss gesture, horizontal thumbnail strip, and room category filter pills (All, Exterior, Living Room, Kitchen, Master Suite, Bathrooms, Views).
+- [x] **Interactive Monthly Payment Calculator (`InteractiveMortgageCalculator.tsx`)**:
+  - Dynamic cost visualizer (color-coded SVG donut ring & horizontal segmented bar for Principal & Interest, Property Taxes, Home Insurance, and HOA dues).
+  - Interactive live touch sliders for Down Payment (%), Loan Term (30-yr, 15-yr, 5/1 ARM), and Interest Rate (%).
+  - Auto-adapting for `SALE` mode (Mortgage) and `RENT` mode (Monthly Rent + Utilities + Deposit).
+- [x] **Floor Plans & 3D Virtual Tour Embed (`TabbedMediaViewer.tsx`)**:
+  - Segmented pill control: `[ 📷 Photos | 📐 Floor Plan | 🌐 3D Tour ]`.
+  - Architectural 2D floor plan viewer with interactive zoom, room dimensions breakdown (Grand Living Room 24'x18', Primary Suite 20'x16', etc.), and CAD certification badge.
+  - Interactive Matterport / 3D virtual tour preview with 360 walkthrough launcher.
+- [x] **Neighborhood & Amenities Overlays (`NeighborhoodScoresSection.tsx`)**:
+  - iOS widget-style colorful score cards: Walk Score (94/100 Emerald), Transit Score (88/100 Royal Blue), Bike Score (82/100 Amber).
+  - GreatSchools district-assigned schools rating cards (9/10, 10/10) with distances and grades served.
+  - Local points of interest tags (Whole Foods, Fine Dining, Centennial Park, Metro Station).
+- [x] **Tour Scheduling & Agent Inquiry Modal (`TourBookingModal.tsx`)**:
+  - "Request a Tour" iOS bottom sheet modal with In-Person vs Video Tour toggle, 7-day horizontal date picker, time slot pills (9 AM - 5 PM), and Supabase inquiry sync with celebratory confirmation.
+- [x] **Hero Parallax Carousel & Glassmorphic Sticky Nav Bar (`PropertyHeroParallaxCarousel.tsx`)**:
+  - 340px edge-to-edge photo carousel with overscroll zoom pull-down (`y < 0`) and scroll-driven white sticky navigation bar transition with pinned title and price.
+  - Native glassmorphic floating buttons for Back, Share (`Share.share(...)`), and Heart (Saved favorites toggle).
 
 ### Phase 2: Saved Searches, Custom Boundaries & Alert Subscriptions
 - [ ] **Supabase Sync for Saved Searches**:
