@@ -2,7 +2,7 @@
 
 > **Last Updated**: September 18, 2026  
 > **Repository**: `banarasikumar/real_estate`  
-> **Active Branch**: `main` (clean working tree, local commit `0a0caad6`)  
+> **Active Branch**: `main` (clean working tree, local commit `ba8df60`)  
 > **Active Environment**: Windows (PowerShell) | Node.js / Turborepo / Expo SDK 57 / Next.js 15 / Supabase / Mapbox GL JS v3  
 > **Active Metro Bundler**: Port `8081` (`apps/user-app` — HTTP 200 OK, LAN: `exp://192.168.31.63:8081`)
 
@@ -13,15 +13,19 @@
 This monorepo houses a multi-platform, end-to-end luxury Real Estate platform connecting Property Owners, Property Seekers, and Platform Admins.
 
 ### Current System Health & Stability
-- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, 76-listing demo dataset across LA, NY, and Mumbai, and the next-generation iOS-grade Luxury Property Details Experience with interactive mortgage/rent calculator, full-screen OLED lightbox, 2D floor plans, 3D tours, and tour booking sheet.
-- **TypeScript Type Safety**: 0 errors across the monorepo (`npm run check-types --workspace=user-app` passes cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed to `main` up to commit `0a0caad6`.
+- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, 76-listing demo dataset across LA, NY, and Mumbai, next-generation iOS Luxury Property Details Experience, FormSheet Saved Searches modal with customizable frequency alerts, and revamped luxury Saved Portal with animated segmented controls.
+- **Owner App (`apps/owner-app`)**: Upgraded to iOS standards with interactive Mapbox pin-dropping & footprint drawing, multi-unit complex & tower manager with tiered floor tabs, and WhatsApp/iMessage-grade live chat with Realtime sync.
+- **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `@repo/api` all pass `tsc --noEmit` with exit code 0).
+- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `ba8df60`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
-| `0a0caad6` | `docs: update PROJECT_STATUS.md with Phase 1 completion and brain memory` | root / docs |
-| `d13b4f67` | `feat(user-app): implement iOS-grade luxury property details experience, parallax carousel, mortgage calculator, and tour booking` | user-app |
+| `ba8df60` | `feat(owner-app): implement iOS-grade mapbox pin-drop, multi-unit complex manager, and realtime chat inbox` | owner-app / api |
+| `b4d5d12` | `feat(user-app): implement iOS-grade saved searches modal, alerts edge function, and luxury saved portal` | user-app / api |
+| `4cff041` | `docs: sync commit hash 0a0caad6 in PROJECT_STATUS.md` | root / docs |
+| `0a0caad` | `docs: update PROJECT_STATUS.md with Phase 1 completion and brain memory` | root / docs |
+| `d13b4f6` | `feat(user-app): implement iOS-grade luxury property details experience, parallax carousel, mortgage calculator, and tour booking` | user-app |
 | `79156ab1` | `feat(bottom-sheet): unified gesture handling with RNGH and rapid swipe support` | user-app |
 | `749c8445` | `feat(user-app): implement iOS-grade Zillow gesture engine, spring physics, and seamless borderless fusion` | user-app |
 | `37732f8b` | `fix(ui): remove blue and persistent selection borders on mobile property cards` | user-app |
