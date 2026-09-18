@@ -22,7 +22,9 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
+| `9af72e14` | `docs: synchronize PROJECT_STATUS.md with Phase 4 commit a5bc4feb` | root / docs |
 | `a5bc4feb` | `feat(admin-panel): implement iOS-grade listing moderation queue, city boundary polygon manager, and CI/CD pipelines` | admin-panel / api / db / ci |
+| `685f2099` | `docs: enrich PROJECT_STATUS.md with comprehensive Phase 2 & 3 architectures and Phase 4 preparation` | root / docs |
 | `34ba1a81` | `docs: synchronize PROJECT_STATUS.md with Phase 2 and Phase 3 commits` | root / docs |
 | `ba8df60f` | `feat(owner-app): implement iOS-grade mapbox pin-drop, multi-unit complex manager, and realtime chat inbox` | owner-app / api |
 | `b4d5d12d` | `feat(user-app): implement iOS-grade saved searches modal, alerts edge function, and luxury saved portal` | user-app / api |
@@ -97,6 +99,8 @@ real_estate/
 │   ├── functions/
 │   │   └── match-saved-searches/ # Deno Edge Function with ray-casting point-in-polygon math
 │   └── migrations/               # 11 SQL migrations applied (Schema, Realtime, RLS, Complexes, Regions)
+├── .replit                       # Replit cloud runtime & multi-port configuration
+├── replit.nix                    # Replit nix package definitions (Node.js 20, npm)
 └── PROJECT_STATUS.md             # Central project status and context memory
 ```
 
@@ -394,3 +398,63 @@ real_estate/
 - [ ] **Owner Analytics Dashboard (`apps/owner-app`)**: Listing view counts, enquiry conversion funnel, price comparison heatmaps.
 - [ ] **AI-Powered Property Recommendations**: ML-based recommendation engine surfacing personalized listings based on browsing history and saved search patterns.
 - [ ] **Vercel Production Deployments**: Automated Vercel deployments for `customer-web` and `admin-panel` with preview URLs on PRs.
+
+---
+
+## 6. Next Conversation Handover & Continuity Guide
+
+> **Notice for Future Agents**: This section provides essential operational memory to guarantee seamless continuation in the next conversation.
+
+### 6.1 Quick Start Commands by Workspace
+```bash
+# 1. Start Seeker Mobile App (Metro Port 8081 - Expo SDK 57)
+npm run start --workspace=user-app
+# Or clear cache:
+npx expo start --clear --workspace=user-app
+
+# 2. Start Owner Mobile App (Metro Port 8082 - Expo SDK 57)
+npm run start --workspace=owner-app
+
+# 3. Start Public Customer Web Portal (Next.js 15 / Port 3000)
+npm run dev --workspace=customer-web
+
+# 4. Start Web Admin Panel (Next.js 15 / Port 3001)
+npm run dev --workspace=admin-panel
+
+# 5. Type-Check All Workspaces (Must pass with 0 errors)
+npx tsc --noEmit --project apps/admin-panel/tsconfig.json
+npx tsc --noEmit --project apps/user-app/tsconfig.json
+npx tsc --noEmit --project apps/owner-app/tsconfig.json
+npx tsc --noEmit --project packages/api/tsconfig.json
+```
+
+### 6.2 Supabase Database Migrations (11 Migrations)
+All database schema modifications are captured in `supabase/migrations/`:
+1. `00000000000000_initial_schema.sql` — Profiles, properties, property_media, enquiries, saved_properties
+2. `00000000000001_realtime_chat.sql` — Conversations, chat_messages with Realtime publication
+3. `00000000000002_property_lifecycle.sql` — `is_approved`, storage policies for `property_images`
+4. `00000000000003_admin_roles_rls.sql` — `USER`, `OWNER`, `ADMIN`, `SUPER_ADMIN` roles & RLS
+5. `00000000000004_enquiries_fix.sql` — Enquiries RLS and status updates
+6. `00000000000005_soft_delete_and_owner_delete.sql` — Soft deletion (`deleted_at`) support
+7. `00000000000006_realtime_notifications_and_badges.sql` — Notification triggers and badges
+8. `00000000000007_message_delivered_status.sql` — Message delivery receipts (`sending`, `sent`, `delivered`)
+9. `00000000000008_property_coordinates_index.sql` — Spatial indexing on latitude/longitude
+10. `00000000000009_saved_searches_and_alerts.sql` — Saved searches, boundary alerts, notifications
+11. `00000000000010_multi_unit_complexes.sql` — Multi-unit towers, complexes, floor tabs, availability
+12. `00000000000011_search_regions.sql` — `search_regions` table, `is_verified`, `deed_url`, `verification_notes`, 6 seeded regions
+
+### 6.3 Replit Cloud Configuration
+The monorepo includes `.replit` and `replit.nix` configurations for running in Replit:
+- Runtime: Node.js 20 (via Nix channel `stable-24_05`)
+- Root command: `npm run dev` (Turborepo)
+- Port mappings:
+  - Port `3000` (external `80`): `customer-web`
+  - Port `3001`: `admin-panel`
+  - Port `8081`: `user-app` (Expo Metro bundler)
+  - Port `8082`: `owner-app` (Expo Metro bundler)
+
+### 6.4 Non-Negotiable Operational Rules
+1. **Remote Git Push**: Remote push is disabled per instructions. All commits must remain 100% local on `main`.
+2. **Secret Hygiene**: Mapbox tokens (`pk.eyJ1...`) and Supabase keys must reside strictly in gitignored `.env` / `.env.local` files and NEVER be committed to git history.
+3. **TypeScript Integrity**: Always verify type safety with `tsc --noEmit` across affected workspaces before declaring work complete.
+4. **Design Quality**: Maintain iOS/macOS human-interface-guideline fidelity across all mobile and web experiences (frosted glass surfaces, tactile physics, clean typography, and responsive micro-interactions).
