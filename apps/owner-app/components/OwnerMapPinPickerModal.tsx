@@ -73,9 +73,7 @@ export const OwnerMapPinPickerModal: React.FC<OwnerMapPinPickerModalProps> = ({
     }
   }, [visible, initialLatitude, initialLongitude, initialFootprint]);
 
-  const mapboxToken =
-    process.env.EXPO_PUBLIC_MAPBOX_TOKEN ||
-    'pk.eyJ1IjoiYmFuYXJhc2lrdW1hciIsImEiOiJjbXRvazNsamUwZnVqMnhyMWo0eTVpZGFnIn0.3g6cFy0DWAMq4ExD-Jixzw';
+  const mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
 
   // Haptic simulation
   const triggerHaptic = useCallback(() => {

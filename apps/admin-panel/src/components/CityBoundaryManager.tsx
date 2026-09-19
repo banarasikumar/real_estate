@@ -38,9 +38,7 @@ import {
 } from "lucide-react";
 
 // Mapbox Token fallback
-const MAPBOX_TOKEN =
-  process.env.NEXT_PUBLIC_MAPBOX_TOKEN ||
-  "pk.eyJ1IjoiYmFuYXJhc2lrdW1hciIsImEiOiJjbXRvazNsamUwZnVqMnhyMWo0eTVpZGFnIn0.3g6cFy0DWAMq4ExD-Jixzw";
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
 // Map Styles available for style toggling
 const MAP_STYLES = [
