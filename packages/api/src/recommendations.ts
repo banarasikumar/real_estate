@@ -1,5 +1,5 @@
 import { supabase } from './client';
-import { ALL_DEMO_PROPERTIES, DemoProperty } from './demoProperties';
+import { ALL_DEMO_PROPERTIES, DemoProperty, GOA_PROPERTIES } from './demoProperties';
 
 export interface PropertyRecommendation {
   propertyId: string;
@@ -25,9 +25,22 @@ function isCityMatch(propertyCity: string, queryCity?: string): boolean {
   const propCity = propertyCity.trim().toLowerCase();
 
   if (propCity === target) return true;
+
+  // Indian Metros & Luxury Hubs
+  if ((target === 'mumbai' || target === 'bombay') && (propCity.includes('mumbai') || propCity.includes('bombay'))) return true;
+  if ((target === 'bangalore' || target === 'bengaluru' || target === 'blr') && (propCity.includes('bangalore') || propCity.includes('bengaluru'))) return true;
+  if (
+    (target === 'delhi' || target === 'new delhi' || target === 'ncr' || target === 'del' || target.includes('delhi') || target.includes('gurugram') || target.includes('gurgaon') || target.includes('noida')) &&
+    (propCity.includes('delhi') || propCity.includes('gurugram') || propCity.includes('gurgaon') || propCity.includes('noida'))
+  ) {
+    return true;
+  }
+  if ((target === 'goa' || target.includes('goa')) && propCity.includes('goa')) return true;
+  if ((target === 'ranchi' || target === 'rnc' || target.includes('ranchi')) && propCity.includes('ranchi')) return true;
+
+  // Legacy fallback support
   if ((target === 'la' || target === 'los angeles') && propCity.includes('los angeles')) return true;
   if ((target === 'ny' || target === 'new york' || target === 'nyc') && (propCity.includes('new york') || propCity.includes('manhattan') || propCity.includes('brooklyn'))) return true;
-  if (target === 'mumbai' && (propCity.includes('mumbai') || propCity.includes('bombay'))) return true;
 
   return propCity.includes(target) || target.includes(propCity);
 }
@@ -120,11 +133,11 @@ function buildRecommendationTags(
 }
 
 /**
- * Generates rich, realistic recommendations using the 76 luxury properties dataset (Los Angeles, New York, Mumbai).
+ * Generates rich, realistic recommendations using the authentic Indian luxury properties dataset (Mumbai, Bangalore, New Delhi / NCR, Ranchi, Goa).
  * Assigns realistic match scores (e.g. 98%, 95%, 91%) and human-readable luxury match reasons.
  *
  * @param userId - Optional user identifier
- * @param city - Optional city filter (e.g. 'Mumbai', 'Los Angeles', 'New York')
+ * @param city - Optional city filter (e.g. 'Mumbai', 'Bangalore', 'New Delhi', 'Delhi', 'Ranchi', 'Goa')
  * @param limit - Maximum recommendations to return (default: 10)
  */
 export async function generateDemoRecommendations(
@@ -134,8 +147,12 @@ export async function generateDemoRecommendations(
 ): Promise<PropertyRecommendation[]> {
   const targetLimit = Math.max(1, Math.min(limit || 10, 50));
 
+  const propertyPool = (city && city.toLowerCase().includes('goa'))
+    ? [...ALL_DEMO_PROPERTIES, ...(GOA_PROPERTIES || [])]
+    : ALL_DEMO_PROPERTIES;
+
   // Filter properties by city if specified
-  let candidates = ALL_DEMO_PROPERTIES.filter((p) => isCityMatch(p.city, city));
+  let candidates = propertyPool.filter((p) => isCityMatch(p.city, city));
 
   // Fallback to all properties if city filter returned no items
   if (candidates.length === 0) {
@@ -172,7 +189,7 @@ export async function generateDemoRecommendations(
  * If RPC fails, returns null, or for offline/demo users, seamlessly falls back to `generateDemoRecommendations`.
  *
  * @param userId - Optional UUID of the user
- * @param city - Optional target city (e.g. 'Mumbai', 'Los Angeles', 'New York')
+ * @param city - Optional target city (e.g. 'Mumbai', 'Bangalore', 'New Delhi', 'Ranchi', 'Goa')
  * @param limit - Maximum recommendations to return (default: 10)
  */
 export async function getPersonalizedRecommendations(

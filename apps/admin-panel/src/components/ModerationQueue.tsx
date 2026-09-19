@@ -385,10 +385,10 @@ export default function ModerationQueue({ initialFilter = 'ALL' }: ModerationQue
       if (selectedDeedFilter === 'MISSING_DEED' && property.deed_url) return false;
 
       // 5. Price range filter
-      if (selectedPriceRange === 'UNDER_500K' && property.price >= 500000) return false;
-      if (selectedPriceRange === '500K_1M' && (property.price < 500000 || property.price > 1000000)) return false;
-      if (selectedPriceRange === '1M_2M' && (property.price < 1000000 || property.price > 2000000)) return false;
-      if (selectedPriceRange === 'OVER_2M' && property.price < 2000000) return false;
+      if (selectedPriceRange === 'UNDER_1CR' && property.price >= 10000000) return false;
+      if (selectedPriceRange === '1CR_5CR' && (property.price < 10000000 || property.price > 50000000)) return false;
+      if (selectedPriceRange === '5CR_15CR' && (property.price < 50000000 || property.price > 150000000)) return false;
+      if (selectedPriceRange === 'OVER_15CR' && property.price < 150000000) return false;
 
       return true;
     }).sort((a, b) => {
@@ -723,12 +723,12 @@ export default function ModerationQueue({ initialFilter = 'ALL' }: ModerationQue
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Average Listing Price</span>
             <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center border border-indigo-500/20 group-hover:scale-105 transition-transform">
-              <DollarSign className="w-5 h-5" />
+              <Tag className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-3">
             <span className="text-3xl font-extrabold tracking-tight text-slate-900">
-              ${metrics.avgPrice ? metrics.avgPrice.toLocaleString() : '0'}
+              ₹{metrics.avgPrice ? metrics.avgPrice.toLocaleString('en-IN') : '0'}
             </span>
           </div>
           <div className="mt-2.5 flex items-center gap-2 text-xs text-slate-500">
@@ -870,10 +870,10 @@ export default function ModerationQueue({ initialFilter = 'ALL' }: ModerationQue
               className="py-2.5 px-3.5 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 rounded-2xl border border-slate-200/80 focus:border-blue-500 outline-hidden cursor-pointer"
             >
               <option value="ALL">Any Price</option>
-              <option value="UNDER_500K">&lt; $500,000</option>
-              <option value="500K_1M">$500,000 - $1,000,000</option>
-              <option value="1M_2M">$1,000,000 - $2,000,000</option>
-              <option value="OVER_2M">&gt; $2,000,000</option>
+              <option value="UNDER_1CR">&lt; ₹1 Cr</option>
+              <option value="1CR_5CR">₹1 Cr - ₹5 Cr</option>
+              <option value="5CR_15CR">₹5 Cr - ₹15 Cr</option>
+              <option value="OVER_15CR">&gt; ₹15 Cr</option>
             </select>
 
             {/* Deed Status Filter */}
@@ -1094,7 +1094,7 @@ export default function ModerationQueue({ initialFilter = 'ALL' }: ModerationQue
 
                       <div className="text-left sm:text-right flex-shrink-0">
                         <div className="text-2xl font-black text-slate-900 tracking-tight">
-                          ${property.price?.toLocaleString()}
+                          ₹{property.price?.toLocaleString('en-IN')}
                         </div>
                         <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                           For {property.list_type || 'Sale'}

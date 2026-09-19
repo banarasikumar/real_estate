@@ -357,12 +357,12 @@ export default function CreatePropertyScreen() {
             </View>
           </View>
 
-          <Text style={styles.label}>Price ($) *</Text>
+          <Text style={styles.label}>Price (₹) *</Text>
           <TextInput
             style={styles.input}
             value={price}
             onChangeText={setPrice}
-            placeholder="e.g. 350000"
+            placeholder={listingType.toLowerCase() === 'rent' ? '₹ Price per month (e.g. 75000)' : '₹ Total purchase price (e.g. 15000000)'}
             placeholderTextColor="#94a3b8"
             keyboardType="numeric"
           />

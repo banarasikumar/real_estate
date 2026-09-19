@@ -17,7 +17,6 @@ import {
   Layers,
   ArrowRight,
   Info,
-  DollarSign,
   HelpCircle,
   RotateCcw,
   Check
@@ -41,21 +40,23 @@ interface SliceData {
 }
 
 /**
- * Intelligent parser to handle Indian Crore / Lakhs, formatted dollar strings, or raw numbers.
+ * Intelligent parser to handle Indian Crore / Lakhs, formatted currency strings, or raw numbers.
+ * Always returns symbol: '₹' and defaults to 150000 (rent) or 35000000 (sale).
  */
-function parsePriceProp(
+export function getDefaultPriceAndSymbol(
   price?: number | string,
   isRent: boolean = false
 ): { amount: number; symbol: string } {
+  const defaultPrice = isRent ? 150000 : 35000000;
   if (typeof price === 'number' && !isNaN(price)) {
     return {
-      amount: price > 0 ? price : isRent ? 2800 : 650000,
-      symbol: '$',
+      amount: price > 0 ? price : defaultPrice,
+      symbol: '₹',
     };
   }
 
   if (typeof price === 'string') {
-    const symbol = price.includes('₹') ? '₹' : '$';
+    const symbol = '₹';
     const lower = price.toLowerCase().trim();
 
     // Check for Indian Crore / Lac
@@ -76,32 +77,31 @@ function parsePriceProp(
     if (!isNaN(cleanNum) && cleanNum > 0) {
       return { amount: cleanNum, symbol };
     }
-    return { amount: isRent ? 2800 : 650000, symbol };
+    return { amount: defaultPrice, symbol };
   }
 
-  return { amount: isRent ? 2800 : 650000, symbol: '$' };
+  return { amount: defaultPrice, symbol: '₹' };
 }
 
+export const parsePriceProp = getDefaultPriceAndSymbol;
+
 /**
- * Formats values into localized currency.
+ * Formats values into localized Indian Rupees currency.
  */
-function formatCurrency(amount: number, symbol: string = '$'): string {
+function formatCurrency(amount: number, _symbol: string = '₹'): string {
   const rounded = Math.round(amount);
-  if (symbol === '₹') {
-    return `₹${rounded.toLocaleString('en-IN')}`;
-  }
-  return `$${rounded.toLocaleString('en-US')}`;
+  return `₹${rounded.toLocaleString('en-IN')}`;
 }
 
 export default function InteractiveMortgageCalculator({
   price,
   listingType = 'SALE',
   propertyTaxRate: initialPropTaxRate = 1.2,
-  hoaMonthly: initialHoa = 350,
+  hoaMonthly: initialHoa = 5000,
 }: InteractiveMortgageCalculatorProps) {
   // Parse incoming price and detect currency symbol
   const parsedPriceData = useMemo(() => {
-    return parsePriceProp(price, listingType === 'RENT');
+    return getDefaultPriceAndSymbol(price, listingType === 'RENT');
   }, [price, listingType]);
 
   const currencySymbol = parsedPriceData.symbol;
@@ -122,14 +122,14 @@ export default function InteractiveMortgageCalculator({
   // SALE MODE STATE
   // ----------------------------------------------------
   const [homePrice, setHomePrice] = useState<number>(
-    listingType === 'RENT' ? 650000 : parsedPriceData.amount
+    listingType === 'RENT' ? 35000000 : parsedPriceData.amount
   );
   const [downPaymentPercent, setDownPaymentPercent] = useState<number>(20);
-  const [interestRate, setInterestRate] = useState<number>(6.5);
+  const [interestRate, setInterestRate] = useState<number>(8.5);
   const [loanTerm, setLoanTerm] = useState<LoanTermType>('30_YEAR');
   const [taxRate, setTaxRate] = useState<number>(initialPropTaxRate || 1.2);
-  const [homeInsuranceMonthly, setHomeInsuranceMonthly] = useState<number>(120);
-  const [hoaMonthly, setHoaMonthly] = useState<number>(initialHoa ?? 350);
+  const [homeInsuranceMonthly, setHomeInsuranceMonthly] = useState<number>(2500);
+  const [hoaMonthly, setHoaMonthly] = useState<number>(initialHoa ?? 5000);
 
   // Sync home price if prop price changes in sale mode
   useEffect(() => {
@@ -142,14 +142,14 @@ export default function InteractiveMortgageCalculator({
   // RENT MODE STATE
   // ----------------------------------------------------
   const [baseRent, setBaseRent] = useState<number>(
-    listingType === 'RENT' ? parsedPriceData.amount : 2800
+    listingType === 'RENT' ? parsedPriceData.amount : 150000
   );
-  const [utilitiesElectric, setUtilitiesElectric] = useState<number>(140);
-  const [utilitiesWater, setUtilitiesWater] = useState<number>(60);
-  const [utilitiesFiber, setUtilitiesFiber] = useState<number>(75);
-  const [rentersInsuranceMonthly, setRentersInsuranceMonthly] = useState<number>(25);
-  const [securityDepositMonths, setSecurityDepositMonths] = useState<number>(1);
-  const [applicationFee, setApplicationFee] = useState<number>(75);
+  const [utilitiesElectric, setUtilitiesElectric] = useState<number>(4500);
+  const [utilitiesWater, setUtilitiesWater] = useState<number>(1500);
+  const [utilitiesFiber, setUtilitiesFiber] = useState<number>(1200);
+  const [rentersInsuranceMonthly, setRentersInsuranceMonthly] = useState<number>(1000);
+  const [securityDepositMonths, setSecurityDepositMonths] = useState<number>(2);
+  const [applicationFee, setApplicationFee] = useState<number>(5000);
 
   // Sync rent if prop changes in rent mode
   useEffect(() => {
@@ -164,21 +164,21 @@ export default function InteractiveMortgageCalculator({
   // Quick reset to initial defaults
   const handleReset = () => {
     if (activeMode === 'SALE') {
-      setHomePrice(parsedPriceData.amount || 650000);
+      setHomePrice(parsedPriceData.amount || 35000000);
       setDownPaymentPercent(20);
-      setInterestRate(6.5);
+      setInterestRate(8.5);
       setLoanTerm('30_YEAR');
       setTaxRate(initialPropTaxRate || 1.2);
-      setHomeInsuranceMonthly(120);
-      setHoaMonthly(initialHoa ?? 350);
+      setHomeInsuranceMonthly(2500);
+      setHoaMonthly(initialHoa ?? 5000);
     } else {
-      setBaseRent(parsedPriceData.amount || 2800);
-      setUtilitiesElectric(140);
-      setUtilitiesWater(60);
-      setUtilitiesFiber(75);
-      setRentersInsuranceMonthly(25);
-      setSecurityDepositMonths(1);
-      setApplicationFee(75);
+      setBaseRent(parsedPriceData.amount || 150000);
+      setUtilitiesElectric(4500);
+      setUtilitiesWater(1500);
+      setUtilitiesFiber(1200);
+      setRentersInsuranceMonthly(1000);
+      setSecurityDepositMonths(2);
+      setApplicationFee(5000);
     }
   };
 
@@ -469,7 +469,7 @@ export default function InteractiveMortgageCalculator({
                     </span>
                     <input
                       type="text"
-                      value={homePrice ? Math.round(homePrice).toLocaleString() : ''}
+                      value={homePrice ? Math.round(homePrice).toLocaleString('en-IN') : ''}
                       onChange={(e) => {
                         const val = parseFloat(e.target.value.replace(/[^0-9]/g, ''));
                         setHomePrice(isNaN(val) ? 0 : val);
@@ -549,7 +549,7 @@ export default function InteractiveMortgageCalculator({
                         type="button"
                         onClick={() =>
                           setInterestRate((prev) =>
-                            Math.max(3.0, +(prev - 0.1).toFixed(2))
+                            Math.max(6.0, +(prev - 0.1).toFixed(2))
                           )
                         }
                         className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-90 flex items-center justify-center text-slate-700 font-bold transition-all"
@@ -566,7 +566,7 @@ export default function InteractiveMortgageCalculator({
                         type="button"
                         onClick={() =>
                           setInterestRate((prev) =>
-                            Math.min(9.0, +(prev + 0.1).toFixed(2))
+                            Math.min(14.0, +(prev + 0.1).toFixed(2))
                           )
                         }
                         className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 active:scale-90 flex items-center justify-center text-slate-700 font-bold transition-all"
@@ -580,8 +580,8 @@ export default function InteractiveMortgageCalculator({
                   <div className="relative py-1">
                     <input
                       type="range"
-                      min={3.0}
-                      max={9.0}
+                      min={6.0}
+                      max={14.0}
                       step={0.1}
                       value={interestRate}
                       onChange={(e) => setInterestRate(parseFloat(e.target.value))}
@@ -590,9 +590,9 @@ export default function InteractiveMortgageCalculator({
                   </div>
 
                   <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>3.0% (Historic Low)</span>
-                    <span>6.5% (Typical Benchmark)</span>
-                    <span>9.0%</span>
+                    <span>6.0% (Subsidized)</span>
+                    <span>8.5% (Typical Benchmark)</span>
+                    <span>14.0%</span>
                   </div>
                 </div>
 
@@ -682,9 +682,9 @@ export default function InteractiveMortgageCalculator({
                       </div>
                       <input
                         type="range"
-                        min={30}
-                        max={350}
-                        step={5}
+                        min={500}
+                        max={15000}
+                        step={250}
                         value={homeInsuranceMonthly}
                         onChange={(e) =>
                           setHomeInsuranceMonthly(parseInt(e.target.value, 10))
@@ -697,7 +697,7 @@ export default function InteractiveMortgageCalculator({
                     {/* HOA Monthly */}
                     <div className="bg-white p-3 rounded-xl border border-slate-200">
                       <div className="flex justify-between items-center text-xs text-slate-500 mb-1">
-                        <span>HOA Dues</span>
+                        <span>HOA / Maint. Dues</span>
                         <span className="font-bold text-emerald-600">
                           {formatCurrency(hoaMonthly, currencySymbol)}
                         </span>
@@ -705,8 +705,8 @@ export default function InteractiveMortgageCalculator({
                       <input
                         type="range"
                         min={0}
-                        max={800}
-                        step={25}
+                        max={50000}
+                        step={500}
                         value={hoaMonthly}
                         onChange={(e) => setHoaMonthly(parseInt(e.target.value, 10))}
                         className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
@@ -735,7 +735,7 @@ export default function InteractiveMortgageCalculator({
                     </span>
                     <input
                       type="text"
-                      value={baseRent ? Math.round(baseRent).toLocaleString() : ''}
+                      value={baseRent ? Math.round(baseRent).toLocaleString('en-IN') : ''}
                       onChange={(e) => {
                         const val = parseFloat(e.target.value.replace(/[^0-9]/g, ''));
                         setBaseRent(isNaN(val) ? 0 : val);
@@ -771,9 +771,9 @@ export default function InteractiveMortgageCalculator({
                       </div>
                       <input
                         type="range"
-                        min={50}
-                        max={300}
-                        step={5}
+                        min={1000}
+                        max={20000}
+                        step={250}
                         value={utilitiesElectric}
                         onChange={(e) =>
                           setUtilitiesElectric(parseInt(e.target.value, 10))
@@ -786,7 +786,7 @@ export default function InteractiveMortgageCalculator({
                     <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
                       <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
                         <Droplets className="w-3.5 h-3.5 text-blue-500" />
-                        <span>Water & Trash</span>
+                        <span>Water & Maint.</span>
                       </div>
                       <div className="flex justify-between items-baseline">
                         <span className="text-sm font-bold text-slate-900">
@@ -795,9 +795,9 @@ export default function InteractiveMortgageCalculator({
                       </div>
                       <input
                         type="range"
-                        min={20}
-                        max={150}
-                        step={5}
+                        min={300}
+                        max={6000}
+                        step={100}
                         value={utilitiesWater}
                         onChange={(e) =>
                           setUtilitiesWater(parseInt(e.target.value, 10))
@@ -819,9 +819,9 @@ export default function InteractiveMortgageCalculator({
                       </div>
                       <input
                         type="range"
-                        min={40}
-                        max={140}
-                        step={5}
+                        min={500}
+                        max={4000}
+                        step={100}
                         value={utilitiesFiber}
                         onChange={(e) =>
                           setUtilitiesFiber(parseInt(e.target.value, 10))
@@ -848,9 +848,9 @@ export default function InteractiveMortgageCalculator({
 
                   <input
                     type="range"
-                    min={10}
-                    max={60}
-                    step={1}
+                    min={200}
+                    max={3000}
+                    step={100}
                     value={rentersInsuranceMonthly}
                     onChange={(e) =>
                       setRentersInsuranceMonthly(parseInt(e.target.value, 10))
@@ -887,7 +887,7 @@ export default function InteractiveMortgageCalculator({
                     </div>
 
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
-                      <span className="text-slate-400 block">Security Deposit (1mo)</span>
+                      <span className="text-slate-400 block">Security Deposit ({securityDepositMonths}mo)</span>
                       <span className="font-bold text-white text-sm">
                         {formatCurrency(rentCalculations.securityDeposit, currencySymbol)}
                       </span>

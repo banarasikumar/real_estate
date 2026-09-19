@@ -127,12 +127,20 @@ function getTimeGroup(dateString: string): TimeGroup {
 
 function formatPrice(price?: number | null, listType?: string): string {
   if (price === undefined || price === null) return '';
-  const isRent = listType === 'RENT' || price < 50000;
-  if (price >= 1000000) {
-    const formatted = (price / 1000000).toFixed(1).replace(/\.0$/, '');
-    return `$${formatted}M${isRent ? '/mo' : ''}`;
+  const isRent = listType === 'RENT' || price < 500000;
+  if (price >= 10000000) {
+    const cr = (price / 10000000).toFixed(2).replace(/\.?0+$/, '');
+    return `₹${cr} Cr${isRent ? '/mo' : ''}`;
   }
-  return `$${price.toLocaleString('en-US')}${isRent ? '/mo' : ''}`;
+  if (price >= 100000) {
+    const l = (price / 100000).toFixed(2).replace(/\.?0+$/, '');
+    return `₹${l} L${isRent ? '/mo' : ''}`;
+  }
+  if (price >= 1000) {
+    const k = (price / 1000).toFixed(1).replace(/\.0$/, '');
+    return `₹${k}k${isRent ? '/mo' : ''}`;
+  }
+  return `₹${price.toLocaleString('en-IN')}${isRent ? '/mo' : ''}`;
 }
 
 export default function NotificationCenterScreen() {

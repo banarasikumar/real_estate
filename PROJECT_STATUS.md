@@ -421,10 +421,16 @@ real_estate/
   - `NeighborhoodScores.tsx`: iOS widget-style colorful score cards (Walk Score 94/100, Transit Score 88/100, Bike Score 82/100), GreatSchools district ratings, and local amenity chips.
   - Telemetry view tracking (`trackPropertyView`) integrated into Next.js property page.
   - Full Next.js 16 production build verified cleanly with Turbopack.
+- [x] **India Localization & Strict Indian Rupees (₹) Standardization**:
+  - Relocated and repurposed all US properties (LA/NY) to authentic luxury properties in Bangalore and Delhi NCR with authentic Indian coordinates and neighborhoods (Indiranagar, Koramangala, Golf Links, DLF Phase 5, Jor Bagh).
+  - Synchronized `mockProperties.ts` and `@repo/api/demoProperties.ts` (76 luxury properties across Mumbai, Bangalore, Delhi NCR, and Goa) with realistic INR values (rents ₹45k - ₹6L/mo, sales ₹1.8 Cr - ₹55 Cr).
+  - Localized `searchRegions.ts` and updated search queries and suggestions for Indian metros; defaulted user discovery map to Mumbai.
+  - Standardized all currency formatters (`formatPricePill`, `formatCurrency`, `formatPriceShort`, `formatEditorialPrice`, etc.) across all 4 apps (`user-app`, `owner-app`, `customer-web`, `admin-panel`) to strictly use `₹` and `toLocaleString('en-IN')` (Crores `Cr`, Lakhs `L`, `k`).
+  - Calibrated Interactive Mortgage Calculators, Tour Booking Widgets, Admin Moderation Filters, and Owner Analytics Comps to Indian market standards.
 - [ ] **Deep Linking & Universal Links**: Setting up iOS Universal Links and Android App Links for seamless sharing and push notification routing.
 - [ ] **End-to-End (E2E) Testing**: Automated UI testing (Maestro for mobile, Playwright for web) for critical paths.
 - [ ] **Rich Media Chat**: Upgrading the real-time inbox to support image attachments, voice notes, and PDF documents.
-- [ ] **Localization (i18n)**: Multi-language and multi-currency support for our global dataset (USD/INR).
+
 
 ---
 

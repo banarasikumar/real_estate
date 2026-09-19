@@ -129,10 +129,11 @@ export default function ComplexManagerScreen() {
     const maxPrice = prices.length > 0 ? Math.max(...prices) : 0;
 
     const formatPriceShort = (val: number) => {
-      if (!val) return '$0';
-      if (val >= 1000000) return `$${(val / 1000000).toFixed(1).replace('.0', '')}M`;
-      if (val >= 1000) return `$${Math.round(val / 1000)}k`;
-      return `$${val.toLocaleString()}`;
+      if (!val) return '₹0';
+      if (val >= 10000000) return `₹${(val / 10000000).toFixed(1).replace('.0', '')} Cr`;
+      if (val >= 100000) return `₹${(val / 100000).toFixed(1).replace('.0', '')} L`;
+      if (val >= 1000) return `₹${Math.round(val / 1000)}k`;
+      return `₹${val.toLocaleString('en-IN')}`;
     };
 
     const priceSpectrum =
@@ -140,7 +141,7 @@ export default function ComplexManagerScreen() {
         ? minPrice === maxPrice
           ? formatPriceShort(minPrice)
           : `${formatPriceShort(minPrice)} - ${formatPriceShort(maxPrice)}`
-        : '$0';
+        : '₹0';
 
     return {
       total,
@@ -508,7 +509,7 @@ export default function ComplexManagerScreen() {
               <View style={styles.unitActionFooter}>
                 <View style={styles.unitPriceGroup}>
                   <Text style={styles.unitPriceText}>
-                    ${item.price?.toLocaleString()}
+                    ₹{item.price?.toLocaleString('en-IN')}
                   </Text>
                   {item.listing_type === 'RENT' && (
                     <Text style={styles.unitPricePeriod}>/mo</Text>
@@ -672,12 +673,12 @@ export default function ComplexManagerScreen() {
                   />
                 </View>
                 <View style={styles.formCol}>
-                  <Text style={styles.formLabel}>Price ($) *</Text>
+                  <Text style={styles.formLabel}>Price (₹) *</Text>
                   <TextInput
                     style={styles.formInput}
                     value={newPrice}
                     onChangeText={setNewPrice}
-                    placeholder="e.g. 750000"
+                    placeholder="e.g. 7500000"
                     placeholderTextColor="#94a3b8"
                     keyboardType="numeric"
                   />

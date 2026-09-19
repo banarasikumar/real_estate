@@ -29,36 +29,24 @@ export interface RecommendationEditorialCardProps {
 
 /**
  * Smart price formatter adhering to Apple HIG luxury typography.
- * Supports INR (₹ Cr / ₹ L) for Mumbai properties and USD ($) for LA / NY / international properties.
+ * Strictly formats prices in Indian Rupees (₹ Cr / ₹ L / ₹k).
  */
 export function formatEditorialPrice(item: any): string {
   const price = item?.price ?? item?.salePrice ?? item?.rentPrice ?? 0;
   const isRent = item?.list_type === 'RENT';
-  const isIndia =
-    item?.currency === 'INR' ||
-    item?.city?.toLowerCase() === 'mumbai' ||
-    (typeof item?.address === 'string' && item?.address?.toLowerCase().includes('mumbai'));
 
-  if (isIndia) {
-    if (price >= 10000000) {
-      const cr = price / 10000000;
-      return `₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr${isRent ? '/mo' : ''}`;
-    }
-    if (price >= 100000) {
-      const l = price / 100000;
-      return `₹${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L${isRent ? '/mo' : ''}`;
-    }
-    if (price >= 1000) {
-      return `₹${(price / 1000).toFixed(0)}k${isRent ? '/mo' : ''}`;
-    }
-    return `₹${price.toLocaleString()}${isRent ? '/mo' : ''}`;
+  if (price >= 10000000) {
+    const cr = price / 10000000;
+    return `₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)} Cr${isRent ? '/mo' : ''}`;
   }
-
-  // USD / International
-  if (isRent) {
-    return `$${price.toLocaleString()}/mo`;
+  if (price >= 100000) {
+    const l = price / 100000;
+    return `₹${l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)} L${isRent ? '/mo' : ''}`;
   }
-  return `$${price.toLocaleString()}`;
+  if (price >= 1000) {
+    return `₹${(price / 1000).toFixed(0)}k${isRent ? '/mo' : ''}`;
+  }
+  return `₹${price.toLocaleString('en-IN')}${isRent ? '/mo' : ''}`;
 }
 
 export const RecommendationEditorialCard: React.FC<RecommendationEditorialCardProps> = ({

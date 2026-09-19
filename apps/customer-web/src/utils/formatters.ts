@@ -4,7 +4,7 @@
 
 export function formatPricePill(price: number | string): string {
   if (typeof price === "string") {
-    if (price.startsWith("₹") || price.startsWith("$")) return price;
+    if (price.startsWith("₹")) return price;
     const num = parseFloat(price.replace(/[^0-9.]/g, ""));
     if (isNaN(num)) return price;
     price = num;

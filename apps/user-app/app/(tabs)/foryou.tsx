@@ -23,12 +23,13 @@ import {
   LOS_ANGELES_PROPERTIES,
   NEW_YORK_PROPERTIES,
   MUMBAI_PROPERTIES,
+  RANCHI_PROPERTIES,
   DemoProperty,
 } from '../../data/mockProperties';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type CityFilter = 'all' | 'los-angeles' | 'new-york' | 'mumbai';
+type CityFilter = 'all' | 'mumbai' | 'bangalore' | 'delhi' | 'goa' | 'ranchi';
 
 interface CityTabItem {
   id: CityFilter;
@@ -37,10 +38,12 @@ interface CityTabItem {
 }
 
 const CITY_TABS: CityTabItem[] = [
-  { id: 'all', label: '🌟 All', cityName: 'Worldwide' },
-  { id: 'los-angeles', label: '🌴 Los Angeles', cityName: 'Los Angeles' },
-  { id: 'new-york', label: '🗽 New York', cityName: 'New York' },
-  { id: 'mumbai', label: '🕌 Mumbai', cityName: 'Mumbai' },
+  { id: 'all', label: '🌟 All', cityName: 'All India' },
+  { id: 'mumbai', label: '🌊 Mumbai', cityName: 'Mumbai' },
+  { id: 'bangalore', label: '🌳 Bangalore', cityName: 'Bangalore' },
+  { id: 'delhi', label: '🏛️ New Delhi', cityName: 'New Delhi' },
+  { id: 'goa', label: '🏖️ Goa', cityName: 'Goa' },
+  { id: 'ranchi', label: '🌲 Ranchi', cityName: 'Ranchi' },
 ];
 
 interface CuratedProperty extends DemoProperty {
@@ -50,83 +53,291 @@ interface CuratedProperty extends DemoProperty {
   architectureHighlight?: string;
 }
 
+// Authentic Indian Luxury Properties for Bangalore, Delhi, and Goa
+const BANGALORE_PROPERTIES: DemoProperty[] = [
+  {
+    id: 'blr-1',
+    title: 'Prestige Golfshire Signature Villa',
+    price: 48000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 4500,
+    address: 'Nandi Hills Road, Devanahalli, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    latitude: 13.210,
+    longitude: 77.705,
+    isVerified: true,
+    badge: 'Golf Course View',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'blr-2',
+    title: 'Indiranagar Prime Modern Penthouse',
+    price: 29000000,
+    list_type: 'SALE',
+    prop_type: 'APARTMENT',
+    bedrooms: 3,
+    bathrooms: 3,
+    area_sqft: 2200,
+    address: '100ft Road, Indiranagar, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    latitude: 12.978,
+    longitude: 77.640,
+    isVerified: true,
+    badge: 'Prime Location',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'blr-3',
+    title: 'Total Environment Windmills of Your Mind',
+    price: 42000000,
+    list_type: 'SALE',
+    prop_type: 'APARTMENT',
+    bedrooms: 4,
+    bathrooms: 4,
+    area_sqft: 3800,
+    address: 'EPIP Zone, Whitefield, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    latitude: 12.982,
+    longitude: 77.730,
+    isVerified: true,
+    badge: 'Private Earth Garden',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'blr-4',
+    title: 'Sobha Kingfisher Tower Sky Mansion',
+    price: 85000000,
+    list_type: 'SALE',
+    prop_type: 'PENTHOUSE',
+    bedrooms: 5,
+    bathrooms: 6,
+    area_sqft: 8300,
+    address: 'Lavelle Road, Ashok Nagar, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    latitude: 12.971,
+    longitude: 77.598,
+    isVerified: true,
+    badge: 'Cubbon Park Panorama',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'blr-5',
+    title: 'Koramangala 3rd Block Boutique Bungalow',
+    price: 72000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 4800,
+    address: '3rd Block, Koramangala, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    latitude: 12.934,
+    longitude: 77.625,
+    isVerified: true,
+    badge: 'Billionaire Boulevard',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80' },
+    ],
+  },
+];
+
+const DELHI_PROPERTIES: DemoProperty[] = [
+  {
+    id: 'del-1',
+    title: 'The Camellias Ultra Luxury Residence',
+    price: 180000000,
+    list_type: 'SALE',
+    prop_type: 'APARTMENT',
+    bedrooms: 5,
+    bathrooms: 6,
+    area_sqft: 7400,
+    address: 'Golf Course Road, DLF Phase 5, Gurugram, Delhi NCR',
+    city: 'New Delhi',
+    state: 'Delhi NCR',
+    latitude: 28.450,
+    longitude: 77.102,
+    isVerified: true,
+    badge: 'Ultra Luxury',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'del-2',
+    title: 'The Magnolias Signature Golf Villa',
+    price: 145000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 6500,
+    address: 'DLF Golf Links, Sector 42, Gurugram, Delhi NCR',
+    city: 'New Delhi',
+    state: 'Delhi NCR',
+    latitude: 28.460,
+    longitude: 77.105,
+    isVerified: true,
+    badge: 'Golf Facing',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'del-3',
+    title: 'Lutyens Bungalow Zone Heritage Estate',
+    price: 450000000,
+    list_type: 'SALE',
+    prop_type: 'HOUSE',
+    bedrooms: 6,
+    bathrooms: 7,
+    area_sqft: 12000,
+    address: 'Amrita Shergill Marg, Lutyens Delhi, New Delhi',
+    city: 'New Delhi',
+    state: 'Delhi',
+    latitude: 28.598,
+    longitude: 77.225,
+    isVerified: true,
+    badge: 'Heritage Zone',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'del-4',
+    title: 'Panchsheel Park Modernist Mansion',
+    price: 95000000,
+    list_type: 'SALE',
+    prop_type: 'HOUSE',
+    bedrooms: 5,
+    bathrooms: 5,
+    area_sqft: 5500,
+    address: 'Panchsheel Park North, New Delhi',
+    city: 'New Delhi',
+    state: 'Delhi',
+    latitude: 28.545,
+    longitude: 77.215,
+    isVerified: true,
+    badge: 'Private Pool',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
+    ],
+  },
+];
+
+const GOA_PROPERTIES: DemoProperty[] = [
+  {
+    id: 'goa-1',
+    title: 'Portuguese Heritage Luxury Villa',
+    price: 55000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 4.5,
+    area_sqft: 4200,
+    address: 'Assagao, Badem Road, Assagao, North Goa',
+    city: 'Goa',
+    state: 'Goa',
+    latitude: 15.592,
+    longitude: 73.785,
+    isVerified: true,
+    badge: 'Heritage Estate',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'goa-2',
+    title: 'Anjuna Cliffside Oceanfront Villa',
+    price: 68000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 4800,
+    address: 'Anjuna Beach Road, Anjuna, North Goa',
+    city: 'Goa',
+    state: 'Goa',
+    latitude: 15.580,
+    longitude: 73.742,
+    isVerified: true,
+    badge: 'Arabian Sea Sunset',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' },
+    ],
+  },
+  {
+    id: 'goa-3',
+    title: 'Candolim Beachside Designer Villa',
+    price: 49000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 3,
+    bathrooms: 3.5,
+    area_sqft: 3200,
+    address: 'Pintor Vaddo, Candolim, North Goa',
+    city: 'Goa',
+    state: 'Goa',
+    latitude: 15.518,
+    longitude: 73.768,
+    isVerified: true,
+    badge: 'Beachfront Access',
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
+    ],
+  },
+];
+
 // Pre-curated luxury architectural masterpieces for top picks
 const TOP_PICKS_BY_CITY: Record<CityFilter, CuratedProperty> = {
   all: {
-    id: 'hero-all-1',
-    title: 'The Bellagio Promontory Organic Estate',
-    price: 6450000,
-    list_type: 'SALE',
-    prop_type: 'VILLA',
-    bedrooms: 6,
-    bathrooms: 7,
-    area_sqft: 7850,
-    address: '10480 Bellagio Rd, Bel Air, Los Angeles, CA',
-    city: 'Los Angeles',
-    state: 'CA',
-    latitude: 34.083,
-    longitude: -118.445,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200&q=85' },
-    ],
-    matchScore: 99,
-    matchReason: 'Flagship organic modernist estate matching your luxury architectural preference',
-  },
-  'los-angeles': {
-    id: 'hero-la-1',
-    title: 'Modern Organic Architectural Estate',
-    price: 4950000,
-    list_type: 'SALE',
-    prop_type: 'VILLA',
-    bedrooms: 5,
-    bathrooms: 5.5,
-    area_sqft: 5400,
-    address: '1240 Sunset Plaza Dr, Hollywood Hills, Los Angeles, CA',
-    city: 'Los Angeles',
-    state: 'CA',
-    latitude: 34.095,
-    longitude: -118.378,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&q=85' },
-    ],
-    matchScore: 99,
-    matchReason: 'Matches your luxury villa preference with panoramic city-to-ocean views',
-  },
-  'new-york': {
-    id: 'hero-ny-1',
-    title: 'The Glass Pavilion Sky Penthouse',
-    price: 7800000,
-    list_type: 'SALE',
-    prop_type: 'PENTHOUSE',
-    bedrooms: 4,
-    bathrooms: 4.5,
-    area_sqft: 4600,
-    address: '56 Leonard St #PH52, TriBeCa, New York, NY',
-    city: 'New York',
-    state: 'NY',
-    latitude: 40.717,
-    longitude: -74.006,
-    isVerified: true,
-    property_media: [
-      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=85' },
-    ],
-    matchScore: 99,
-    matchReason: 'Matches your prime Manhattan skyline interest & private wrap-around terrace',
-  },
-  mumbai: {
-    id: 'hero-mumbai-1',
-    title: 'The Altamount Grand Sea-Facing Sky Villa',
+    id: 'hero-all-lodha',
+    title: 'Lodha Altamount Sea-Facing Sky Villa',
     price: 385000000, // ₹38.5 Cr
     list_type: 'SALE',
     prop_type: 'PENTHOUSE',
     bedrooms: 5,
     bathrooms: 6,
     area_sqft: 6800,
-    address: 'Altamount Road, Cumballa Hill, Mumbai',
+    address: 'Altamount Road, Billionaires Row, Cumballa Hill, Mumbai',
     city: 'Mumbai',
-    state: 'MH',
+    state: 'Maharashtra',
+    latitude: 18.966,
+    longitude: 72.809,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200&q=85' },
+    ],
+    matchScore: 99,
+    matchReason: 'Flagship luxury residence with 360-degree Arabian Sea vistas matching your luxury architectural preference',
+  },
+  mumbai: {
+    id: 'hero-mumbai-lodha',
+    title: 'Lodha Altamount Sea-Facing Sky Villa',
+    price: 385000000, // ₹38.5 Cr
+    list_type: 'SALE',
+    prop_type: 'PENTHOUSE',
+    bedrooms: 5,
+    bathrooms: 6,
+    area_sqft: 6800,
+    address: 'Altamount Road, Billionaires Row, Cumballa Hill, Mumbai',
+    city: 'Mumbai',
+    state: 'Maharashtra',
     latitude: 18.966,
     longitude: 72.809,
     isVerified: true,
@@ -135,6 +346,90 @@ const TOP_PICKS_BY_CITY: Record<CityFilter, CuratedProperty> = {
     ],
     matchScore: 99,
     matchReason: 'Unobstructed Arabian Sea vistas matching your South Mumbai luxury lifestyle',
+  },
+  bangalore: {
+    id: 'hero-blr-golfshire',
+    title: 'Prestige Golfshire Signature Villa',
+    price: 48000000, // ₹4.8 Cr
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 5850,
+    address: 'Nandi Hills Road, Devanahalli, Bangalore',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    latitude: 13.210,
+    longitude: 77.705,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200&q=85' },
+    ],
+    matchScore: 99,
+    matchReason: 'Championship 18-hole golf course estate with Nandi Hills views matching your retreat lifestyle',
+  },
+  delhi: {
+    id: 'hero-delhi-camellias',
+    title: 'The Camellias Ultra Luxury Residence',
+    price: 180000000, // ₹18 Cr
+    list_type: 'SALE',
+    prop_type: 'PENTHOUSE',
+    bedrooms: 5,
+    bathrooms: 6,
+    area_sqft: 7400,
+    address: 'Golf Course Road, DLF Phase 5, Gurugram, Delhi NCR',
+    city: 'New Delhi',
+    state: 'Delhi NCR',
+    latitude: 28.450,
+    longitude: 77.102,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=85' },
+    ],
+    matchScore: 99,
+    matchReason: 'Private elevator lobby with panoramic sanctuary golf greens matching your ultra-luxury profile',
+  },
+  goa: {
+    id: 'hero-goa-villa',
+    title: 'Portuguese Heritage Luxury Villa',
+    price: 55000000, // ₹5.5 Cr
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 4,
+    bathrooms: 4.5,
+    area_sqft: 4200,
+    address: 'Assagao, Badem Road, Assagao, North Goa',
+    city: 'Goa',
+    state: 'Goa',
+    latitude: 15.592,
+    longitude: 73.785,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200&q=85' },
+    ],
+    matchScore: 99,
+    matchReason: 'Restored colonial Portuguese architecture with private swimming pool & tropical courtyards',
+  },
+  ranchi: {
+    id: 'hero-rnc-1',
+    title: 'Kanke Lake Promontory Luxury Estate',
+    price: 45000000,
+    list_type: 'SALE',
+    prop_type: 'VILLA',
+    bedrooms: 5,
+    bathrooms: 5,
+    area_sqft: 5200,
+    address: 'Kanke Dam Road, Kanke, Ranchi, Jharkhand',
+    city: 'Ranchi',
+    state: 'Jharkhand',
+    latitude: 23.421,
+    longitude: 85.322,
+    isVerified: true,
+    property_media: [
+      { url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200&q=85' },
+    ],
+    matchScore: 97,
+    matchReason: 'Waterfront architectural villa with panoramic lake vistas and private gardens',
   },
 };
 
@@ -218,10 +513,18 @@ export default function ForYouScreen() {
 
   // City-filtered pool of demo properties
   const cityPool = useMemo(() => {
-    if (selectedCity === 'los-angeles') return LOS_ANGELES_PROPERTIES;
-    if (selectedCity === 'new-york') return NEW_YORK_PROPERTIES;
     if (selectedCity === 'mumbai') return MUMBAI_PROPERTIES;
-    return ALL_DEMO_PROPERTIES;
+    if (selectedCity === 'bangalore') return BANGALORE_PROPERTIES;
+    if (selectedCity === 'delhi') return DELHI_PROPERTIES;
+    if (selectedCity === 'goa') return GOA_PROPERTIES;
+    if (selectedCity === 'ranchi') return RANCHI_PROPERTIES;
+    return [
+      ...MUMBAI_PROPERTIES,
+      ...BANGALORE_PROPERTIES,
+      ...DELHI_PROPERTIES,
+      ...GOA_PROPERTIES,
+      ...RANCHI_PROPERTIES,
+    ];
   }, [selectedCity]);
 
   // Section 2: AI Personalized For You
@@ -427,7 +730,7 @@ export default function ForYouScreen() {
                 <Ionicons name="flame" size={19} color="#e11d48" style={{ marginRight: 6 }} />
                 <Text style={styles.sectionTitle}>
                   {selectedCity === 'all'
-                    ? 'Trending Worldwide'
+                    ? 'Trending Across India'
                     : `Trending in ${currentCityTab.cityName}`}
                 </Text>
               </View>

@@ -73,11 +73,11 @@ const DEFAULT_TIME_SLOTS = ['9:00 AM', '11:00 AM', '1:00 PM', '3:00 PM', '5:00 P
  * Formats price value into standard luxury currency string
  */
 function formatDisplayPrice(price?: string | number): string {
-  if (!price) return '$2,450,000';
+  if (!price) return '₹2,50,00,000';
   if (typeof price === 'number') {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       maximumFractionDigits: 0,
     }).format(price);
   }
@@ -94,8 +94,8 @@ function calculateEstimatedPayment(priceStr?: string | number): {
   homeInsurance: string;
   hoaFees: string;
 } {
-  // Parse rough numerical value from price string
-  let numericPrice = 2450000;
+  // Parse rough numerical value from price string (default ₹2.5 Cr)
+  let numericPrice = 25000000;
   if (typeof priceStr === 'number') {
     numericPrice = priceStr;
   } else if (priceStr) {
@@ -104,7 +104,7 @@ function calculateEstimatedPayment(priceStr?: string | number): {
     if (!isNaN(parsed) && parsed > 0) {
       if (priceStr.toLowerCase().includes('cr')) {
         numericPrice = parsed * 10000000;
-      } else if (priceStr.toLowerCase().includes('lac')) {
+      } else if (priceStr.toLowerCase().includes('lac') || priceStr.toLowerCase().includes('lakh')) {
         numericPrice = parsed * 100000;
       } else {
         numericPrice = parsed;
@@ -112,44 +112,31 @@ function calculateEstimatedPayment(priceStr?: string | number): {
     }
   }
 
-  // 80% loan at 6.75% fixed 30-year
+  // 80% loan at 8.5% fixed 30-year
   const loanAmount = numericPrice * 0.8;
-  const monthlyRate = 0.0675 / 12;
+  const monthlyRate = 0.085 / 12;
   const numPayments = 360;
   const pAndI =
     (loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments))) /
     (Math.pow(1 + monthlyRate, numPayments) - 1);
-  const tax = (numericPrice * 0.0115) / 12;
-  const insurance = (numericPrice * 0.0035) / 12;
-  const hoa = 350;
+  const tax = (numericPrice * 0.012) / 12;
+  const insurance = (numericPrice * 0.0025) / 12;
+  const hoa = 5000;
   const total = pAndI + tax + insurance + hoa;
 
-  const isRupee = typeof priceStr === 'string' && (priceStr.includes('₹') || priceStr.includes('Cr') || priceStr.includes('Lac'));
-
-  if (isRupee) {
-    const formatINR = (val: number) => `₹${Math.round(val).toLocaleString('en-IN')}`;
-    return {
-      monthlyTotal: formatINR(total),
-      principalAndInterest: formatINR(pAndI),
-      propertyTax: formatINR(tax),
-      homeInsurance: formatINR(insurance),
-      hoaFees: formatINR(hoa),
-    };
-  }
-
-  const formatUSD = (val: number) =>
-    new Intl.NumberFormat('en-US', {
+  const formatINR = (val: number) =>
+    new Intl.NumberFormat('en-IN', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'INR',
       maximumFractionDigits: 0,
     }).format(val);
 
   return {
-    monthlyTotal: formatUSD(total),
-    principalAndInterest: formatUSD(pAndI),
-    propertyTax: formatUSD(tax),
-    homeInsurance: formatUSD(insurance),
-    hoaFees: formatUSD(hoa),
+    monthlyTotal: formatINR(total),
+    principalAndInterest: formatINR(pAndI),
+    propertyTax: formatINR(tax),
+    homeInsurance: formatINR(insurance),
+    hoaFees: formatINR(hoa),
   };
 }
 
@@ -157,7 +144,7 @@ export default function TourBookingWidget({
   propertyId,
   propertyTitle = 'Luxury Contemporary Architectural Residence',
   propertyAddress = '742 Evergreen Promenade, Silicon Foothills',
-  price = '$2,450,000',
+  price = '₹2,50,00,000',
   status = 'Active Listing',
   ownerId,
   agentName = 'Sarah Jenkins',
@@ -492,7 +479,7 @@ export default function TourBookingWidget({
               </div>
             </div>
             <p className="text-[10px] text-slate-400 italic">
-              *Based on 20% down payment, 30-year fixed loan at 6.75% APR. Actual rates may vary.
+              *Based on 20% down payment, 30-year fixed loan at 8.5% APR. Actual rates may vary.
             </p>
           </div>
         )}

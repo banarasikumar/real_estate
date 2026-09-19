@@ -42,39 +42,39 @@ export interface MarketPriceComparisonCardProps {
 const DEFAULT_MARKET_DATA: MarketCityMetric[] = [
   {
     city: 'All Portfolio',
-    portfolioPricePerSqft: 1420,
-    marketMedianPricePerSqft: 1390,
-    fairMinPricePerSqft: 1320,
-    fairMaxPricePerSqft: 1460,
+    portfolioPricePerSqft: 18500,
+    marketMedianPricePerSqft: 17900,
+    fairMinPricePerSqft: 16800,
+    fairMaxPricePerSqft: 19200,
     totalListings: 6,
-    note: 'Balanced portfolio pricing yields maximum qualified tour conversions.',
+    note: 'Balanced portfolio pricing yields maximum qualified tour conversions across Indian metros.',
   },
   {
-    city: 'Los Angeles',
-    portfolioPricePerSqft: 1680,
-    marketMedianPricePerSqft: 1650,
-    fairMinPricePerSqft: 1560,
-    fairMaxPricePerSqft: 1740,
+    city: 'Mumbai',
+    portfolioPricePerSqft: 34500,
+    marketMedianPricePerSqft: 33800,
+    fairMinPricePerSqft: 31500,
+    fairMaxPricePerSqft: 36000,
     totalListings: 3,
-    note: 'Bel Air & Beverly Hills listings are in optimal fair value tier.',
+    note: 'Bandra & Worli luxury residences are positioned in the optimal fair value tier.',
   },
   {
-    city: 'New York',
-    portfolioPricePerSqft: 2450,
-    marketMedianPricePerSqft: 2380,
-    fairMinPricePerSqft: 2260,
-    fairMaxPricePerSqft: 2520,
+    city: 'Bangalore',
+    portfolioPricePerSqft: 12500,
+    marketMedianPricePerSqft: 12100,
+    fairMinPricePerSqft: 11200,
+    fairMaxPricePerSqft: 13200,
     totalListings: 2,
-    note: 'Manhattan penthouses command steady +2.9% premium above median.',
+    note: 'Indiranagar & Koramangala duplexes command steady +3.3% premium above median.',
   },
   {
-    city: 'Miami Beach',
-    portfolioPricePerSqft: 1290,
-    marketMedianPricePerSqft: 1340,
-    fairMinPricePerSqft: 1250,
-    fairMaxPricePerSqft: 1420,
+    city: 'Delhi NCR',
+    portfolioPricePerSqft: 16800,
+    marketMedianPricePerSqft: 17200,
+    fairMinPricePerSqft: 15900,
+    fairMaxPricePerSqft: 18400,
     totalListings: 1,
-    note: 'Waterfront condo priced attractively for rapid seasonal closing.',
+    note: 'Golf Course Road luxury residence priced attractively for rapid closing.',
   },
 ];
 
@@ -235,7 +235,7 @@ export const MarketPriceComparisonCard: React.FC<MarketPriceComparisonCardProps>
         <View style={styles.metricBox}>
           <Text style={styles.metricBoxLabel}>Portfolio Avg</Text>
           <Text style={styles.metricBoxValue}>
-            ${portfolioPricePerSqft.toLocaleString()}
+            ₹{portfolioPricePerSqft.toLocaleString('en-IN')}
           </Text>
           <Text style={styles.metricBoxUnit}>per sq.ft.</Text>
         </View>
@@ -247,7 +247,7 @@ export const MarketPriceComparisonCard: React.FC<MarketPriceComparisonCardProps>
         <View style={styles.metricBox}>
           <Text style={styles.metricBoxLabel}>Market Median</Text>
           <Text style={styles.metricBoxValue}>
-            ${marketMedianPricePerSqft.toLocaleString()}
+            ₹{marketMedianPricePerSqft.toLocaleString('en-IN')}
           </Text>
           <Text style={styles.metricBoxUnit}>per sq.ft.</Text>
         </View>

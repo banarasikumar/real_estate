@@ -26,68 +26,14 @@ export interface SearchSuggestionItem {
 }
 
 import {
-  LOS_ANGELES_PROPERTIES,
-  NEW_YORK_PROPERTIES,
   MUMBAI_PROPERTIES,
+  BANGALORE_PROPERTIES,
+  DELHI_PROPERTIES,
+  GOA_PROPERTIES,
+  RANCHI_PROPERTIES,
 } from './mockProperties';
 
 export const SEARCH_REGIONS: SearchRegion[] = [
-  {
-    id: 'los-angeles',
-    name: 'Los Angeles CA homes',
-    city: 'Los Angeles',
-    state: 'CA',
-    center: [-118.2437, 34.0522],
-    zoom: 10.5,
-    // Authentic multi-point perimeter around LA basin, San Fernando, Santa Monica, Long Beach, Pasadena
-    boundaryPolygon: [
-      [-118.6000, 34.2850], // Chatsworth / Porter Ranch
-      [-118.4500, 34.3400], // Sylmar / San Fernando Valley North
-      [-118.3200, 34.2800], // Tujunga / Sunland
-      [-118.3150, 34.1850], // Burbank edge (outside boundary)
-      [-118.2450, 34.1450], // Glendale edge (outside boundary)
-      [-118.1850, 34.1350], // Eagle Rock / Pasadena border
-      [-118.1650, 34.0650], // El Sereno
-      [-118.2150, 34.0150], // Boyle Heights / East LA
-      [-118.2550, 33.9350], // South Los Angeles / Watts
-      [-118.2850, 33.8400], // Harbor Gateway / Gardena
-      [-118.2900, 33.7900], // Harbor City / Torrance border
-      [-118.2950, 33.7150], // San Pedro / Point Fermin
-      [-118.2600, 33.7350], // Port of LA / Long Beach channel
-      [-118.3050, 33.7850], // Wilmington
-      [-118.3650, 33.9100], // Hawthorne / Inglewood border
-      [-118.4350, 33.9450], // LAX / Dockweiler Beach
-      [-118.4600, 33.9850], // Marina del Rey / Venice
-      [-118.4900, 34.0250], // Santa Monica border
-      [-118.5550, 34.0400], // Pacific Palisades coastline
-      [-118.6250, 34.1450], // Topanga Canyon / Calabasas border
-      [-118.6400, 34.2000], // West Hills
-      [-118.6000, 34.2850], // Close loop
-    ],
-    sampleProperties: LOS_ANGELES_PROPERTIES,
-  },
-  {
-    id: 'new-york',
-    name: 'New York NY homes',
-    city: 'New York',
-    state: 'NY',
-    center: [-73.9851, 40.7488], // Midtown Manhattan / Empire State Building
-    zoom: 11,
-    boundaryPolygon: [
-      [-74.0400, 40.7000], // Battery Park / Financial District
-      [-74.0150, 40.7500], // Chelsea / Hudson Yards / West Side Highway
-      [-73.9900, 40.7950], // Upper West Side / Riverside Park
-      [-73.9400, 40.8750], // Inwood / Fort Tryon / Harlem River
-      [-73.9100, 40.8500], // South Bronx / Mott Haven border
-      [-73.9250, 40.7750], // Astoria / Queens border
-      [-73.9550, 40.7250], // Greenpoint / Williamsburg, Brooklyn
-      [-73.9850, 40.6900], // DUMBO / Brooklyn Heights
-      [-74.0200, 40.6500], // Red Hook / Sunset Park
-      [-74.0500, 40.6400], // Upper New York Bay / Staten Island ferry channel
-      [-74.0400, 40.7000], // Close loop
-    ],
-    sampleProperties: NEW_YORK_PROPERTIES,
-  },
   {
     id: 'mumbai',
     name: 'Mumbai Luxury Homes',
@@ -133,44 +79,7 @@ export const SEARCH_REGIONS: SearchRegion[] = [
       [77.5250, 13.0350], // Yeshwanthpur / Peenya
       [77.5950, 13.1100], // Close loop
     ],
-    sampleProperties: [
-      {
-        id: 'blr-1',
-        title: 'Prestige Golfshire Designer Villa',
-        price: 48000000,
-        list_type: 'SALE',
-        prop_type: 'VILLA',
-        bedrooms: 4,
-        bathrooms: 5,
-        area_sqft: 4500,
-        address: 'Nandi Hills Road, Bangalore',
-        latitude: 13.210,
-        longitude: 77.705,
-        isVerified: true,
-        badge: 'Golf Course View',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=800&q=80' },
-        ],
-      },
-      {
-        id: 'blr-2',
-        title: 'Indiranagar Prime Modern Penthouse',
-        price: 29000000,
-        list_type: 'SALE',
-        prop_type: 'APARTMENT',
-        bedrooms: 3,
-        bathrooms: 3,
-        area_sqft: 2200,
-        address: '100ft Road, Indiranagar, Bangalore',
-        latitude: 12.978,
-        longitude: 77.640,
-        isVerified: true,
-        badge: 'Prime Location',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' },
-        ],
-      },
-    ],
+    sampleProperties: BANGALORE_PROPERTIES,
   },
   {
     id: 'delhi',
@@ -192,26 +101,7 @@ export const SEARCH_REGIONS: SearchRegion[] = [
       [77.1200, 28.7000], // Pitampura
       [77.1000, 28.7500], // Close loop
     ],
-    sampleProperties: [
-      {
-        id: 'del-1',
-        title: 'The Camellias Super Luxury Suite',
-        price: 180000000,
-        list_type: 'SALE',
-        prop_type: 'APARTMENT',
-        bedrooms: 5,
-        bathrooms: 6,
-        area_sqft: 7400,
-        address: 'Golf Course Road, DLF Phase 5, Gurugram, Delhi NCR',
-        latitude: 28.450,
-        longitude: 77.102,
-        isVerified: true,
-        badge: 'Ultra Luxury',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800&q=80' },
-        ],
-      },
-    ],
+    sampleProperties: DELHI_PROPERTIES,
   },
   {
     id: 'goa',
@@ -235,50 +125,58 @@ export const SEARCH_REGIONS: SearchRegion[] = [
       [73.7900, 15.6900], // Pernem
       [73.7300, 15.6800], // Close loop
     ],
-    sampleProperties: [
-      {
-        id: 'goa-1',
-        title: 'Portuguese Heritage Villa with Private Pool',
-        price: 55000000,
-        list_type: 'SALE',
-        prop_type: 'VILLA',
-        bedrooms: 4,
-        bathrooms: 4,
-        area_sqft: 3800,
-        address: 'Assagao, North Goa',
-        latitude: 15.592,
-        longitude: 73.785,
-        isVerified: true,
-        badge: 'Private Pool',
-        property_media: [
-          { url: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80' },
-        ],
-      },
+    sampleProperties: GOA_PROPERTIES,
+  },
+  {
+    id: 'ranchi',
+    name: 'Ranchi Green Valley Residences',
+    city: 'Ranchi',
+    state: 'Jharkhand',
+    center: [85.3096, 23.3441],
+    zoom: 11,
+    boundaryPolygon: [
+      [85.3250, 23.4450], // Kanke / Ring Road North
+      [85.3700, 23.4200], // Booty More / Tagore Hill
+      [85.4100, 23.3650], // Tatisilwai / Namkum East
+      [85.3850, 23.3150], // Chutia / Namkum Station
+      [85.3350, 23.2750], // Dhurwa / Ring Road South
+      [85.2850, 23.2850], // Hatia / HEC
+      [85.2400, 23.3300], // Kathal More / Argora West
+      [85.2350, 23.3850], // Ratu / Ring Road West
+      [85.2750, 23.4350], // Kanke Dam West
+      [85.3250, 23.4450], // Close loop
     ],
+    sampleProperties: RANCHI_PROPERTIES,
   },
 ];
 
 export const DEFAULT_REGION: SearchRegion = SEARCH_REGIONS[0];
 
 export const RECENT_SEARCH_HISTORY: SearchHistoryItem[] = [
-  { id: 'h1', text: 'Los Angeles CA homes', regionId: 'los-angeles', listType: 'RENT' },
-  { id: 'h2', text: 'New York NY homes', regionId: 'new-york', listType: 'SALE' },
-  { id: 'h3', text: 'Mumbai Luxury Homes', regionId: 'mumbai', listType: 'SALE' },
-  { id: 'h4', text: 'Whitefield, Bangalore', regionId: 'bangalore', listType: 'SALE' },
-  { id: 'h5', text: 'New York City NY homes', regionId: 'new-york', listType: 'RENT' },
-  { id: 'h6', text: 'ca homes', regionId: 'los-angeles', listType: 'RENT' },
-  { id: 'h7', text: 'united states', regionId: 'los-angeles', listType: 'SALE' },
+  { id: 'h1', text: 'Kanke Road, Ranchi', regionId: 'ranchi', listType: 'SALE' },
+  { id: 'h2', text: 'Worli, Mumbai', regionId: 'mumbai', listType: 'SALE' },
+  { id: 'h3', text: 'Morabadi, Ranchi', regionId: 'ranchi', listType: 'RENT' },
+  { id: 'h4', text: 'Indiranagar, Bangalore', regionId: 'bangalore', listType: 'RENT' },
+  { id: 'h5', text: 'Golf Course Road, Delhi NCR', regionId: 'delhi', listType: 'SALE' },
+  { id: 'h6', text: 'Bandra West, Mumbai', regionId: 'mumbai', listType: 'SALE' },
+  { id: 'h7', text: 'North Goa Villas', regionId: 'goa', listType: 'SALE' },
+  { id: 'h8', text: 'Harmu & Argora, Ranchi', regionId: 'ranchi', listType: 'SALE' },
+  { id: 'h9', text: 'Koramangala, Bangalore', regionId: 'bangalore', listType: 'RENT' },
+  { id: 'h10', text: 'Chanakyapuri, New Delhi', regionId: 'delhi', listType: 'RENT' },
 ];
 
 export const SUGGESTED_SEARCHES: SearchSuggestionItem[] = [
-  { id: 's1', text: 'Homes in New York City NY', regionId: 'new-york', subtitle: 'New York, NY' },
-  { id: 's2', text: 'Homes in Manhattan New York City NY', regionId: 'new-york', subtitle: 'Manhattan, New York, NY' },
-  { id: 's3', text: 'Apartments in New York City NY', regionId: 'new-york', subtitle: 'New York, NY' },
-  { id: 's4', text: 'Los Angeles CA homes', regionId: 'los-angeles', subtitle: 'Los Angeles, CA' },
-  { id: 's5', text: 'Sherman Oaks, Los Angeles', regionId: 'los-angeles', subtitle: 'San Fernando Valley, CA' },
-  { id: 's6', text: 'Luxury Penthouses in Worli, Mumbai', regionId: 'mumbai', subtitle: 'South Mumbai, MH' },
-  { id: 's7', text: 'Villas in Whitefield, Bangalore', regionId: 'bangalore', subtitle: 'Bangalore, KA' },
-  { id: 's8', text: 'Beachfront Villas in North Goa', regionId: 'goa', subtitle: 'Goa, India' },
+  { id: 's1', text: 'Luxury Villas in Kanke Road, Ranchi', regionId: 'ranchi', subtitle: 'Kanke Dam & Plateau, Ranchi' },
+  { id: 's2', text: 'Modern Apartments in Morabadi, Ranchi', regionId: 'ranchi', subtitle: 'Tagore Hill & Morabadi, Ranchi' },
+  { id: 's3', text: 'Luxury Penthouses in Worli, Mumbai', regionId: 'mumbai', subtitle: 'South Mumbai, Maharashtra' },
+  { id: 's4', text: 'Villas in Whitefield, Bangalore', regionId: 'bangalore', subtitle: 'Bangalore, Karnataka' },
+  { id: 's5', text: 'DLF The Camellias, Golf Course Road', regionId: 'delhi', subtitle: 'Gurugram, Delhi NCR' },
+  { id: 's6', text: 'Residences in Harmu & Argora, Ranchi', regionId: 'ranchi', subtitle: 'Harmu Housing Colony, Ranchi' },
+  { id: 's7', text: 'Sea-Facing Residences in Bandra West', regionId: 'mumbai', subtitle: 'Western Suburbs, Mumbai' },
+  { id: 's8', text: 'Beachfront Villas in North Goa', regionId: 'goa', subtitle: 'Assagao & Vagator, Goa' },
+  { id: 's9', text: 'Luxury Flats in Indiranagar, Bangalore', regionId: 'bangalore', subtitle: 'East Bangalore, Karnataka' },
+  { id: 's10', text: 'Diplomatic Enclave Residences, Chanakyapuri', regionId: 'delhi', subtitle: 'New Delhi, Delhi' },
+  { id: 's11', text: 'Colonial Mansions in Sadashivanagar', regionId: 'bangalore', subtitle: 'North Bangalore, Karnataka' },
 ];
 
 export function getRegionById(id: string): SearchRegion | undefined {

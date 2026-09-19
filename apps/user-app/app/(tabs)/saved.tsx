@@ -43,32 +43,32 @@ interface SavedPropertyItem {
 
 const LUXURY_SAVED_HOMES: SavedPropertyItem[] = [
   {
-    id: '1',
-    title: 'The Sky Penthouse at Biscayne Bay',
-    price: 3450000,
+    id: 'mum-2',
+    title: 'Lodha Park • 3 BHK Horizon Suite',
+    price: 32000000,
     prop_type: 'APARTMENT',
     list_type: 'SALE',
     bedrooms: 3,
-    bathrooms: 3.5,
-    area_sqft: 3100,
-    address: '1420 Brickell Ave, Miami, FL',
+    bathrooms: 3,
+    area_sqft: 1850,
+    address: 'Lodha Park, Worli, Mumbai',
     property_media: [{ url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80' }],
     statusBadge: {
       type: 'price_drop',
       label: 'Price Reduced',
-      sublabel: '-$75,000',
+      sublabel: '-₹15,00,000',
     },
   },
   {
-    id: '2',
-    title: 'Modern Organic Architectural Estate',
-    price: 4950000,
+    id: 'blr-1',
+    title: 'Prestige Golfshire Designer Villa',
+    price: 48000000,
     prop_type: 'VILLA',
     list_type: 'SALE',
-    bedrooms: 5,
-    bathrooms: 5.5,
-    area_sqft: 5200,
-    address: '10480 Bellagio Rd, Bel Air, Los Angeles, CA',
+    bedrooms: 4,
+    bathrooms: 5,
+    area_sqft: 4500,
+    address: 'Nandi Hills Road, Devanahalli, Bangalore',
     property_media: [{ url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80' }],
     statusBadge: {
       type: 'new',
@@ -76,15 +76,15 @@ const LUXURY_SAVED_HOMES: SavedPropertyItem[] = [
     },
   },
   {
-    id: '3',
-    title: 'Contemporary Waterfront Sanctuary with Private Dock',
-    price: 9800,
-    prop_type: 'HOUSE',
+    id: 'goa-1',
+    title: 'Assagao Heritage Sanctuary Villa',
+    price: 150000,
+    prop_type: 'VILLA',
     list_type: 'RENT',
     bedrooms: 4,
-    bathrooms: 3,
-    area_sqft: 2800,
-    address: '220 Harbor Island Way, Newport Beach, CA',
+    bathrooms: 4,
+    area_sqft: 3800,
+    address: 'Badem Road, Assagao, North Goa',
     property_media: [{ url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80' }],
     statusBadge: {
       type: 'contract',
@@ -170,7 +170,7 @@ export default function SavedPortalScreen() {
             statusBadge:
               item.statusBadge ||
               (idx === 0
-                ? { type: 'price_drop', label: 'Price Reduced', sublabel: '-$50,000' }
+                ? { type: 'price_drop', label: 'Price Reduced', sublabel: '-₹50,000/mo' }
                 : idx === 1
                 ? { type: 'new', label: '✨ New' }
                 : undefined),
@@ -248,8 +248,8 @@ export default function SavedPortalScreen() {
     try {
       const priceStr =
         item.list_type === 'RENT'
-          ? `$${item.price?.toLocaleString()}/mo`
-          : `$${item.price?.toLocaleString()}`;
+          ? `₹${item.price?.toLocaleString('en-IN')}/mo`
+          : `₹${item.price?.toLocaleString('en-IN')}`;
       await Share.share({
         title: item.title,
         message: `Check out this luxury property: ${item.title} (${priceStr}) at ${item.address || 'prime location'}.`,
@@ -287,12 +287,12 @@ export default function SavedPortalScreen() {
       'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=80';
     const isRent = item.list_type === 'RENT';
     const priceFormatted = isRent
-      ? `$${item.price?.toLocaleString() || '0'}/mo`
-      : `$${item.price?.toLocaleString() || '0'}`;
+      ? `₹${item.price?.toLocaleString('en-IN') || '0'}/mo`
+      : `₹${item.price?.toLocaleString('en-IN') || '0'}`;
 
     const pricePerSqft =
       item.area_sqft && item.price && !isRent
-        ? `$${Math.round(item.price / item.area_sqft).toLocaleString()}/sqft`
+        ? `₹${Math.round(item.price / item.area_sqft).toLocaleString('en-IN')}/sqft`
         : null;
 
     return (

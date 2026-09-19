@@ -65,19 +65,13 @@ const FALLBACK_PHOTOS = [
 ];
 
 /**
- * Format property price supporting:
- * - US/Dollar: $2,500/mo
- * - INR: ₹45k/mo, ₹1.2 L/mo, ₹3.5 Cr
+ * Format property price strictly in Indian Rupees (₹ Cr / ₹ L / ₹k).
  */
 export function formatPropertyPrice(price: number, listType?: string): string {
-  if (!price && price !== 0) return '--';
+  if (!price && price !== 0) return '₹--';
   const isRent = listType === 'RENT';
   const suffix = isRent ? '/mo' : '';
 
-  // USD style rent / price
-  if (price > 0 && price <= 15000) {
-    return `$${price.toLocaleString()}${suffix}`;
-  }
   // INR Crores
   if (price >= 10000000) {
     const cr = price / 10000000;
@@ -92,7 +86,7 @@ export function formatPropertyPrice(price: number, listType?: string): string {
   if (price >= 1000) {
     return `₹${(price / 1000).toFixed(0)}k${suffix}`;
   }
-  return `₹${price.toLocaleString()}${suffix}`;
+  return `₹${price.toLocaleString('en-IN')}${suffix}`;
 }
 
 interface LuxuryPropertyCardProps {
@@ -293,7 +287,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
 
         {/* Address */}
         <Text style={styles.addressText} numberOfLines={1}>
-          {property.address || '1530 N Poinsettia Pl #120, Los Angeles, CA'}
+          {property.address || 'Bandra West, Mumbai'}
         </Text>
 
         {/* Actions Row: [ 📞 ] + [ Check availability ] */}

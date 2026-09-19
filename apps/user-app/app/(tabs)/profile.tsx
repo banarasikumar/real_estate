@@ -297,13 +297,13 @@ export default function ProfileScreen() {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('Currency & Region', 'Current: USD ($) - United States')}
+              onPress={() => Alert.alert('Currency & Region', 'Current: INR (₹) - India')}
             >
               <View style={[styles.menuIconBox, { backgroundColor: '#f1f5f9' }]}>
                 <Ionicons name="globe-outline" size={18} color="#475569" />
               </View>
               <Text style={styles.menuItemLabel}>Currency & Region</Text>
-              <Text style={styles.menuValueLabel}>USD ($)</Text>
+              <Text style={styles.menuValueLabel}>INR (₹) - India</Text>
               <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
             </TouchableOpacity>
           </View>

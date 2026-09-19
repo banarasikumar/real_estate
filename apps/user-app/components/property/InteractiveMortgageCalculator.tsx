@@ -59,6 +59,10 @@ interface CostItem {
   percentage: number;
 }
 
+export function formatCurrency(amount: number): string {
+  return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+}
+
 // ---------------------------------------------------------------------------
 // iOS-Style Touch Slider with PanResponder & Stepper Controls
 // ---------------------------------------------------------------------------
@@ -151,7 +155,7 @@ const IOSSlider: React.FC<IOSSliderProps> = React.memo(({
 
   const displayText = formatDisplay
     ? formatDisplay(value)
-    : `${prefix}${step < 1 ? value.toFixed(1) : value.toLocaleString()}${unit}`;
+    : `${prefix}${step < 1 ? value.toFixed(1) : value.toLocaleString('en-IN')}${unit}`;
 
   return (
     <View style={sliderStyles.container}>
@@ -390,7 +394,7 @@ const SegmentedDonutVisualizer: React.FC<SegmentedDonutVisualizerProps> = React.
       <View style={donutStyles.centerContent}>
         <Text style={donutStyles.centerLabel}>Per Mo</Text>
         <Text style={donutStyles.centerAmount} numberOfLines={1}>
-          ${Math.round(totalMonthly).toLocaleString()}
+          {formatCurrency(totalMonthly)}
         </Text>
       </View>
     </View>
@@ -487,14 +491,14 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
     if (typeof property?.price === 'number' && property.price > 0) {
       return property.price;
     }
-    return activeMode === 'RENT' ? 3850 : 850000;
+    return activeMode === 'RENT' ? 150000 : 35000000;
   }, [property?.price, activeMode]);
 
   // -------------------------
   // SALE MODE STATE
   // -------------------------
   const [downPaymentPercent, setDownPaymentPercent] = useState<number>(20);
-  const [interestRate, setInterestRate] = useState<number>(6.5);
+  const [interestRate, setInterestRate] = useState<number>(8.5);
   const [loanTerm, setLoanTerm] = useState<LoanTermType>('30-Year Fixed');
 
   // Quick preset pills for down payment
@@ -503,24 +507,23 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
   // When loan term changes, optionally set benchmark interest rates
   const handleLoanTermChange = (term: LoanTermType) => {
     setLoanTerm(term);
-    if (term === '30-Year Fixed') setInterestRate(6.5);
-    else if (term === '15-Year Fixed') setInterestRate(5.8);
-    else if (term === '5/1 ARM') setInterestRate(6.1);
+    if (term === '30-Year Fixed') setInterestRate(8.5);
+    else if (term === '15-Year Fixed') setInterestRate(8.1);
+    else if (term === '5/1 ARM') setInterestRate(8.25);
   };
 
   // -------------------------
   // RENT MODE STATE
   // -------------------------
   const defaultUtilities = useMemo(() => {
-    const sqft = property?.area_sqft || 1800;
     const beds = property?.bedrooms || 2;
-    return Math.round(120 + beds * 25 + sqft * 0.03);
-  }, [property?.area_sqft, property?.bedrooms]);
+    return Math.round(4000 + beds * 1000);
+  }, [property?.bedrooms]);
 
   const [rentUtilities, setRentUtilities] = useState<number>(defaultUtilities);
-  const [rentersInsurance, setRentersInsurance] = useState<number>(24);
+  const [rentersInsurance, setRentersInsurance] = useState<number>(1000);
   const [rentParkingFee, setRentParkingFee] = useState<number>(
-    (property?.parkingSpaces && property.parkingSpaces > 0) ? 95 : 0
+    (property?.parkingSpaces && property.parkingSpaces > 0) ? 5000 : 0
   );
 
   // -------------------------
@@ -550,15 +553,15 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
     }
 
     // Property Taxes
-    const taxRate = property?.annualTaxRate ?? 0.0125;
+    const taxRate = property?.annualTaxRate ?? 0.004;
     const monthlyTax = Math.round((homePrice * taxRate) / 12);
 
     // Homeowners Insurance
-    const annualInsurance = property?.annualInsurance ?? Math.round(homePrice * 0.0035);
+    const annualInsurance = property?.annualInsurance ?? Math.round(homePrice * 0.001);
     const monthlyInsurance = Math.round(annualInsurance / 12);
 
     // HOA / Maintenance Fees
-    const monthlyHOA = property?.hoaMonthly ?? (Math.round(homePrice * 0.00045) || 450);
+    const monthlyHOA = property?.hoaMonthly ?? (Math.round(homePrice * 0.00045) || 15000);
 
     const totalMonthly = Math.round(monthlyPI + monthlyTax + monthlyInsurance + monthlyHOA);
 
@@ -612,8 +615,8 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
     const totalMonthly = Math.round(baseRent + rentUtilities + rentersInsurance + rentParkingFee);
 
     // One-time move-in costs
-    const securityDeposit = baseRent; // 1 month rent typical
-    const applicationFee = 50;
+    const securityDeposit = baseRent * 2;
+    const applicationFee = 5000;
     const totalMoveIn = baseRent + securityDeposit + applicationFee;
 
     const items: CostItem[] = [
@@ -714,14 +717,14 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
         <View style={styles.heroRightContent}>
           <Text style={styles.heroSubLabel}>Estimated Total Monthly</Text>
           <View style={styles.heroNumberRow}>
-            <Text style={styles.heroCurrency}>$</Text>
+            <Text style={styles.heroCurrency}>₹</Text>
             <Text style={styles.heroAmount}>
-              {activeData.totalMonthly.toLocaleString()}
+              {Math.round(activeData.totalMonthly).toLocaleString('en-IN')}
             </Text>
             <Text style={styles.heroPerMo}>/mo</Text>
           </View>
           <Text style={styles.propertyPriceContext}>
-            Based on {activeMode === 'SALE' ? 'Listing Price' : 'Base Rent'} of ${homePrice.toLocaleString()}
+            Based on {activeMode === 'SALE' ? 'Listing Price' : 'Base Rent'} of {formatCurrency(homePrice)}
           </Text>
         </View>
       </View>
@@ -738,7 +741,7 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
               <Text style={styles.legendLabel}>{item.label}</Text>
               <Text style={styles.legendPercent}>({item.percentage.toFixed(0)}%)</Text>
             </View>
-            <Text style={styles.legendAmount}>${item.amount.toLocaleString()}/mo</Text>
+            <Text style={styles.legendAmount}>{formatCurrency(item.amount)}/mo</Text>
           </View>
         ))}
       </View>
@@ -783,7 +786,7 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
             step={1}
             unit="%"
             color={COLORS.principalAndInterest}
-            badge={`$${saleCalculations.downPaymentDollar.toLocaleString()}`}
+            badge={formatCurrency(saleCalculations.downPaymentDollar)}
             onChange={setDownPaymentPercent}
             formatDisplay={(val) => `${val}%`}
           />
@@ -820,7 +823,7 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
             label="Interest Rate"
             value={interestRate}
             min={3.0}
-            max={9.0}
+            max={12.0}
             step={0.1}
             unit="%"
             color={COLORS.principalAndInterest}
@@ -832,7 +835,7 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
           <View style={styles.loanSummaryBox}>
             <Ionicons name="information-circle-outline" size={16} color="#64748b" />
             <Text style={styles.loanSummaryText}>
-              Principal Loan Amount: <Text style={styles.loanSummaryBold}>${saleCalculations.principal.toLocaleString()}</Text> ({100 - downPaymentPercent}% of purchase price)
+              Principal Loan Amount: <Text style={styles.loanSummaryBold}>{formatCurrency(saleCalculations.principal)}</Text> ({100 - downPaymentPercent}% of purchase price)
             </Text>
           </View>
         </View>
@@ -844,28 +847,28 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
           <IOSSlider
             label="Estimated Utilities"
             value={rentUtilities}
-            min={50}
-            max={450}
-            step={10}
-            prefix="$"
+            min={1000}
+            max={25000}
+            step={500}
+            prefix="₹"
             color={COLORS.utilities}
-            badge="Electric, Gas, Water"
+            badge="Electricity, Gas, Water"
             onChange={setRentUtilities}
-            formatDisplay={(val) => `$${val}/mo`}
+            formatDisplay={(val) => `${formatCurrency(val)}/mo`}
           />
 
           {/* Renter's Insurance Slider */}
           <IOSSlider
             label="Renter's Insurance"
             value={rentersInsurance}
-            min={10}
-            max={75}
-            step={2}
-            prefix="$"
+            min={200}
+            max={5000}
+            step={100}
+            prefix="₹"
             color={COLORS.rentersInsurance}
             badge="Personal Property"
             onChange={setRentersInsurance}
-            formatDisplay={(val) => `$${val}/mo`}
+            formatDisplay={(val) => `${formatCurrency(val)}/mo`}
           />
 
           {/* Parking / Amenity Fee Slider */}
@@ -873,13 +876,13 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
             label="Parking & Amenity Fee"
             value={rentParkingFee}
             min={0}
-            max={300}
-            step={25}
-            prefix="$"
+            max={20000}
+            step={1000}
+            prefix="₹"
             color={COLORS.parkingAmenity}
-            badge={rentParkingFee === 0 ? 'Included' : 'Reserved Spot'}
+            badge={rentParkingFee === 0 ? 'Included' : 'Reserved Slot'}
             onChange={setRentParkingFee}
-            formatDisplay={(val) => (val === 0 ? 'Free' : `$${val}/mo`)}
+            formatDisplay={(val) => (val === 0 ? 'Free' : `${formatCurrency(val)}/mo`)}
           />
 
           {/* One-Time Move-In Cost Estimate Card */}
@@ -892,21 +895,21 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
             <View style={styles.moveInRow}>
               <Text style={styles.moveInLabel}>First Month's Rent</Text>
               <Text style={styles.moveInValue}>
-                ${rentCalculations.baseRent.toLocaleString()}
+                {formatCurrency(rentCalculations.baseRent)}
               </Text>
             </View>
 
             <View style={styles.moveInRow}>
-              <Text style={styles.moveInLabel}>Security Deposit (1 Month)</Text>
+              <Text style={styles.moveInLabel}>Security Deposit (2 Months)</Text>
               <Text style={styles.moveInValue}>
-                ${rentCalculations.securityDeposit.toLocaleString()}
+                {formatCurrency(rentCalculations.securityDeposit)}
               </Text>
             </View>
 
             <View style={styles.moveInRow}>
-              <Text style={styles.moveInLabel}>Application / Admin Fee</Text>
+              <Text style={styles.moveInLabel}>Agreement & Society Move-In Fee</Text>
               <Text style={styles.moveInValue}>
-                ${rentCalculations.applicationFee.toLocaleString()}
+                {formatCurrency(rentCalculations.applicationFee)}
               </Text>
             </View>
 
@@ -915,7 +918,7 @@ export const InteractiveMortgageCalculator: React.FC<InteractiveMortgageCalculat
             <View style={styles.moveInTotalRow}>
               <Text style={styles.moveInTotalLabel}>Total Due at Signing</Text>
               <Text style={styles.moveInTotalValue}>
-                ${rentCalculations.totalMoveIn.toLocaleString()}
+                {formatCurrency(rentCalculations.totalMoveIn)}
               </Text>
             </View>
           </View>

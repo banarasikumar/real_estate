@@ -47,7 +47,7 @@ function formatPricePill(price: number): string {
   if (price >= 1000) {
     return `₹${(price / 1000).toFixed(0)}k`;
   }
-  return `₹${price.toLocaleString()}`;
+  return `₹${price.toLocaleString('en-IN')}`;
 }
 
 /**

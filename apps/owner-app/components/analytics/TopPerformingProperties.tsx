@@ -38,10 +38,10 @@ export interface TopPerformingPropertiesProps {
 const DEFAULT_PROPERTIES: TopProperty[] = [
   {
     id: 'prop-1',
-    title: 'The Bel-Air Horizon Villa',
-    address: '10480 Bellagio Road, Bel Air, CA',
-    city: 'Los Angeles',
-    price: 18500000,
+    title: 'Worli Sea Face Luxury Penthouse',
+    address: 'Worli Sea Face, Worli, Mumbai',
+    city: 'Mumbai',
+    price: 185000000,
     priceType: 'SALE',
     imageUrl:
       'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=600&q=80',
@@ -54,10 +54,10 @@ const DEFAULT_PROPERTIES: TopProperty[] = [
   },
   {
     id: 'prop-2',
-    title: 'Tribeca Sky Penthouse',
-    address: '56 Leonard St, Apt 48A, New York, NY',
-    city: 'New York',
-    price: 32000,
+    title: 'Indiranagar Designer Duplex',
+    address: '100ft Road, Indiranagar, Bangalore',
+    city: 'Bangalore',
+    price: 180000,
     priceType: 'RENT',
     imageUrl:
       'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=600&q=80',
@@ -70,10 +70,10 @@ const DEFAULT_PROPERTIES: TopProperty[] = [
   },
   {
     id: 'prop-3',
-    title: 'Biscayne Bay Waterfront Estate',
-    address: '428 S Hibiscus Dr, Miami Beach, FL',
-    city: 'Miami',
-    price: 12900000,
+    title: 'Golf Course Road Sky Mansion',
+    address: 'DLF Phase 5, Golf Course Road, Gurgaon',
+    city: 'Delhi NCR',
+    price: 125000000,
     priceType: 'SALE',
     imageUrl:
       'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=600&q=80',
@@ -100,8 +100,28 @@ export const TopPerformingProperties: React.FC<TopPerformingPropertiesProps> = (
   const items = propList !== undefined ? propList : DEFAULT_PROPERTIES;
 
   const formatPrice = (price: number | string, priceType?: 'SALE' | 'RENT') => {
-    if (typeof price === 'string') return price;
-    const formatted = `$${price.toLocaleString()}`;
+    let num = 0;
+    if (typeof price === 'string') {
+      if (price.startsWith('₹')) return priceType === 'RENT' && !price.includes('/mo') ? `${price}/mo` : price;
+      num = parseFloat(price.replace(/[^0-9.]/g, ''));
+      if (isNaN(num)) return price;
+    } else {
+      num = price;
+    }
+
+    let formatted = '';
+    if (num >= 10000000) {
+      const cr = num / 10000000;
+      formatted = `₹${cr % 1 === 0 ? cr : cr.toFixed(cr < 10 ? 2 : 1)} Cr`;
+    } else if (num >= 100000) {
+      const lac = num / 100000;
+      formatted = `₹${lac % 1 === 0 ? lac : lac.toFixed(lac < 10 ? 1 : 0)} L`;
+    } else if (num >= 1000) {
+      formatted = `₹${Math.round(num / 1000)}k`;
+    } else {
+      formatted = `₹${num.toLocaleString('en-IN')}`;
+    }
+
     return priceType === 'RENT' ? `${formatted}/mo` : formatted;
   };
 

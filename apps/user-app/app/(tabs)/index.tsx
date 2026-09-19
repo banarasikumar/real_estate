@@ -97,12 +97,19 @@ function getFallbackProperties(
       trimmed.includes('bandra') ||
       trimmed.includes('worli') ||
       trimmed.includes('juhu');
+    const hasRanchi =
+      trimmed.includes('ranchi') ||
+      trimmed.includes('kanke') ||
+      trimmed.includes('morabadi') ||
+      trimmed.includes('harmu') ||
+      trimmed.includes('doranda');
 
     const matched = SEED_PROPERTIES.filter((p) => {
       const city = (p.city || '').toLowerCase();
       if (hasLA) return city.includes('los angeles');
       if (hasNY) return city.includes('new york');
       if (hasMumbai) return city.includes('mumbai');
+      if (hasRanchi) return city.includes('ranchi');
 
       const stopWords = new Set([
         'luxury', 'homes', 'home', 'house', 'for', 'rent', 'sale',
@@ -139,7 +146,8 @@ function getFallbackProperties(
       trimmed.includes('mumbai') ||
       trimmed.includes('bangalore') ||
       trimmed.includes('delhi') ||
-      trimmed.includes('goa')
+      trimmed.includes('goa') ||
+      trimmed.includes('ranchi')
     ))
   );
 
@@ -217,10 +225,10 @@ export default function UserAppHomeScreen() {
   const [savedPropertyIds, setSavedPropertyIds] = useState<Set<string>>(new Set());
 
   // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState('Los Angeles CA homes');
+  const [searchQuery, setSearchQuery] = useState('Mumbai Luxury Homes');
   const [isSearchModalVisible, setIsSearchModalVisible] = useState(false);
   const [activeRegion, setActiveRegion] = useState<SearchRegion | null>(() => {
-    return SEARCH_REGIONS.find((r) => r.id === 'los-angeles') || null;
+    return SEARCH_REGIONS.find((r) => r.id === 'mumbai') || SEARCH_REGIONS[0] || null;
   });
   const [preferredMode, setPreferredMode] = useState<'DUAL' | 'PEEK'>('DUAL');
   const [activeQuickFilter, setActiveQuickFilter] = useState('rent');
