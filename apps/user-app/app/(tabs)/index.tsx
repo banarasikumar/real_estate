@@ -625,8 +625,9 @@ export default function UserAppHomeScreen() {
 
   // Shared translateYAnim between index.tsx and MobileTriStateBottomSheet
   const fullHeight = containerHeight || (SCREEN_HEIGHT - 60);
-  const MINI_PEEK_HEIGHT = 48;
-  const PEEK_HEIGHT = 72;
+  const bottomInset = insets.bottom || (Platform.OS === 'android' ? 12 : 0);
+  const MINI_PEEK_HEIGHT = 54 + bottomInset;
+  const PEEK_HEIGHT = 78 + bottomInset;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
   const fullY = searchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
@@ -686,11 +687,11 @@ export default function UserAppHomeScreen() {
           setSelectedPropertyId(null);
           setSelectedBuilding(null);
           if (sheetSnapState === 'MINI_PEEK') {
-            setSheetSnapState('PEEK');
+            setSheetSnapState(preferredMode);
           }
         }
       });
-  }, [sheetSnapState]);
+  }, [sheetSnapState, preferredMode]);
 
   return (
     <View
@@ -802,7 +803,7 @@ export default function UserAppHomeScreen() {
 
       {/* Drawn Shape Clear Banner */}
       {sheetSnapState !== 'FULL' && drawnPolygon && drawnPolygon.length >= 3 && (
-        <View style={styles.drawnShapeBannerContainer} pointerEvents="box-none">
+        <View style={[styles.drawnShapeBannerContainer, { top: searchRowTotalHeight + 8 }]} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.clearBoundaryPill}
             onPress={() => setDrawnPolygon(null)}
@@ -819,6 +820,7 @@ export default function UserAppHomeScreen() {
         pointerEvents={sheetSnapState === 'FULL' ? 'none' : 'auto'}
         style={[
           styles.floating3DWrap,
+          { top: searchRowTotalHeight + 8 },
           floating3DStyle,
         ]}
       >
@@ -893,7 +895,7 @@ export default function UserAppHomeScreen() {
           {/* Single Property Floating Card Carousel */}
           {!selectedBuilding && selectedPropertyId && (
             <GestureDetector gesture={cardDismissGesture}>
-              <View style={[styles.carouselAbsoluteWrap, { bottom: 64 }]}>
+              <View style={[styles.carouselAbsoluteWrap, { bottom: MINI_PEEK_HEIGHT + 10 }]}>
                 <MobilePropertyCardCarousel
                   properties={displayedProperties}
                   selectedIndex={selectedIndex}
@@ -902,7 +904,7 @@ export default function UserAppHomeScreen() {
                   isPropertySaved={(id) => savedPropertyIds.has(id)}
                   onClosePreview={() => {
                     setSelectedPropertyId(null);
-                    setSheetSnapState('PEEK');
+                    setSheetSnapState(preferredMode);
                   }}
                 />
               </View>

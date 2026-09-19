@@ -218,6 +218,9 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
         onScrollBeginDrag={() => {
           isUserInteractingRef.current = true;
         }}
+        onMomentumScrollBegin={() => {
+          isUserInteractingRef.current = true;
+        }}
         onMomentumScrollEnd={(e) => {
           isUserInteractingRef.current = false;
           if (isProgrammaticScrollRef.current) {
@@ -236,8 +239,8 @@ export const MobilePropertyCardCarousel: React.FC<MobilePropertyCardCarouselProp
         }}
         onScrollEndDrag={(e) => {
           // If there is significant horizontal velocity, momentum scrolling will follow and fire onMomentumScrollEnd
-          const velocityX = e?.nativeEvent?.velocity?.x ?? 0;
-          if (Math.abs(velocityX) > 0.1) {
+          const velocityX = e?.nativeEvent?.velocity?.x;
+          if (velocityX !== undefined && Math.abs(velocityX) > 0.1) {
             return;
           }
 

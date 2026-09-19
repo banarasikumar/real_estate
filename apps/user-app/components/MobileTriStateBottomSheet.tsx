@@ -207,11 +207,7 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
   };
 
   return (
-    <TouchableOpacity
-      style={styles.cardContainer}
-      activeOpacity={0.96}
-      onPress={handleCardPress}
-    >
+    <View style={styles.cardContainer}>
       {/* 1. Image Carousel Container */}
       <View style={styles.cardImageWrapper}>
         <ScrollView
@@ -221,8 +217,9 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
           onScroll={handleScroll}
           scrollEventThrottle={16}
           decelerationRate="fast"
+          snapToInterval={CARD_INNER_WIDTH}
           directionalLockEnabled={true}
-          nestedScrollEnabled={false}
+          nestedScrollEnabled={true}
         >
           {photos.map((photoUrl, idx) => (
             <Image
@@ -268,7 +265,11 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
       </View>
 
       {/* 2. Card Details */}
-      <View style={styles.cardBody}>
+      <TouchableOpacity
+        style={styles.cardBody}
+        activeOpacity={0.96}
+        onPress={handleCardPress}
+      >
         {/* Price & Total Monthly Price Badge */}
         <View style={styles.priceRow}>
           <Text style={styles.priceValue}>
@@ -308,8 +309,8 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
             <Text style={styles.availabilityButtonText}>Check availability</Text>
           </TouchableOpacity>
         </View>
-      </View>
       </TouchableOpacity>
+    </View>
   );
 });
 
@@ -360,8 +361,9 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   // Calibrated Heights & Snap Point Geometry
   const fullHeight = availableHeight || (SCREEN_HEIGHT - 60);
-  const MINI_PEEK_HEIGHT = 48; // Subheader row height
-  const PEEK_HEIGHT = 72;
+  const bottomInset = insets.bottom || (Platform.OS === 'android' ? 12 : 0);
+  const MINI_PEEK_HEIGHT = 54 + bottomInset; // Subheader row height + safe area clearance
+  const PEEK_HEIGHT = 78 + bottomInset;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
   const fullY = computedSearchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
@@ -451,6 +453,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   useEffect(() => {
     if (snapState !== 'FULL') {
       resetListToTop();
+    }
+    // If already animating to target state (e.g. from gesture release or button press), don't interrupt momentum
+    if (animatingToStateRef.current === snapState) {
+      return;
     }
     animateToState(snapState);
   }, [snapState, animateToState, resetListToTop, selectedPropertyId]);
@@ -618,25 +624,20 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   );
 
   // Dedicated subheader PanGesture from react-native-gesture-handler:
-  // Intercepts immediately on touch-down, stops previous animation, and follows finger 1:1
+  // - In PEEK/DUAL: Intercepts immediately on touch-down and follows finger 1:1
+  // - In FULL mode: Disabled so dragging subheader does NOT pull down the sheet, letting Sort & Save work cleanly
   const subHeaderGesture = useMemo(() => {
     return Gesture.Pan()
       .runOnJS(true)
+      .enabled(snapState !== 'FULL')
       .activeOffsetY([-4, 4])
       .onBegin(() => {
-        translateYAnim.stopAnimation((val) => {
-          currentTranslateYRef.current = val;
-          dragStartTranslateY.current = val;
-        });
+        translateYAnim.stopAnimation();
+        dragStartTranslateY.current = currentTranslateYRef.current;
         animatingToStateRef.current = null;
         startingSnapState.current = snapState;
       })
       .onStart(() => {
-        translateYAnim.stopAnimation((val) => {
-          currentTranslateYRef.current = val;
-          dragStartTranslateY.current = val;
-        });
-        animatingToStateRef.current = null;
         isDraggingSheetFromList.current = true;
       })
       .onUpdate((e) => {
@@ -663,28 +664,22 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   // Unified PanGesture on the listing feed for ALL modes (FULL, DUAL, PEEK):
   // - In FULL mode: activates on downward drag when at top (isAtTop), allowing upward feed scroll.
   // - In DUAL and PEEK modes: activates on both upward and downward drags.
-  // - Immediate onBegin interruption freezes the sheet at exact pixel position mid-motion.
+  // - Immediate onBegin interruption freezes the sheet at exact pixel position mid-motion without jumping.
   const listPanGesture = useMemo(() => {
     const isFull = snapState === 'FULL';
     return Gesture.Pan()
       .runOnJS(true)
       .enabled(!isFull || isAtTop)
       .activeOffsetY(isFull ? 6 : [-6, 6])
-      .failOffsetX([-25, 25])
+      .failOffsetY(isFull ? -1 : -9999)
+      .failOffsetX([-15, 15])
       .onBegin(() => {
-        translateYAnim.stopAnimation((val) => {
-          currentTranslateYRef.current = val;
-          dragStartTranslateY.current = val;
-        });
+        translateYAnim.stopAnimation();
+        dragStartTranslateY.current = currentTranslateYRef.current;
         animatingToStateRef.current = null;
         startingSnapState.current = snapState;
       })
       .onStart(() => {
-        translateYAnim.stopAnimation((val) => {
-          currentTranslateYRef.current = val;
-          dragStartTranslateY.current = val;
-        });
-        animatingToStateRef.current = null;
         isDraggingSheetFromList.current = true;
       })
       .onUpdate((e) => {
@@ -754,16 +749,23 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     ]
   );
 
+  const handleFloatingMapPress = useCallback(() => {
+    resetListToTop();
+    onSnapChange('PEEK');
+    animateToState('PEEK');
+  }, [resetListToTop, onSnapChange, animateToState]);
+
   return (
-    <Animated.View
-      style={[
-        styles.sheetContainer,
-        {
-          height: fullHeight,
-          transform: [{ translateY: translateYAnim }],
-        },
-      ]}
-    >
+    <>
+      <Animated.View
+        style={[
+          styles.sheetContainer,
+          {
+            height: fullHeight,
+            transform: [{ translateY: translateYAnim }],
+          },
+        ]}
+      >
       {/* Animated Sheet Shadow Overlay - fades out completely at fullY so no shadow bleeds into search bar */}
       <Animated.View
         pointerEvents="none"
@@ -960,33 +962,46 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           </View>
         </GestureDetector>
       </View>
-
-      {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - instantly switches to PEEK mode! */}
-      <Animated.View
-        style={[
-          styles.floatingMapPillWrap,
-          {
-            bottom: insets.bottom + 16,
-            opacity: bottomMapButtonOpacity,
-          },
-        ]}
-        pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
-      >
-        <TouchableOpacity
-          style={styles.floatingMapPill}
-          onPress={() => {
-            resetListToTop();
-            onSnapChange('PEEK');
-            animateToState('PEEK');
-          }}
-          activeOpacity={0.9}
-        >
-          <Ionicons name="map" size={16} color="#ffffff" style={{ marginRight: 6 }} />
-          <Text style={styles.floatingMapPillText}>Map</Text>
-        </TouchableOpacity>
-      </Animated.View>
     </Animated.View>
-  );
+
+    {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - cleanly floating at bottom-center above safe area */}
+    <Animated.View
+      style={[
+        styles.floatingMapPillWrap,
+        {
+          bottom: Math.max(insets.bottom, 12) + 16,
+          opacity: bottomMapButtonOpacity,
+          transform: [
+            {
+              translateY: translateYAnim.interpolate({
+                inputRange: [fullY, fullY + 80],
+                outputRange: [0, 80],
+                extrapolate: 'clamp',
+              }),
+            },
+            {
+              scale: translateYAnim.interpolate({
+                inputRange: [fullY, fullY + 60],
+                outputRange: [1, 0.9],
+                extrapolate: 'clamp',
+              }),
+            },
+          ],
+        },
+      ]}
+      pointerEvents={snapState === 'FULL' ? 'box-none' : 'none'}
+    >
+      <TouchableOpacity
+        style={styles.floatingMapPill}
+        onPress={handleFloatingMapPress}
+        activeOpacity={0.82}
+      >
+        <Ionicons name="map" size={17} color="#ffffff" style={styles.floatingMapIcon} />
+        <Text style={styles.floatingMapPillText}>Map</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  </>
+);
 };
 
 const styles = StyleSheet.create({
@@ -1044,10 +1059,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   subHeaderRowContainer: {
-    height: 48,
+    height: 54,
     position: 'relative',
     justifyContent: 'center',
     backgroundColor: '#ffffff',
+    width: '100%',
   },
   countSubheaderLayer: {
     position: 'absolute',
@@ -1163,6 +1179,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 4,
     paddingHorizontal: 16,
+    width: '100%',
   },
   grabHandle: {
     width: 36,
@@ -1177,6 +1194,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     height: 30,
+    width: '100%',
   },
   headerTitle: {
     fontSize: 15,
@@ -1441,26 +1459,36 @@ const styles = StyleSheet.create({
   },
   floatingMapPillWrap: {
     position: 'absolute',
-    alignSelf: 'center',
-    zIndex: 50,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 99,
   },
   floatingMapPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#0f172a',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 26,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  floatingMapIcon: {
+    marginRight: 7,
   },
   floatingMapPillText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
 });
 
