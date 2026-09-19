@@ -455,7 +455,7 @@ npx tsc --noEmit --project apps/owner-app/tsconfig.json
 npx tsc --noEmit --project packages/api/tsconfig.json
 ```
 
-### 6.2 Supabase Database Migrations (11 Migrations)
+### 6.2 Supabase Database Migrations (14 Migrations)
 All database schema modifications are captured in `supabase/migrations/`:
 1. `00000000000000_initial_schema.sql` — Profiles, properties, property_media, enquiries, saved_properties
 2. `00000000000001_realtime_chat.sql` — Conversations, chat_messages with Realtime publication
@@ -469,6 +469,8 @@ All database schema modifications are captured in `supabase/migrations/`:
 10. `00000000000009_saved_searches_and_alerts.sql` — Saved searches, boundary alerts, notifications
 11. `00000000000010_multi_unit_complexes.sql` — Multi-unit towers, complexes, floor tabs, availability
 12. `00000000000011_search_regions.sql` — `search_regions` table, `is_verified`, `deed_url`, `verification_notes`, 6 seeded regions
+13. `00000000000012_property_analytics.sql` — `property_views` table, telemetry indexing, RLS, and `get_owner_dashboard_stats` Postgres RPC
+14. `00000000000013_property_recommendations.sql` — Postgres RPC `get_property_recommendations` for hybrid AI recommendations (Collaborative & Content-based filtering)
 
 ### 6.3 Replit Cloud Configuration
 The monorepo includes `.replit` and `replit.nix` configurations for running in Replit:
