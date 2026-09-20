@@ -972,39 +972,73 @@ const MobileMapboxViewComponent = forwardRef<MobileMapboxViewRef, MobileMapboxVi
       window.__pendingRegionBoundary = coords;
       if (!map.isStyleLoaded()) return;
 
-      var ring = [];
+      // Build the inner ring (the search area boundary)
+      var innerRing = [];
       if (coords && coords.length >= 3) {
-        ring = coords.slice();
-        var first = ring[0];
-        var last = ring[ring.length - 1];
+        innerRing = coords.slice();
+        var first = innerRing[0];
+        var last = innerRing[innerRing.length - 1];
         if (first[0] !== last[0] || first[1] !== last[1]) {
-          ring.push([first[0], first[1]]);
+          innerRing.push([first[0], first[1]]);
         }
       }
 
-      var sourceData = {
+      // Zillow-style inverted polygon: world-covering outer ring with
+      // the region boundary cut out as a hole. The fill paints the
+      // OUTSIDE area with a semi-transparent shadow, leaving the
+      // searched region completely clear.
+      var worldRing = [
+        [-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]
+      ];
+
+      // For the mask: outer ring is the world (counter-clockwise keeps
+      // it as the polygon exterior), inner ring is the boundary hole.
+      // GeoJSON Polygon with a hole: [outerRing, holeRing]
+      var maskData = {
         type: 'Feature',
         geometry: {
           type: 'Polygon',
-          coordinates: ring.length >= 4 ? [ring] : []
+          coordinates: innerRing.length >= 4
+            ? [worldRing, innerRing]
+            : []
         }
       };
 
-      if (map.getSource('region-boundary')) {
-        map.getSource('region-boundary').setData(sourceData);
-      } else if (ring.length >= 4) {
-        map.addSource('region-boundary', {
+      // For the stroke: just the boundary ring itself
+      var strokeData = {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: innerRing.length >= 4 ? [innerRing] : []
+        }
+      };
+
+      // --- Update or create the mask source/layer ---
+      if (map.getSource('region-boundary-mask')) {
+        map.getSource('region-boundary-mask').setData(maskData);
+      } else if (innerRing.length >= 4) {
+        map.addSource('region-boundary-mask', {
           type: 'geojson',
-          data: sourceData
+          data: maskData
         });
         map.addLayer({
-          id: 'region-boundary-fill',
+          id: 'region-boundary-mask-fill',
           type: 'fill',
-          source: 'region-boundary',
+          source: 'region-boundary-mask',
           paint: {
-            'fill-color': 'rgba(37, 99, 235, 0.08)',
-            'fill-opacity': 1
+            'fill-color': '#1e293b',
+            'fill-opacity': 0.25
           }
+        });
+      }
+
+      // --- Update or create the stroke source/layer ---
+      if (map.getSource('region-boundary')) {
+        map.getSource('region-boundary').setData(strokeData);
+      } else if (innerRing.length >= 4) {
+        map.addSource('region-boundary', {
+          type: 'geojson',
+          data: strokeData
         });
         map.addLayer({
           id: 'region-boundary-stroke',

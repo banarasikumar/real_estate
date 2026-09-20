@@ -412,7 +412,8 @@ export default function UserAppHomeScreen() {
             queryText.toLowerCase().includes('mumbai') ||
             queryText.toLowerCase().includes('bangalore') ||
             queryText.toLowerCase().includes('delhi') ||
-            queryText.toLowerCase().includes('goa')
+            queryText.toLowerCase().includes('goa') ||
+            queryText.toLowerCase().includes('ranchi')
           ))
         );
 
@@ -626,8 +627,8 @@ export default function UserAppHomeScreen() {
   // Shared translateYAnim between index.tsx and MobileTriStateBottomSheet
   const fullHeight = containerHeight || (SCREEN_HEIGHT - 60);
   const bottomInset = insets.bottom || (Platform.OS === 'android' ? 12 : 0);
-  const MINI_PEEK_HEIGHT = 54 + bottomInset;
-  const PEEK_HEIGHT = 78 + bottomInset;
+  const MINI_PEEK_HEIGHT = 28;
+  const PEEK_HEIGHT = 68;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
   const fullY = searchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;

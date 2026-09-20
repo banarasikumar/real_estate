@@ -275,10 +275,12 @@ const LuxuryPropertyCard = React.memo<LuxuryPropertyCardProps>(({
           <Text style={styles.priceValue}>
             {formatPropertyPrice(property.price, listType)}
           </Text>
-          <View style={styles.totalMonthlyBadge}>
-            <View style={styles.bulletDot} />
-            <Text style={styles.totalMonthlyText}>Total monthly price</Text>
-          </View>
+          {listType === 'RENT' && (
+            <View style={styles.totalMonthlyBadge}>
+              <View style={styles.bulletDot} />
+              <Text style={styles.totalMonthlyText}>Total monthly price</Text>
+            </View>
+          )}
         </View>
 
         {/* Specs: 1 bd | 1 ba | 756 sqft | Apartment for rent */}
@@ -362,8 +364,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   // Calibrated Heights & Snap Point Geometry
   const fullHeight = availableHeight || (SCREEN_HEIGHT - 60);
   const bottomInset = insets.bottom || (Platform.OS === 'android' ? 12 : 0);
-  const MINI_PEEK_HEIGHT = 54 + bottomInset; // Subheader row height + safe area clearance
-  const PEEK_HEIGHT = 78 + bottomInset;
+  const MINI_PEEK_HEIGHT = 28;
+  const PEEK_HEIGHT = 68;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
   const fullY = computedSearchRowTotalHeight;
   const dualY = fullHeight - DUAL_HEIGHT;
@@ -428,7 +430,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         mass: 0.45,
         overshootClamping: true, // Eliminates bounce past target
         velocity: clampedVelocity,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }).start(({ finished }) => {
         if (finished) {
           currentTranslateYRef.current = targetY;
@@ -521,6 +523,48 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         extrapolate: 'clamp',
       }),
     [translateYAnim, fullY, dualY]
+  );
+
+  // Grab handle bar in FULL mode: smoothly collapses height from 20 to 0 and fades out
+  const handleBarOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, fullY + 24, dualY],
+        outputRange: [0, 1, 1],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY]
+  );
+
+  const handleBarHeight = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, fullY + 24, dualY],
+        outputRange: [0, 20, 20],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY]
+  );
+
+  const handleBarTranslateY = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, fullY + 24, dualY],
+        outputRange: [-10, 0, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY]
+  );
+
+  // Zero-bleed PEEK mode: list opacity is 0 at peekY/miniPeekY so no card image bleeds through
+  const listContentOpacity = useMemo(
+    () =>
+      translateYAnim.interpolate({
+        inputRange: [fullY, dualY, (dualY + peekY) / 2, peekY],
+        outputRange: [1, 1, 0.3, 0],
+        extrapolate: 'clamp',
+      }),
+    [translateYAnim, fullY, dualY, peekY]
   );
 
   const handleListScroll = useCallback(
@@ -855,64 +899,84 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
       {/* 1C. Subheader Row & Feed Container */}
       <View style={styles.mainContentContainer}>
-        {/* Subheader Row: Cross-fades between count+handle and sort+save */}
+        {/* Subheader Row: Collapsing handle in FULL, cross-fade text */}
         <GestureDetector gesture={subHeaderGesture}>
           <View style={styles.subHeaderRowContainer}>
-            {/* Layer A (PEEK / DUAL): Grab Handle + Centered Count Available */}
+            {/* Grab handle container: collapses to 0 height & opacity in FULL mode */}
             <Animated.View
               style={[
-                styles.countSubheaderLayer,
-                { opacity: countRowOpacity },
+                styles.grabHandleContainer,
+                {
+                  opacity: handleBarOpacity,
+                  height: handleBarHeight,
+                  transform: [{ translateY: handleBarTranslateY }],
+                },
               ]}
-              pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
             >
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={handleHeaderPress}
-                style={styles.handleTouchable}
+                style={styles.grabHandleArea}
+                disabled={snapState === 'FULL'}
               >
                 <View style={styles.grabHandle} />
-                <View style={styles.headerRow}>
+              </TouchableOpacity>
+            </Animated.View>
+
+            <View style={styles.headerContentWrapper}>
+              {/* Layer A (PEEK / DUAL): Centered Count Available */}
+              <Animated.View
+                style={[
+                  styles.countSubheaderLayer,
+                  { opacity: countRowOpacity },
+                ]}
+                pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={handleHeaderPress}
+                  style={styles.headerRow}
+                >
                   <Text style={styles.headerTitle}>{countText}</Text>
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
+                </TouchableOpacity>
+              </Animated.View>
 
-            {/* Layer B (FULL): Sort: {sortOption} ⇅ | Save Search */}
-            <Animated.View
-              style={[
-                styles.sortSubheaderLayer,
-                { opacity: sortRowOpacity },
-              ]}
-              pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
-            >
-              <TouchableOpacity
-                style={styles.zillowSortButton}
-                onPress={handleSortToggle}
-                activeOpacity={0.7}
+              {/* Layer B (FULL): Sort: {sortOption} ⇅ | Save Search */}
+              <Animated.View
+                style={[
+                  styles.sortSubheaderLayer,
+                  { opacity: sortRowOpacity },
+                ]}
+                pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
               >
-                <Text style={styles.zillowSortText}>
-                  Sort: {sortOption}
-                </Text>
-                <Ionicons name="swap-vertical" size={14} color="#006aff" style={{ marginLeft: 4 }} />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.zillowSortButton}
+                  onPress={handleSortToggle}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.zillowSortText}>
+                    Sort: {sortOption}
+                  </Text>
+                  <Ionicons name="swap-vertical" size={14} color="#006aff" style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.zillowSaveButton}
-                onPress={handleToggleSaveSearch}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={isSearchSaved ? 'checkmark-circle' : 'search'}
-                  size={14}
-                  color="#006aff"
-                  style={{ marginRight: 5 }}
-                />
-                <Text style={styles.zillowSaveText}>
-                  {isSearchSaved ? 'Saved' : 'Save search'}
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
+                <TouchableOpacity
+                  style={styles.zillowSaveButton}
+                  onPress={handleToggleSaveSearch}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={isSearchSaved ? 'checkmark-circle' : 'search'}
+                    size={14}
+                    color="#006aff"
+                    style={{ marginRight: 5 }}
+                  />
+                  <Text style={styles.zillowSaveText}>
+                    {isSearchSaved ? 'Saved' : 'Save search'}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
           </View>
         </GestureDetector>
 
@@ -921,7 +985,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
         {/* Property Cards Feed */}
         <GestureDetector gesture={listPanGesture}>
-          <View style={styles.listWrapper}>
+          <Animated.View
+            style={[
+              styles.listWrapper,
+              {
+                opacity: listContentOpacity,
+                overflow: 'hidden',
+              },
+            ]}
+          >
             <FlatList
               ref={flatListRef}
               disallowInterruption={false}
@@ -959,7 +1031,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                 </View>
               }
             />
-          </View>
+          </Animated.View>
         </GestureDetector>
       </View>
     </Animated.View>
@@ -1059,11 +1131,26 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   subHeaderRowContainer: {
-    height: 54,
-    position: 'relative',
-    justifyContent: 'center',
     backgroundColor: '#ffffff',
     width: '100%',
+  },
+  grabHandleContainer: {
+    width: '100%',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  grabHandleArea: {
+    width: '100%',
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerContentWrapper: {
+    height: 48,
+    position: 'relative',
+    width: '100%',
+    justifyContent: 'center',
   },
   countSubheaderLayer: {
     position: 'absolute',
@@ -1071,6 +1158,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    height: 48,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   sortSubheaderLayer: {
@@ -1079,6 +1168,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1092,24 +1182,32 @@ const styles = StyleSheet.create({
   zillowSortButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
     paddingVertical: 6,
     paddingHorizontal: 4,
   },
   zillowSortText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#006aff',
+    lineHeight: 20,
+    includeFontPadding: false,
   },
   zillowSaveButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
     paddingVertical: 6,
     paddingHorizontal: 4,
   },
   zillowSaveText: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#006aff',
+    lineHeight: 20,
+    includeFontPadding: false,
   },
   anchoredHudContainer: {
     position: 'absolute',
@@ -1175,25 +1273,17 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f1f5f9',
     paddingBottom: 6,
   },
-  handleTouchable: {
-    paddingTop: 8,
-    paddingBottom: 4,
-    paddingHorizontal: 16,
-    width: '100%',
-  },
   grabHandle: {
     width: 36,
     height: 4,
     borderRadius: 2,
     backgroundColor: '#cbd5e1',
-    alignSelf: 'center',
-    marginBottom: 8,
   },
   headerRow: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
-    height: 30,
+    height: 48,
     width: '100%',
   },
   headerTitle: {
@@ -1202,6 +1292,8 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     letterSpacing: -0.2,
     textAlign: 'center',
+    lineHeight: 20,
+    includeFontPadding: false,
   },
   subHeaderRow: {
     flexDirection: 'row',

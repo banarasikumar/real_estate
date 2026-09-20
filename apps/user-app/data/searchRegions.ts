@@ -42,21 +42,37 @@ export const SEARCH_REGIONS: SearchRegion[] = [
     center: [72.8777, 19.0760],
     zoom: 11,
     boundaryPolygon: [
-      [72.8150, 18.9050], // Colaba Point
-      [72.8220, 18.9400], // Marine Drive / Nariman Point
-      [72.8120, 19.0150], // Worli Sea Face
-      [72.8250, 19.0600], // Bandra Bandstand
-      [72.8280, 19.1050], // Juhu Beach
-      [72.8080, 19.1450], // Versova / Lokhandwala
-      [72.7950, 19.1900], // Madh Island / Malad West
-      [72.8200, 19.2450], // Gorai / Borivali West
-      [72.8650, 19.2900], // Mira-Bhayandar North border
-      [72.9300, 19.2500], // SGNP / Thane West border
-      [72.9600, 19.1850], // Mulund / Bhandup
-      [72.9300, 19.0900], // Ghatkopar / Chembur
-      [72.9050, 19.0200], // Trombay / Sewri Mudflats
+      [72.8130, 18.8950], // Colaba tip (Backbay)
+      [72.8190, 18.9200], // Cuffe Parade / Navy Nagar
+      [72.8230, 18.9400], // Marine Drive south
+      [72.8200, 18.9600], // Girgaon Chowpatty
+      [72.8150, 18.9800], // Mahalaxmi / Haji Ali
+      [72.8100, 19.0000], // Lower Parel coastal
+      [72.8120, 19.0200], // Worli Sea Link south
+      [72.8180, 19.0400], // Worli Sea Face north
+      [72.8220, 19.0550], // Bandra Bandstand
+      [72.8260, 19.0750], // Bandra Reclamation
+      [72.8280, 19.0950], // Khar / Santacruz west
+      [72.8300, 19.1100], // Juhu Beach
+      [72.8200, 19.1300], // Juhu / Vile Parle west
+      [72.8100, 19.1500], // Versova / Andheri west
+      [72.8000, 19.1700], // Madh Island south
+      [72.7950, 19.1950], // Malad west coast
+      [72.8050, 19.2200], // Marve / Erangal
+      [72.8200, 19.2500], // Gorai / Uttan
+      [72.8500, 19.2800], // Borivali west coast
+      [72.8800, 19.2950], // Dahisar / Mira-Bhayandar border
+      [72.9200, 19.2700], // SGNP / Thane border NE
+      [72.9500, 19.2200], // Powai lake area
+      [72.9650, 19.1850], // Mulund / Bhandup
+      [72.9500, 19.1400], // Vikhroli / Kanjurmarg
+      [72.9350, 19.0950], // Ghatkopar / Kurla east
+      [72.9200, 19.0500], // Chembur / Trombay north
+      [72.9050, 19.0200], // Trombay / Sewri east
+      [72.8800, 18.9900], // Wadala / Sewri bridge
       [72.8550, 18.9600], // Mumbai Port / Mazgaon
-      [72.8150, 18.9050], // Close loop
+      [72.8350, 18.9300], // Fort / CST area
+      [72.8130, 18.8950], // Close loop
     ],
     sampleProperties: MUMBAI_PROPERTIES,
   },
@@ -135,16 +151,25 @@ export const SEARCH_REGIONS: SearchRegion[] = [
     center: [85.3096, 23.3441],
     zoom: 11,
     boundaryPolygon: [
+      [85.2950, 23.4550], // Kanke Dam North
       [85.3250, 23.4450], // Kanke / Ring Road North
+      [85.3500, 23.4350], // BIT Mesra area
       [85.3700, 23.4200], // Booty More / Tagore Hill
+      [85.3900, 23.3950], // Kokar / Khelgaon
       [85.4100, 23.3650], // Tatisilwai / Namkum East
+      [85.3950, 23.3350], // Namkum Industrial Area
       [85.3850, 23.3150], // Chutia / Namkum Station
+      [85.3600, 23.2950], // Kusai / Doranda East
       [85.3350, 23.2750], // Dhurwa / Ring Road South
+      [85.3100, 23.2700], // JSCA Stadium area
       [85.2850, 23.2850], // Hatia / HEC
+      [85.2600, 23.3050], // Pundag / Argora South
       [85.2400, 23.3300], // Kathal More / Argora West
+      [85.2300, 23.3600], // Hehal / Itki Road
       [85.2350, 23.3850], // Ratu / Ring Road West
+      [85.2550, 23.4150], // Pandra / Kanke Road West
       [85.2750, 23.4350], // Kanke Dam West
-      [85.3250, 23.4450], // Close loop
+      [85.2950, 23.4550], // Close loop
     ],
     sampleProperties: RANCHI_PROPERTIES,
   },
