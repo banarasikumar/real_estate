@@ -953,13 +953,28 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   );
 
   const handleFloatingMapPress = useCallback(() => {
-    resetListToTop();
-    setIsSettledInFull(false);
+    // 1. Instantly trigger GPU spring collapse on the UI thread (0ms latency!)
+    currentSnapState.value = 'PEEK';
     isSettledInFullShared.value = false;
+    setIsSettledInFull(false);
     pendingGestureStateRef.current = 'PEEK';
-    onSnapChange('PEEK');
     animateToState('PEEK');
-  }, [resetListToTop, onSnapChange, animateToState, isSettledInFullShared]);
+    onSnapChange('PEEK');
+
+    // 2. Defer heavy FlatList scroll reset so it doesn't freeze the animation start
+    requestAnimationFrame(() => {
+      resetListToTop();
+    });
+  }, [resetListToTop, onSnapChange, animateToState, isSettledInFullShared, currentSnapState]);
+
+  const mapButtonTapGesture = useMemo(() => {
+    return Gesture.Tap()
+      .runOnJS(true)
+      .maxDuration(500)
+      .onEnd(() => {
+        handleFloatingMapPress();
+      });
+  }, [handleFloatingMapPress]);
 
   return (
     <>
@@ -1183,16 +1198,19 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         },
         bottomMapButtonAnimatedStyle,
       ]}
-      pointerEvents={snapState === 'FULL' ? 'box-none' : 'none'}
+      pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
     >
-      <TouchableOpacity
-        style={styles.floatingMapPill}
-        onPress={handleFloatingMapPress}
-        activeOpacity={0.82}
-      >
-        <Ionicons name="map" size={14.5} color="#ffffff" style={styles.floatingMapIcon} />
-        <Text style={styles.floatingMapPillText}>Map</Text>
-      </TouchableOpacity>
+      <GestureDetector gesture={mapButtonTapGesture}>
+        <TouchableOpacity
+          style={styles.floatingMapPill}
+          onPress={handleFloatingMapPress}
+          activeOpacity={0.82}
+          hitSlop={{ top: 14, bottom: 14, left: 20, right: 20 }}
+        >
+          <Ionicons name="map" size={14.5} color="#ffffff" style={styles.floatingMapIcon} />
+          <Text style={styles.floatingMapPillText}>Map</Text>
+        </TouchableOpacity>
+      </GestureDetector>
     </Animated.View>
   </>
 );
@@ -1655,11 +1673,9 @@ const styles = StyleSheet.create({
   },
   floatingMapPillWrap: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 99,
+    alignSelf: 'center',
+    zIndex: 999,
+    elevation: 30,
   },
   floatingMapPill: {
     flexDirection: 'row',
@@ -1673,7 +1689,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.22,
     shadowRadius: 8,
-    elevation: 5,
+    elevation: 32,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
