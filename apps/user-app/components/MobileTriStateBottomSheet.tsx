@@ -407,15 +407,21 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const currentSnapState = useSharedValue<SheetSnapState>(snapState);
   const isDraggingSheetFromList = useSharedValue(false);
 
+  // Strict Feed Scroll Lock: Listing cards scroll vertically ONLY when fully settled in FULL mode
+  const [isSettledInFull, setIsSettledInFull] = useState(snapState === 'FULL');
+  const isSettledInFullShared = useSharedValue(snapState === 'FULL');
+
+  const setSettledInFullJS = useCallback((val: boolean) => {
+    setIsSettledInFull(val);
+  }, []);
+
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
   const [isAtTop, setIsAtTop] = useState(true);
   const isAtTopRef = useRef(true);
 
-  // Synchronize currentSnapState when prop changes
-  useEffect(() => {
-    currentSnapState.value = snapState;
-  }, [snapState, currentSnapState]);
+  // Tracks in-flight gesture snap target so React prop sync does NOT re-trigger or reverse gesture animations
+  const pendingGestureStateRef = useRef<SheetSnapState | null>(null);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -435,27 +441,57 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
       cancelAnimation(translateYAnim);
 
+      if (state !== 'FULL') {
+        isSettledInFullShared.value = false;
+        runOnJS(setSettledInFullJS)(false);
+      }
+
       const clampedVelocity =
         velocity !== undefined ? Math.max(-8, Math.min(8, velocity)) : undefined;
 
-      translateYAnim.value = withSpring(targetY, {
-        damping: 24,
-        stiffness: 320,
-        mass: 0.45,
-        overshootClamping: true,
-        velocity: clampedVelocity,
-      });
+      translateYAnim.value = withSpring(
+        targetY,
+        {
+          damping: 24,
+          stiffness: 320,
+          mass: 0.45,
+          overshootClamping: true,
+          velocity: clampedVelocity,
+        },
+        (finished) => {
+          'worklet';
+          if (finished && state === 'FULL') {
+            isSettledInFullShared.value = true;
+            runOnJS(setSettledInFullJS)(true);
+          }
+        }
+      );
     },
-    [getSnapTranslateY, translateYAnim]
+    [getSnapTranslateY, translateYAnim, isSettledInFullShared, setSettledInFullJS]
   );
 
-  // React to snapState changes from parent or when entering/exiting carousel mode
+  // React to external snapState changes (e.g. user tapped map, dismissed, or routed)
   useEffect(() => {
+    // 1. If this prop change matches what a user gesture already initiated, clear ref and DO NOT re-animate
+    if (pendingGestureStateRef.current === snapState) {
+      pendingGestureStateRef.current = null;
+      return;
+    }
+
+    // 2. If a more recent gesture is pending, ignore this stale intermediate prop update from React's queue
+    if (pendingGestureStateRef.current !== null) {
+      return;
+    }
+
+    // 3. This is an external/programmatic prop change:
+    currentSnapState.value = snapState;
     if (snapState !== 'FULL') {
       resetListToTop();
+      setIsSettledInFull(false);
+      isSettledInFullShared.value = false;
     }
     animateToState(snapState);
-  }, [snapState, animateToState, resetListToTop, selectedPropertyId]);
+  }, [snapState, animateToState, resetListToTop, selectedPropertyId, isSettledInFullShared, currentSnapState]);
 
   // 60fps GPU Native Driver Animated Interpolations via Reanimated
   const sheetAnimatedStyle = useAnimatedStyle(() => {
@@ -635,9 +671,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const handleHeaderPress = useCallback(() => {
     if (snapState === 'PEEK') {
+      pendingGestureStateRef.current = 'DUAL';
       onSnapChange('DUAL');
       animateToState('DUAL');
     } else if (snapState === 'DUAL') {
+      pendingGestureStateRef.current = 'FULL';
       onSnapChange('FULL');
       animateToState('FULL');
     }
@@ -645,11 +683,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const onSnapFinishedJS = useCallback(
     (nextState: SheetSnapState) => {
+      if (nextState !== snapState) {
+        pendingGestureStateRef.current = nextState;
+        onSnapChange(nextState);
+      } else {
+        pendingGestureStateRef.current = null;
+      }
       if (nextState !== 'FULL') {
         resetListToTop();
-      }
-      if (nextState !== snapState) {
-        onSnapChange(nextState);
+        setIsSettledInFull(false);
       }
     },
     [snapState, onSnapChange, resetListToTop]
@@ -658,49 +700,71 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const snapToRelease = useCallback(
     (currentY: number, delta: number, vy: number) => {
       'worklet';
-      const fromState = currentSnapState.value;
-      const midFullDual = (computedSearchRowTotalHeight + dualY) / 2;
+      const midFullDual = (fullY + dualY) / 2;
       const midDualPeek = (dualY + peekY) / 2;
+      const startY = dragStartY.value;
 
-      let nextState: SheetSnapState = fromState;
+      let nextState: SheetSnapState;
 
-      // Determine swipe intent:
-      if (vy > 0.25 || delta > 40) {
-        // Downward flick or significant downward drag
-        if (fromState === 'FULL') {
-          nextState = currentY >= midDualPeek ? 'PEEK' : 'DUAL';
-        } else if (fromState === 'DUAL') {
-          nextState = 'PEEK';
-        } else if (fromState === 'PEEK') {
-          nextState = 'PEEK';
+      const isFlickUp = vy < -0.25 || delta < -35;
+      const isFlickDown = vy > 0.25 || delta > 35;
+
+      if (startY >= midDualPeek) {
+        // --- 1. GESTURE STARTED FROM PEEK ZONE ---
+        if (isFlickUp) {
+          // Option 2: ONLY go to FULL if the finger physically dragged the sheet past DUAL (currentY < dualY)
+          // AND is still heading upward. If released before passing DUAL (currentY >= dualY), strictly snap to DUAL!
+          if (currentY < dualY && (vy < -0.25 || delta < -35)) {
+            nextState = 'FULL';
+          } else {
+            nextState = 'DUAL';
+          }
+        } else if (isFlickDown) {
+          nextState = currentY >= peekY + 15 ? 'MINI_PEEK' : 'PEEK';
         } else {
-          nextState = 'MINI_PEEK';
+          // Slow drag from PEEK:
+          if (currentY < midFullDual) nextState = 'FULL';
+          else if (currentY < midDualPeek) nextState = 'DUAL';
+          else nextState = 'PEEK';
         }
-      } else if (vy < -0.25 || delta < -40) {
-        // Upward flick or significant upward drag
-        if (fromState === 'MINI_PEEK') {
-          nextState = currentY <= midFullDual ? 'FULL' : 'DUAL';
-        } else if (fromState === 'PEEK') {
-          nextState = currentY <= midFullDual ? 'FULL' : 'DUAL';
-        } else if (fromState === 'DUAL') {
+      } else if (startY < midFullDual) {
+        // --- 2. GESTURE STARTED FROM FULL ZONE ---
+        if (isFlickDown) {
+          // Option 2: ONLY go to PEEK if the finger physically dragged the sheet past DUAL (currentY > dualY)
+          // AND is still heading downward. If released before passing DUAL (currentY <= dualY), strictly snap to DUAL!
+          if (currentY > dualY && (vy > 0.25 || delta > 35)) {
+            nextState = 'PEEK';
+          } else {
+            nextState = 'DUAL';
+          }
+        } else if (isFlickUp) {
           nextState = 'FULL';
         } else {
-          nextState = 'FULL';
+          // Slow drag from FULL:
+          if (currentY < midFullDual) nextState = 'FULL';
+          else if (currentY < midDualPeek) nextState = 'DUAL';
+          else nextState = 'PEEK';
         }
       } else {
-        // Slow drag with minimal velocity: snap to closest state
-        if (currentY < midFullDual) {
+        // --- 3. GESTURE STARTED FROM DUAL ZONE ---
+        if (isFlickUp) {
           nextState = 'FULL';
-        } else if (currentY < midDualPeek) {
-          nextState = 'DUAL';
-        } else if (currentY < peekY + 12) {
+        } else if (isFlickDown) {
           nextState = 'PEEK';
         } else {
-          nextState = 'MINI_PEEK';
+          // Slow drag from DUAL:
+          if (currentY < midFullDual) nextState = 'FULL';
+          else if (currentY < midDualPeek) nextState = 'DUAL';
+          else nextState = 'PEEK';
         }
       }
 
       currentSnapState.value = nextState;
+
+      if (nextState !== 'FULL') {
+        isSettledInFullShared.value = false;
+        runOnJS(setSettledInFullJS)(false);
+      }
 
       let targetY = fullY;
       if (nextState === 'DUAL') targetY = dualY;
@@ -710,17 +774,38 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       const springVelocity =
         (targetY - currentY) * vy > 0 ? Math.max(-6, Math.min(6, vy * 1.5)) : 0;
 
-      translateYAnim.value = withSpring(targetY, {
-        damping: 24,
-        stiffness: 320,
-        mass: 0.45,
-        overshootClamping: true,
-        velocity: springVelocity,
-      });
+      translateYAnim.value = withSpring(
+        targetY,
+        {
+          damping: 24,
+          stiffness: 320,
+          mass: 0.45,
+          overshootClamping: true,
+          velocity: springVelocity,
+        },
+        (finished) => {
+          'worklet';
+          if (finished && nextState === 'FULL') {
+            isSettledInFullShared.value = true;
+            runOnJS(setSettledInFullJS)(true);
+          }
+        }
+      );
 
       runOnJS(onSnapFinishedJS)(nextState);
     },
-    [fullY, computedSearchRowTotalHeight, dualY, peekY, miniPeekY, currentSnapState, translateYAnim, onSnapFinishedJS]
+    [
+      fullY,
+      dualY,
+      peekY,
+      miniPeekY,
+      dragStartY,
+      currentSnapState,
+      translateYAnim,
+      isSettledInFullShared,
+      setSettledInFullJS,
+      onSnapFinishedJS,
+    ]
   );
 
   // Dedicated subheader PanGesture from react-native-gesture-handler:
@@ -760,25 +845,42 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   }, [snapState, fullY, peekY, translateYAnim, dragStartY, isDraggingSheetFromList, handleHeaderPress, snapToRelease]);
 
   // Unified PanGesture on the listing feed for ALL modes (FULL, DUAL, PEEK):
-  // - In FULL mode: activates on downward drag when at top (isAtTop), allowing upward feed scroll.
-  // - In DUAL and PEEK modes: activates on both upward and downward drags.
+  // - In FULL mode (when settled): activates on downward drag when at top (isAtTop), allowing upward feed scroll.
+  // - In DUAL and PEEK modes: activates on both upward and downward drags without failing on diagonal thumb movement.
   // - Fully executes on the UI thread for buttery smooth 60fps/120fps tracking without JS latency.
   const listPanGesture = useMemo(() => {
-    const isFull = snapState === 'FULL';
-    return Gesture.Pan()
+    const isFull = snapState === 'FULL' && isSettledInFull;
+    const pan = Gesture.Pan()
       .enabled(!isFull || isAtTop)
       .activeOffsetY(isFull ? 6 : [-6, 6])
-      .failOffsetY(isFull ? -1 : -9999)
-      .failOffsetX([-15, 15])
+      .failOffsetY(isFull ? -1 : -9999);
+
+    if (isFull) {
+      // In settled FULL mode, keep moderate horizontal fail bounds so card photo carousel can be swiped horizontally
+      pan.failOffsetX([-25, 25]);
+    }
+    // In DUAL and PEEK modes, NO failOffsetX is set, ensuring diagonal thumb sweeps never fail the sheet pan.
+
+    return pan
       .onBegin(() => {
         'worklet';
         cancelAnimation(translateYAnim);
         dragStartY.value = translateYAnim.value;
         isDraggingSheetFromList.value = true;
+        // Immediately revoke settled status on drag begin if pulling down from FULL
+        if (translateYAnim.value > fullY + 2) {
+          isSettledInFullShared.value = false;
+          runOnJS(setSettledInFullJS)(false);
+        }
       })
       .onUpdate((e) => {
         'worklet';
         if (!isDraggingSheetFromList.value) return;
+        // If pulled down from top in FULL mode, ensure scroll is immediately cut off
+        if (isSettledInFullShared.value && e.translationY > 2) {
+          isSettledInFullShared.value = false;
+          runOnJS(setSettledInFullJS)(false);
+        }
         const target = dragStartY.value + e.translationY;
         const clamped = Math.min(peekY, Math.max(fullY, target));
         translateYAnim.value = clamped;
@@ -795,12 +897,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       });
   }, [
     snapState,
+    isSettledInFull,
     isAtTop,
     fullY,
     peekY,
     translateYAnim,
     dragStartY,
     isDraggingSheetFromList,
+    isSettledInFullShared,
+    setSettledInFullJS,
     snapToRelease,
   ]);
 
@@ -849,9 +954,12 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const handleFloatingMapPress = useCallback(() => {
     resetListToTop();
+    setIsSettledInFull(false);
+    isSettledInFullShared.value = false;
+    pendingGestureStateRef.current = 'PEEK';
     onSnapChange('PEEK');
     animateToState('PEEK');
-  }, [resetListToTop, onSnapChange, animateToState]);
+  }, [resetListToTop, onSnapChange, animateToState, isSettledInFullShared]);
 
   return (
     <>
@@ -1045,7 +1153,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                 index,
               })}
               decelerationRate="normal"
-              scrollEnabled={snapState === 'FULL'}
+              scrollEnabled={snapState === 'FULL' && isSettledInFull}
               contentContainerStyle={[
                 styles.listContent,
                 { paddingBottom: insets.bottom + 90 },
