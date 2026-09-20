@@ -415,6 +415,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     setIsSettledInFull(val);
   }, []);
 
+  const isFullSettled = snapState === 'FULL' && isSettledInFull;
+
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
   const [isAtTop, setIsAtTop] = useState(true);
@@ -422,6 +424,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   // Tracks in-flight gesture snap target so React prop sync does NOT re-trigger or reverse gesture animations
   const pendingGestureStateRef = useRef<SheetSnapState | null>(null);
+  const prevSnapStateRef = useRef<SheetSnapState>(snapState);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -472,6 +475,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   // React to external snapState changes (e.g. user tapped map, dismissed, or routed)
   useEffect(() => {
+    if (prevSnapStateRef.current === snapState) {
+      return;
+    }
+    prevSnapStateRef.current = snapState;
+
     // 1. If this prop change matches what a user gesture already initiated, clear ref and DO NOT re-animate
     if (pendingGestureStateRef.current === snapState) {
       pendingGestureStateRef.current = null;
@@ -491,7 +499,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       isSettledInFullShared.value = false;
     }
     animateToState(snapState);
-  }, [snapState, animateToState, resetListToTop, selectedPropertyId, isSettledInFullShared, currentSnapState]);
+  }, [snapState, animateToState, resetListToTop, isSettledInFullShared, currentSnapState]);
 
   // 60fps GPU Native Driver Animated Interpolations via Reanimated
   const sheetAnimatedStyle = useAnimatedStyle(() => {
@@ -809,12 +817,17 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   );
 
   // Dedicated subheader PanGesture from react-native-gesture-handler:
-  // - In PEEK/DUAL: Intercepts immediately on touch-down and follows finger 1:1 on UI thread
-  // - In FULL mode: Disabled so dragging subheader does NOT pull down the sheet, letting Sort & Save work cleanly
+  // - In PEEK/DUAL and during animation to FULL: Intercepts immediately on touch-down and follows finger 1:1 on UI thread
+  // - In settled FULL mode: Disabled so dragging subheader does NOT pull down the sheet, letting Sort & Save work cleanly
   const subHeaderGesture = useMemo(() => {
+    const isFull = snapState === 'FULL' && isSettledInFull;
     return Gesture.Pan()
-      .enabled(snapState !== 'FULL')
+      .enabled(!isFull)
       .activeOffsetY([-4, 4])
+      .onTouchesDown(() => {
+        'worklet';
+        cancelAnimation(translateYAnim);
+      })
       .onBegin(() => {
         'worklet';
         cancelAnimation(translateYAnim);
@@ -838,11 +851,35 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         }
         snapToRelease(translateYAnim.value, e.translationY, vy);
       })
-      .onFinalize(() => {
+      .onFinalize((_e, success) => {
         'worklet';
         isDraggingSheetFromList.value = false;
+        // If animation was halted by touch but gesture never activated (e.g. quick tap without drag),
+        // ensure sheet smoothly finishes settling to the nearest snap point if not already resting.
+        if (!success) {
+          const isAtRest =
+            Math.abs(translateYAnim.value - fullY) < 2 ||
+            Math.abs(translateYAnim.value - dualY) < 2 ||
+            Math.abs(translateYAnim.value - peekY) < 2 ||
+            Math.abs(translateYAnim.value - miniPeekY) < 2;
+          if (!isAtRest) {
+            snapToRelease(translateYAnim.value, 0, 0);
+          }
+        }
       });
-  }, [snapState, fullY, peekY, translateYAnim, dragStartY, isDraggingSheetFromList, handleHeaderPress, snapToRelease]);
+  }, [
+    snapState,
+    isSettledInFull,
+    fullY,
+    dualY,
+    peekY,
+    miniPeekY,
+    translateYAnim,
+    dragStartY,
+    isDraggingSheetFromList,
+    handleHeaderPress,
+    snapToRelease,
+  ]);
 
   // Unified PanGesture on the listing feed for ALL modes (FULL, DUAL, PEEK):
   // - In FULL mode (when settled): activates on downward drag when at top (isAtTop), allowing upward feed scroll.
@@ -862,6 +899,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     // In DUAL and PEEK modes, NO failOffsetX is set, ensuring diagonal thumb sweeps never fail the sheet pan.
 
     return pan
+      .onTouchesDown(() => {
+        'worklet';
+        cancelAnimation(translateYAnim);
+      })
       .onBegin(() => {
         'worklet';
         cancelAnimation(translateYAnim);
@@ -891,16 +932,30 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         isDraggingSheetFromList.value = false;
         snapToRelease(translateYAnim.value, e.translationY, e.velocityY / 1000);
       })
-      .onFinalize(() => {
+      .onFinalize((_e, success) => {
         'worklet';
         isDraggingSheetFromList.value = false;
+        // If animation was halted by touch on list but gesture never activated,
+        // ensure sheet smoothly finishes settling to the nearest snap point if not already resting.
+        if (!success) {
+          const isAtRest =
+            Math.abs(translateYAnim.value - fullY) < 2 ||
+            Math.abs(translateYAnim.value - dualY) < 2 ||
+            Math.abs(translateYAnim.value - peekY) < 2 ||
+            Math.abs(translateYAnim.value - miniPeekY) < 2;
+          if (!isAtRest) {
+            snapToRelease(translateYAnim.value, 0, 0);
+          }
+        }
       });
   }, [
     snapState,
     isSettledInFull,
     isAtTop,
     fullY,
+    dualY,
     peekY,
+    miniPeekY,
     translateYAnim,
     dragStartY,
     isDraggingSheetFromList,
@@ -993,7 +1048,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           styles.anchoredHudContainer,
           hudAnimatedStyle,
         ]}
-        pointerEvents={snapState === 'FULL' ? 'none' : 'box-none'}
+        pointerEvents={isFullSettled ? 'none' : 'box-none'}
       >
         {/* Left circular HUD buttons */}
         <View style={styles.hudLeftGroup}>
@@ -1072,7 +1127,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                 activeOpacity={0.9}
                 onPress={handleHeaderPress}
                 style={styles.grabHandleArea}
-                disabled={snapState === 'FULL'}
+                disabled={isFullSettled}
               >
                 <View style={styles.grabHandle} />
               </TouchableOpacity>
@@ -1085,7 +1140,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                   styles.countSubheaderLayer,
                   countRowAnimatedStyle,
                 ]}
-                pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
+                pointerEvents={isFullSettled ? 'none' : 'auto'}
               >
                 <TouchableOpacity
                   activeOpacity={0.9}
@@ -1102,7 +1157,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                   styles.sortSubheaderLayer,
                   sortRowAnimatedStyle,
                 ]}
-                pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
+                pointerEvents={isFullSettled ? 'auto' : 'none'}
               >
                 <TouchableOpacity
                   style={styles.zillowSortButton}
@@ -1198,7 +1253,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         },
         bottomMapButtonAnimatedStyle,
       ]}
-      pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
+      pointerEvents={isFullSettled ? 'auto' : 'none'}
     >
       <GestureDetector gesture={mapButtonTapGesture}>
         <TouchableOpacity
