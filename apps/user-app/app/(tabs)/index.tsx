@@ -644,15 +644,6 @@ export default function UserAppHomeScreen() {
     }
   };
   const animatedPosition = useSharedValue(getSnapTranslateY(sheetSnapState));
-  const translateYAnim = useRef(new RNAnimated.Value(getSnapTranslateY(sheetSnapState))).current;
-  
-  // Keep the shared value updated for 3D/TopBar styles
-  useEffect(() => {
-    const id = translateYAnim.addListener(({ value }) => {
-      animatedPosition.value = value;
-    });
-    return () => translateYAnim.removeListener(id);
-  }, [translateYAnim, animatedPosition]);
 
   const floating3DStyle = useAnimatedStyle(() => {
     return {
@@ -843,7 +834,7 @@ export default function UserAppHomeScreen() {
               availableHeight={containerHeight}
               searchRowTotalHeight={searchRowTotalHeight}
               snapState={sheetSnapState}
-              translateYAnim={translateYAnim}
+              translateYAnim={animatedPosition}
               onSnapChange={(newState) => {
                 setSheetSnapState(newState);
                 if (newState === 'DUAL' || newState === 'FULL') {

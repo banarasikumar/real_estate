@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   Dimensions,
-  Animated,
   ScrollView,
   Image,
   TouchableOpacity,
@@ -14,6 +13,16 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  interpolate,
+  Extrapolation,
+  runOnJS,
+  cancelAnimation,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -51,7 +60,7 @@ export interface MobileTriStateBottomSheetProps {
   onOpenSearchModal?: () => void;
   onClearSearch?: () => void;
   regionName?: string;
-  translateYAnim?: Animated.Value;
+  translateYAnim?: SharedValue<number>;
   searchRowTotalHeight?: number;
 }
 
@@ -375,6 +384,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const getSnapTranslateY = useCallback(
     (state: SheetSnapState) => {
+      'worklet';
       switch (state) {
         case 'FULL':
           return fullY;
@@ -389,16 +399,21 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     [fullY, dualY, peekY, miniPeekY]
   );
 
-  const internalTranslateY = useRef(new Animated.Value(getSnapTranslateY(snapState))).current;
+  const internalTranslateY = useSharedValue(getSnapTranslateY(snapState));
   const translateYAnim = externalTranslateYAnim || internalTranslateY;
-  const currentTranslateYRef = useRef(getSnapTranslateY(snapState));
-  const dragStartTranslateY = useRef(getSnapTranslateY(snapState));
-  const animatingToStateRef = useRef<SheetSnapState | null>(null);
+  const dragStartY = useSharedValue(getSnapTranslateY(snapState));
+  const currentSnapState = useSharedValue<SheetSnapState>(snapState);
+  const isDraggingSheetFromList = useSharedValue(false);
+
   const flatListRef = useRef<FlatList>(null);
   const scrollYRef = useRef(0);
   const [isAtTop, setIsAtTop] = useState(true);
   const isAtTopRef = useRef(true);
-  const isDraggingSheetFromList = useRef(false);
+
+  // Synchronize currentSnapState when prop changes
+  useEffect(() => {
+    currentSnapState.value = snapState;
+  }, [snapState, currentSnapState]);
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
@@ -416,156 +431,157 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     (state: SheetSnapState, velocity?: number) => {
       const targetY = getSnapTranslateY(state);
 
-      // Stop any running animation immediately so the new animation takes over
-      translateYAnim.stopAnimation();
-      animatingToStateRef.current = state;
+      cancelAnimation(translateYAnim);
 
       const clampedVelocity =
         velocity !== undefined ? Math.max(-8, Math.min(8, velocity)) : undefined;
 
-      Animated.spring(translateYAnim, {
-        toValue: targetY,
+      translateYAnim.value = withSpring(targetY, {
         damping: 24,
         stiffness: 320,
         mass: 0.45,
-        overshootClamping: true, // Eliminates bounce past target
+        overshootClamping: true,
         velocity: clampedVelocity,
-        useNativeDriver: false,
-      }).start(({ finished }) => {
-        if (finished) {
-          currentTranslateYRef.current = targetY;
-          animatingToStateRef.current = null;
-        }
       });
     },
     [getSnapTranslateY, translateYAnim]
   );
-
-  // Synchronize currentTranslateYRef with real-time animated values across any frame or driver
-  useEffect(() => {
-    const id = translateYAnim.addListener(({ value }) => {
-      currentTranslateYRef.current = value;
-    });
-    return () => {
-      translateYAnim.removeListener(id);
-    };
-  }, [translateYAnim]);
 
   // React to snapState changes from parent or when entering/exiting carousel mode
   useEffect(() => {
     if (snapState !== 'FULL') {
       resetListToTop();
     }
-    // If already animating to target state (e.g. from gesture release or button press), don't interrupt momentum
-    if (animatingToStateRef.current === snapState) {
-      return;
-    }
     animateToState(snapState);
   }, [snapState, animateToState, resetListToTop, selectedPropertyId]);
 
-  // 60fps GPU Native Driver Animated Interpolations
-  const countRowOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 40, dualY],
-        outputRange: [0, 0.4, 1],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  // 60fps GPU Native Driver Animated Interpolations via Reanimated
+  const sheetAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateY: translateYAnim.value }],
+    };
+  });
 
-  const sortRowOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 40, dualY],
-        outputRange: [1, 0.6, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  const countRowAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, fullY + 40, dualY],
+        [0, 0.4, 1],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
-  const hudOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, Math.max(fullY + 1, dualY - 80), dualY - 20, dualY, peekY],
-        outputRange: [0, 0, 0.7, 1, 1],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY, peekY]
-  );
+  const sortRowAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, fullY + 40, dualY],
+        [1, 0.6, 0],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
-  const bottomMapButtonOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 30, fullY + 80],
-        outputRange: [1, 0.8, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY]
-  );
+  const hudAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, Math.max(fullY + 1, dualY - 80), dualY - 20, dualY, peekY],
+        [0, 0, 0.7, 1, 1],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
+
+  const bottomMapButtonAnimatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateYAnim.value,
+      [fullY, fullY + 30, fullY + 80],
+      [1, 0.8, 0],
+      Extrapolation.CLAMP
+    );
+    const translateY = interpolate(
+      translateYAnim.value,
+      [fullY, fullY + 80],
+      [0, 80],
+      Extrapolation.CLAMP
+    );
+    const scale = interpolate(
+      translateYAnim.value,
+      [fullY, fullY + 60],
+      [1, 0.9],
+      Extrapolation.CLAMP
+    );
+    return {
+      opacity,
+      transform: [{ translateY }, { scale }],
+    };
+  });
 
   // Seamless borderless fusion interpolations: fade to 0 in FULL mode, 1 in DUAL/PEEK
-  const sheetBorderOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 20, dualY],
-        outputRange: [0, 1, 1],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  const sheetBorderAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, fullY + 20, dualY],
+        [0, 1, 1],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
-  const sheetShadowOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 20, dualY],
-        outputRange: [0, 1, 1],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  const sheetShadowAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, fullY + 20, dualY],
+        [0, 1, 1],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
   // Grab handle bar in FULL mode: smoothly collapses height from 20 to 0 and fades out
-  const handleBarOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 24, dualY],
-        outputRange: [0, 1, 1],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
-
-  const handleBarHeight = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 24, dualY],
-        outputRange: [0, 20, 20],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
-
-  const handleBarTranslateY = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, fullY + 24, dualY],
-        outputRange: [-10, 0, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY]
-  );
+  const handleBarAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, fullY + 24, dualY],
+        [0, 1, 1],
+        Extrapolation.CLAMP
+      ),
+      height: interpolate(
+        translateYAnim.value,
+        [fullY, fullY + 24, dualY],
+        [0, 20, 20],
+        Extrapolation.CLAMP
+      ),
+      transform: [
+        {
+          translateY: interpolate(
+            translateYAnim.value,
+            [fullY, fullY + 24, dualY],
+            [-10, 0, 0],
+            Extrapolation.CLAMP
+          ),
+        },
+      ],
+    };
+  });
 
   // Zero-bleed PEEK mode: list opacity is 0 at peekY/miniPeekY so no card image bleeds through
-  const listContentOpacity = useMemo(
-    () =>
-      translateYAnim.interpolate({
-        inputRange: [fullY, dualY, (dualY + peekY) / 2, peekY],
-        outputRange: [1, 1, 0.3, 0],
-        extrapolate: 'clamp',
-      }),
-    [translateYAnim, fullY, dualY, peekY]
-  );
+  const listContentAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: interpolate(
+        translateYAnim.value,
+        [fullY, dualY, (dualY + peekY) / 2, peekY],
+        [1, 1, 0.3, 0],
+        Extrapolation.CLAMP
+      ),
+    };
+  });
 
   const handleListScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -593,8 +609,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     []
   );
 
-  const startingSnapState = useRef<SheetSnapState>(snapState);
-
   const handleHeaderPress = useCallback(() => {
     if (snapState === 'PEEK') {
       onSnapChange('DUAL');
@@ -605,10 +619,22 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     }
   }, [snapState, onSnapChange, animateToState]);
 
-  const handleGestureRelease = useCallback(
-    (currentY: number, delta: number, vy: number) => {
-      const fromState = startingSnapState.current;
+  const onSnapFinishedJS = useCallback(
+    (nextState: SheetSnapState) => {
+      if (nextState !== 'FULL') {
+        resetListToTop();
+      }
+      if (nextState !== snapState) {
+        onSnapChange(nextState);
+      }
+    },
+    [snapState, onSnapChange, resetListToTop]
+  );
 
+  const snapToRelease = useCallback(
+    (currentY: number, delta: number, vy: number) => {
+      'worklet';
+      const fromState = currentSnapState.value;
       const midFullDual = (fullY + dualY) / 2;
       const midDualPeek = (dualY + peekY) / 2;
 
@@ -630,7 +656,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         // Upward flick or significant upward drag
         if (fromState === 'MINI_PEEK') {
           nextState = currentY <= midFullDual ? 'FULL' : 'DUAL';
-          // Clearing property selection is handled via onSnapChange in parent
         } else if (fromState === 'PEEK') {
           nextState = currentY <= midFullDual ? 'FULL' : 'DUAL';
         } else if (fromState === 'DUAL') {
@@ -651,95 +676,98 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         }
       }
 
-      if (nextState !== 'FULL') {
-        resetListToTop();
-      }
+      currentSnapState.value = nextState;
 
-      if (nextState !== snapState) {
-        onSnapChange(nextState);
-      }
+      let targetY = fullY;
+      if (nextState === 'DUAL') targetY = dualY;
+      else if (nextState === 'PEEK') targetY = peekY;
+      else if (nextState === 'MINI_PEEK') targetY = miniPeekY;
 
-      const targetY = getSnapTranslateY(nextState);
       const springVelocity =
         (targetY - currentY) * vy > 0 ? Math.max(-6, Math.min(6, vy * 1.5)) : 0;
-      animateToState(nextState, springVelocity);
+
+      translateYAnim.value = withSpring(targetY, {
+        damping: 24,
+        stiffness: 320,
+        mass: 0.45,
+        overshootClamping: true,
+        velocity: springVelocity,
+      });
+
+      runOnJS(onSnapFinishedJS)(nextState);
     },
-    [fullY, dualY, peekY, snapState, onSnapChange, getSnapTranslateY, animateToState, resetListToTop]
+    [fullY, dualY, peekY, miniPeekY, currentSnapState, translateYAnim, onSnapFinishedJS]
   );
 
   // Dedicated subheader PanGesture from react-native-gesture-handler:
-  // - In PEEK/DUAL: Intercepts immediately on touch-down and follows finger 1:1
+  // - In PEEK/DUAL: Intercepts immediately on touch-down and follows finger 1:1 on UI thread
   // - In FULL mode: Disabled so dragging subheader does NOT pull down the sheet, letting Sort & Save work cleanly
   const subHeaderGesture = useMemo(() => {
     return Gesture.Pan()
-      .runOnJS(true)
       .enabled(snapState !== 'FULL')
       .activeOffsetY([-4, 4])
       .onBegin(() => {
-        translateYAnim.stopAnimation();
-        dragStartTranslateY.current = currentTranslateYRef.current;
-        animatingToStateRef.current = null;
-        startingSnapState.current = snapState;
-      })
-      .onStart(() => {
-        isDraggingSheetFromList.current = true;
+        'worklet';
+        cancelAnimation(translateYAnim);
+        dragStartY.value = translateYAnim.value;
+        isDraggingSheetFromList.value = true;
       })
       .onUpdate((e) => {
-        const target = dragStartTranslateY.current + e.translationY;
+        'worklet';
+        const target = dragStartY.value + e.translationY;
         const clamped = Math.min(peekY, Math.max(fullY, target));
-        currentTranslateYRef.current = clamped;
-        translateYAnim.setValue(clamped);
+        translateYAnim.value = clamped;
       })
       .onEnd((e) => {
-        isDraggingSheetFromList.current = false;
+        'worklet';
+        isDraggingSheetFromList.value = false;
         const totalMove = Math.abs(e.translationX) + Math.abs(e.translationY);
         const vy = e.velocityY / 1000;
         if (totalMove < 6 && Math.abs(vy) < 0.1) {
-          handleHeaderPress();
+          runOnJS(handleHeaderPress)();
           return;
         }
-        handleGestureRelease(currentTranslateYRef.current, e.translationY, vy);
+        snapToRelease(translateYAnim.value, e.translationY, vy);
       })
       .onFinalize(() => {
-        isDraggingSheetFromList.current = false;
+        'worklet';
+        isDraggingSheetFromList.value = false;
       });
-  }, [snapState, fullY, peekY, translateYAnim, handleGestureRelease, handleHeaderPress]);
+  }, [snapState, fullY, peekY, translateYAnim, dragStartY, isDraggingSheetFromList, handleHeaderPress, snapToRelease]);
 
   // Unified PanGesture on the listing feed for ALL modes (FULL, DUAL, PEEK):
   // - In FULL mode: activates on downward drag when at top (isAtTop), allowing upward feed scroll.
   // - In DUAL and PEEK modes: activates on both upward and downward drags.
-  // - Immediate onBegin interruption freezes the sheet at exact pixel position mid-motion without jumping.
+  // - Fully executes on the UI thread for buttery smooth 60fps/120fps tracking without JS latency.
   const listPanGesture = useMemo(() => {
     const isFull = snapState === 'FULL';
     return Gesture.Pan()
-      .runOnJS(true)
       .enabled(!isFull || isAtTop)
       .activeOffsetY(isFull ? 6 : [-6, 6])
       .failOffsetY(isFull ? -1 : -9999)
       .failOffsetX([-15, 15])
       .onBegin(() => {
-        translateYAnim.stopAnimation();
-        dragStartTranslateY.current = currentTranslateYRef.current;
-        animatingToStateRef.current = null;
-        startingSnapState.current = snapState;
-      })
-      .onStart(() => {
-        isDraggingSheetFromList.current = true;
+        'worklet';
+        cancelAnimation(translateYAnim);
+        dragStartY.value = translateYAnim.value;
+        isDraggingSheetFromList.value = true;
       })
       .onUpdate((e) => {
-        if (!isDraggingSheetFromList.current) return;
-        const target = dragStartTranslateY.current + e.translationY;
+        'worklet';
+        if (!isDraggingSheetFromList.value) return;
+        const target = dragStartY.value + e.translationY;
         const clamped = Math.min(peekY, Math.max(fullY, target));
-        currentTranslateYRef.current = clamped;
-        translateYAnim.setValue(clamped);
+        translateYAnim.value = clamped;
       })
       .onEnd((e) => {
-        if (!isDraggingSheetFromList.current) return;
-        isDraggingSheetFromList.current = false;
-        handleGestureRelease(currentTranslateYRef.current, e.translationY, e.velocityY / 1000);
+        'worklet';
+        if (!isDraggingSheetFromList.value) return;
+        isDraggingSheetFromList.value = false;
+        snapToRelease(translateYAnim.value, e.translationY, e.velocityY / 1000);
       })
       .onFinalize(() => {
-        isDraggingSheetFromList.current = false;
+        'worklet';
+        isDraggingSheetFromList.value = false;
       });
   }, [
     snapState,
@@ -747,7 +775,9 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     fullY,
     peekY,
     translateYAnim,
-    handleGestureRelease,
+    dragStartY,
+    isDraggingSheetFromList,
+    snapToRelease,
   ]);
 
   const handleSortToggle = () => {
@@ -804,10 +834,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       <Animated.View
         style={[
           styles.sheetContainer,
-          {
-            height: fullHeight,
-            transform: [{ translateY: translateYAnim }],
-          },
+          { height: fullHeight },
+          sheetAnimatedStyle,
         ]}
       >
       {/* Animated Sheet Shadow Overlay - fades out completely at fullY so no shadow bleeds into search bar */}
@@ -815,7 +843,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         pointerEvents="none"
         style={[
           styles.sheetShadowOverlay,
-          { opacity: sheetShadowOpacity },
+          sheetShadowAnimatedStyle,
         ]}
       />
 
@@ -824,7 +852,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         pointerEvents="none"
         style={[
           styles.sheetHairlineBorderOverlay,
-          { opacity: sheetBorderOpacity },
+          sheetBorderAnimatedStyle,
         ]}
       />
 
@@ -832,7 +860,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       <Animated.View
         style={[
           styles.anchoredHudContainer,
-          { opacity: hudOpacity },
+          hudAnimatedStyle,
         ]}
         pointerEvents={snapState === 'FULL' ? 'none' : 'box-none'}
       >
@@ -906,11 +934,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             <Animated.View
               style={[
                 styles.grabHandleContainer,
-                {
-                  opacity: handleBarOpacity,
-                  height: handleBarHeight,
-                  transform: [{ translateY: handleBarTranslateY }],
-                },
+                handleBarAnimatedStyle,
               ]}
             >
               <TouchableOpacity
@@ -928,7 +952,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               <Animated.View
                 style={[
                   styles.countSubheaderLayer,
-                  { opacity: countRowOpacity },
+                  countRowAnimatedStyle,
                 ]}
                 pointerEvents={snapState === 'FULL' ? 'none' : 'auto'}
               >
@@ -945,7 +969,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
               <Animated.View
                 style={[
                   styles.sortSubheaderLayer,
-                  { opacity: sortRowOpacity },
+                  sortRowAnimatedStyle,
                 ]}
                 pointerEvents={snapState === 'FULL' ? 'auto' : 'none'}
               >
@@ -988,10 +1012,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           <Animated.View
             style={[
               styles.listWrapper,
-              {
-                opacity: listContentOpacity,
-                overflow: 'hidden',
-              },
+              listContentAnimatedStyle,
+              { overflow: 'hidden' },
             ]}
           >
             <FlatList
@@ -1042,24 +1064,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         styles.floatingMapPillWrap,
         {
           bottom: Math.max(insets.bottom, 12) + 16,
-          opacity: bottomMapButtonOpacity,
-          transform: [
-            {
-              translateY: translateYAnim.interpolate({
-                inputRange: [fullY, fullY + 80],
-                outputRange: [0, 80],
-                extrapolate: 'clamp',
-              }),
-            },
-            {
-              scale: translateYAnim.interpolate({
-                inputRange: [fullY, fullY + 60],
-                outputRange: [1, 0.9],
-                extrapolate: 'clamp',
-              }),
-            },
-          ],
         },
+        bottomMapButtonAnimatedStyle,
       ]}
       pointerEvents={snapState === 'FULL' ? 'box-none' : 'none'}
     >
