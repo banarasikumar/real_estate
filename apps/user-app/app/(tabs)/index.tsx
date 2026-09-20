@@ -675,6 +675,11 @@ export default function UserAppHomeScreen() {
       });
   }, [sheetSnapState, preferredMode]);
 
+  const isSaved = useCallback(
+    (id: string) => savedPropertyIds.has(id),
+    [savedPropertyIds]
+  );
+
   return (
     <View
       style={styles.container}
@@ -756,7 +761,7 @@ export default function UserAppHomeScreen() {
                 }
               }}
               onToggleFavorite={handleToggleFavorite}
-              isSaved={(id) => savedPropertyIds.has(id)}
+              isSaved={isSaved}
               listType={isRent ? 'RENT' : 'SALE'}
               onOpenFilters={() => setIsFilterModalVisible(true)}
               activeFilterCount={activeFilterCount}

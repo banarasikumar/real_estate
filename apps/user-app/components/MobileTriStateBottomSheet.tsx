@@ -21,14 +21,19 @@ import Animated, {
   Extrapolation,
   runOnJS,
   cancelAnimation,
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  scrollTo,
   type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Gesture, GestureDetector, FlatList } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ZillowDrawIcon } from './ZillowIcons';
 import { MobilePropertyCardCarousel } from './MobilePropertyCardCarousel';
+
+const AnimatedFlatList = Animated.FlatList;
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -415,12 +420,14 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     setIsSettledInFull(val);
   }, []);
 
-  const isFullSettled = snapState === 'FULL' && isSettledInFull;
+  const isFullSettled = snapState === 'FULL';
 
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useAnimatedRef<any>();
   const scrollYRef = useRef(0);
-  const [isAtTop, setIsAtTop] = useState(true);
+  const scrollYShared = useSharedValue(0);
+  const dragStartScrollY = useSharedValue(0);
   const isAtTopRef = useRef(true);
+  const isAtTopShared = useSharedValue(true);
 
   // Tracks in-flight gesture snap target so React prop sync does NOT re-trigger or reverse gesture animations
   const pendingGestureStateRef = useRef<SheetSnapState | null>(null);
@@ -428,14 +435,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
   const resetListToTop = useCallback(() => {
     scrollYRef.current = 0;
+    scrollYShared.value = 0;
     isAtTopRef.current = true;
-    setIsAtTop(true);
+    isAtTopShared.value = true;
     try {
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+      scrollTo(flatListRef, 0, 0, false);
     } catch (e) {
       // safe fallback
     }
-  }, []);
+  }, [scrollYShared, isAtTopShared, flatListRef]);
 
   // Ultra-fluid zero-bounce GPU spring animation with exact critical damping (zeta = 1.00) & overshootClamping
   const animateToState = useCallback(
@@ -444,7 +452,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
       cancelAnimation(translateYAnim);
 
-      if (state !== 'FULL') {
+      if (state === 'FULL') {
+        isSettledInFullShared.value = true;
+        runOnJS(setSettledInFullJS)(true);
+      } else {
         isSettledInFullShared.value = false;
         runOnJS(setSettledInFullJS)(false);
       }
@@ -493,13 +504,25 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
     // 3. This is an external/programmatic prop change:
     currentSnapState.value = snapState;
-    if (snapState !== 'FULL') {
-      resetListToTop();
+    if (snapState === 'FULL') {
+      setIsSettledInFull(true);
+      isSettledInFullShared.value = true;
+    } else {
       setIsSettledInFull(false);
       isSettledInFullShared.value = false;
     }
     animateToState(snapState);
-  }, [snapState, animateToState, resetListToTop, isSettledInFullShared, currentSnapState]);
+  }, [snapState, animateToState, isSettledInFullShared, currentSnapState]);
+
+  // Auto-reset scroll to top ONLY when the property data changes (e.g. map moved)
+  const prevDataKey = useRef(`${properties?.length}-${properties?.[0]?.id}`);
+  useEffect(() => {
+    const currentKey = `${properties?.length}-${properties?.[0]?.id}`;
+    if (currentKey !== prevDataKey.current) {
+      prevDataKey.current = currentKey;
+      resetListToTop();
+    }
+  }, [properties, resetListToTop]);
 
   // 60fps GPU Native Driver Animated Interpolations via Reanimated
   const sheetAnimatedStyle = useAnimatedStyle(() => {
@@ -521,41 +544,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     };
   });
 
-  // Smooth iOS-grade corner radius (28px curve), subtle hairline border, and shadow flattening
-  const containerBorderRadiusStyle = useAnimatedStyle(() => {
-    const radius = interpolate(
-      translateYAnim.value,
-      [0, 30, computedSearchRowTotalHeight],
-      [0, 16, 28],
-      Extrapolation.CLAMP
-    );
-    const borderAlpha = interpolate(
-      translateYAnim.value,
-      [0, computedSearchRowTotalHeight, dualY],
-      [0, 0.05, 0.08],
-      Extrapolation.CLAMP
-    );
-    const shadowOpacity = interpolate(
-      translateYAnim.value,
-      [0, computedSearchRowTotalHeight, dualY],
-      [0, 0.08, 0.12],
-      Extrapolation.CLAMP
-    );
-    const elevation = interpolate(
-      translateYAnim.value,
-      [0, computedSearchRowTotalHeight, dualY],
-      [0, 3, 6],
-      Extrapolation.CLAMP
-    );
-    return {
-      borderTopLeftRadius: radius,
-      borderTopRightRadius: radius,
-      borderTopWidth: 1,
-      borderTopColor: `rgba(0, 0, 0, ${borderAlpha})`,
-      shadowOpacity,
-      elevation,
-    };
-  });
 
   const countRowAnimatedStyle = useAnimatedStyle(() => {
     return {
@@ -651,31 +639,40 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     };
   });
 
-  const handleListScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offsetY = e.nativeEvent.contentOffset.y;
-      scrollYRef.current = offsetY <= 2 ? 0 : Math.max(0, offsetY);
-      const atTop = offsetY <= 2;
-      if (atTop !== isAtTopRef.current) {
-        isAtTopRef.current = atTop;
-        setIsAtTop(atTop);
-      }
-    },
-    []
-  );
+  // Tracks the precise scroll offset to lock the list firmly when not in FULL mode
+  const lockedScrollY = useSharedValue(0);
 
-  const handleMomentumScrollEnd = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const offsetY = e.nativeEvent.contentOffset.y;
-      scrollYRef.current = offsetY <= 2 ? 0 : Math.max(0, offsetY);
-      const atTop = offsetY <= 2;
-      if (atTop !== isAtTopRef.current) {
-        isAtTopRef.current = atTop;
-        setIsAtTop(atTop);
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      'worklet';
+      const offsetY = e.contentOffset.y;
+      
+      // Strict feed scroll lock when sheet is not in FULL mode
+      if (translateYAnim.value > fullY + 2) {
+        if (Math.abs(offsetY - lockedScrollY.value) > 1) {
+          scrollTo(flatListRef, 0, lockedScrollY.value, false);
+        }
+      } else {
+        lockedScrollY.value = offsetY <= 2 ? 0 : offsetY;
+        scrollYShared.value = lockedScrollY.value;
       }
     },
-    []
-  );
+    onMomentumEnd: (e) => {
+      'worklet';
+      const offsetY = e.contentOffset.y;
+      if (translateYAnim.value > fullY + 2) {
+        if (Math.abs(offsetY - lockedScrollY.value) > 1) {
+           scrollTo(flatListRef, 0, lockedScrollY.value, false);
+        }
+        isAtTopShared.value = lockedScrollY.value <= 2;
+      } else {
+        const normalized = offsetY <= 2 ? 0 : offsetY;
+        lockedScrollY.value = normalized;
+        scrollYShared.value = normalized;
+        isAtTopShared.value = normalized <= 2;
+      }
+    },
+  });
 
   const handleHeaderPress = useCallback(() => {
     if (snapState === 'PEEK') {
@@ -697,12 +694,15 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       } else {
         pendingGestureStateRef.current = null;
       }
-      if (nextState !== 'FULL') {
-        resetListToTop();
+      if (nextState === 'FULL') {
+        setIsSettledInFull(true);
+        isSettledInFullShared.value = true;
+      } else {
         setIsSettledInFull(false);
+        isSettledInFullShared.value = false;
       }
     },
-    [snapState, onSnapChange, resetListToTop]
+    [snapState, onSnapChange]
   );
 
   const snapToRelease = useCallback(
@@ -769,7 +769,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
       currentSnapState.value = nextState;
 
-      if (nextState !== 'FULL') {
+      if (nextState === 'FULL') {
+        isSettledInFullShared.value = true;
+        runOnJS(setSettledInFullJS)(true);
+      } else {
         isSettledInFullShared.value = false;
         runOnJS(setSettledInFullJS)(false);
       }
@@ -820,10 +823,10 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   // - In PEEK/DUAL and during animation to FULL: Intercepts immediately on touch-down and follows finger 1:1 on UI thread
   // - In settled FULL mode: Disabled so dragging subheader does NOT pull down the sheet, letting Sort & Save work cleanly
   const subHeaderGesture = useMemo(() => {
-    const isFull = snapState === 'FULL' && isSettledInFull;
+    const isFull = snapState === 'FULL';
     return Gesture.Pan()
-      .enabled(!isFull)
-      .activeOffsetY([-4, 4])
+      .activeOffsetY(isFull ? 8 : [-4, 4])
+      .failOffsetY(isFull ? -1 : -9999)
       .onTouchesDown(() => {
         'worklet';
         cancelAnimation(translateYAnim);
@@ -881,62 +884,74 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     snapToRelease,
   ]);
 
-  // Unified PanGesture on the listing feed for ALL modes (FULL, DUAL, PEEK):
-  // - In FULL mode (when settled): activates on downward drag when at top (isAtTop), allowing upward feed scroll.
-  // - In DUAL and PEEK modes: activates on both upward and downward drags without failing on diagonal thumb movement.
-  // - Fully executes on the UI thread for buttery smooth 60fps/120fps tracking without JS latency.
+  // Unified PanGesture on the listing feed with seamless Zillow-style gesture handoff:
+  const offsetForHandoff = useSharedValue(0);
+
   const listPanGesture = useMemo(() => {
-    const isFull = snapState === 'FULL' && isSettledInFull;
-    const pan = Gesture.Pan()
-      .enabled(!isFull || isAtTop)
-      .activeOffsetY(isFull ? 6 : [-6, 6])
-      .failOffsetY(isFull ? -1 : -9999);
-
-    if (isFull) {
-      // In settled FULL mode, keep moderate horizontal fail bounds so card photo carousel can be swiped horizontally
-      pan.failOffsetX([-25, 25]);
-    }
-    // In DUAL and PEEK modes, NO failOffsetX is set, ensuring diagonal thumb sweeps never fail the sheet pan.
-
-    return pan
-      .onTouchesDown(() => {
-        'worklet';
-        cancelAnimation(translateYAnim);
-      })
+    return Gesture.Pan()
       .onBegin(() => {
         'worklet';
         cancelAnimation(translateYAnim);
         dragStartY.value = translateYAnim.value;
+        dragStartScrollY.value = scrollYShared.value;
         isDraggingSheetFromList.value = true;
-        // Immediately revoke settled status on drag begin if pulling down from FULL
-        if (translateYAnim.value > fullY + 2) {
-          isSettledInFullShared.value = false;
-          runOnJS(setSettledInFullJS)(false);
-        }
+        offsetForHandoff.value = 0;
       })
       .onUpdate((e) => {
         'worklet';
         if (!isDraggingSheetFromList.value) return;
-        // If pulled down from top in FULL mode, ensure scroll is immediately cut off
-        if (isSettledInFullShared.value && e.translationY > 2) {
-          isSettledInFullShared.value = false;
-          runOnJS(setSettledInFullJS)(false);
+
+        if (currentSnapState.value === 'FULL') {
+          if (scrollYShared.value > 0) {
+            // FlatList is scrolling natively. Don't move the sheet.
+            // Constantly update the handoff offset.
+            offsetForHandoff.value = e.translationY;
+            translateYAnim.value = fullY;
+          } else {
+            // FlatList is at the top. We can pull the sheet down.
+            const effectiveDrag = e.translationY - offsetForHandoff.value;
+            if (effectiveDrag > 0) {
+              translateYAnim.value = Math.min(peekY, Math.max(fullY, fullY + effectiveDrag));
+              if (isSettledInFullShared.value) isSettledInFullShared.value = false;
+            } else {
+              translateYAnim.value = fullY;
+            }
+          }
+        } else {
+          // In DUAL or PEEK mode
+          const target = dragStartY.value + e.translationY;
+          if (target <= fullY) {
+            // Pushed all the way to FULL!
+            translateYAnim.value = fullY;
+            currentSnapState.value = 'FULL'; 
+            if (!isSettledInFullShared.value) isSettledInFullShared.value = true;
+          } else {
+            translateYAnim.value = Math.min(peekY, target);
+          }
         }
-        const target = dragStartY.value + e.translationY;
-        const clamped = Math.min(peekY, Math.max(fullY, target));
-        translateYAnim.value = clamped;
       })
       .onEnd((e) => {
         'worklet';
         if (!isDraggingSheetFromList.value) return;
         isDraggingSheetFromList.value = false;
-        snapToRelease(translateYAnim.value, e.translationY, e.velocityY / 1000);
+
+        const vy = e.velocityY / 1000;
+        
+        if (translateYAnim.value > fullY + 2) {
+          // Calculate the effective drag that physically moved the sheet
+          const effectiveDelta = currentSnapState.value === 'FULL'
+              ? e.translationY - offsetForHandoff.value
+              : e.translationY;
+          snapToRelease(translateYAnim.value, effectiveDelta, vy);
+        } else {
+          // Sheet is firmly at FULL mode. The drag was consumed entirely by the Native list.
+          // Zero out delta and velocity so snapToRelease doesn't interpret it as a sheet flick!
+          snapToRelease(fullY, 0, 0); 
+        }
       })
       .onFinalize((_e, success) => {
         'worklet';
         isDraggingSheetFromList.value = false;
-        // If animation was halted by touch on list but gesture never activated,
-        // ensure sheet smoothly finishes settling to the nearest snap point if not already resting.
         if (!success) {
           const isAtRest =
             Math.abs(translateYAnim.value - fullY) < 2 ||
@@ -949,20 +964,28 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         }
       });
   }, [
-    snapState,
-    isSettledInFull,
-    isAtTop,
     fullY,
     dualY,
     peekY,
     miniPeekY,
     translateYAnim,
     dragStartY,
+    dragStartScrollY,
+    scrollYShared,
     isDraggingSheetFromList,
     isSettledInFullShared,
-    setSettledInFullJS,
+    currentSnapState,
+    offsetForHandoff,
     snapToRelease,
   ]);
+
+  const nativeListGesture = useMemo(() => {
+    return Gesture.Native();
+  }, []);
+
+  const composedListGesture = useMemo(() => {
+    return Gesture.Simultaneous(listPanGesture, nativeListGesture);
+  }, [listPanGesture, nativeListGesture]);
 
   const handleSortToggle = () => {
     if (sortOption === 'Recommended') setSortOption('Price: Low');
@@ -1015,12 +1038,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     pendingGestureStateRef.current = 'PEEK';
     animateToState('PEEK');
     onSnapChange('PEEK');
-
-    // 2. Defer heavy FlatList scroll reset so it doesn't freeze the animation start
-    requestAnimationFrame(() => {
-      resetListToTop();
-    });
-  }, [resetListToTop, onSnapChange, animateToState, isSettledInFullShared, currentSnapState]);
+  }, [onSnapChange, animateToState, isSettledInFullShared, currentSnapState]);
 
   const mapButtonTapGesture = useMemo(() => {
     return Gesture.Tap()
@@ -1038,7 +1056,6 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
           styles.sheetContainer,
           { height: fullHeight + computedSearchRowTotalHeight },
           sheetAnimatedStyle,
-          containerBorderRadiusStyle,
         ]}
       >
 
@@ -1194,36 +1211,29 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         <View style={styles.headerDivider} />
 
         {/* Property Cards Feed */}
-        <GestureDetector gesture={listPanGesture}>
-          <Animated.View
-            style={[
-              styles.listWrapper,
-              listContentAnimatedStyle,
-              { overflow: 'hidden' },
-            ]}
-          >
-            <FlatList
+        <Animated.View
+          style={[
+            styles.listWrapper,
+            listContentAnimatedStyle,
+            { overflow: 'hidden' },
+          ]}
+        >
+          <GestureDetector gesture={composedListGesture}>
+            <AnimatedFlatList
               ref={flatListRef}
-              disallowInterruption={false}
               data={sortedProperties}
-              keyExtractor={(item) => String(item.id)}
+              keyExtractor={(item: any) => String(item?.id)}
               showsVerticalScrollIndicator={false}
-              onScroll={handleListScroll}
-              onMomentumScrollEnd={handleMomentumScrollEnd}
+              onScroll={scrollHandler}
               scrollEventThrottle={16}
               overScrollMode="never"
               bounces={false}
               initialNumToRender={4}
-              maxToRenderPerBatch={4}
-              windowSize={5}
-              removeClippedSubviews={false}
-              getItemLayout={(_, index) => ({
-                length: 346,
-                offset: 346 * index,
-                index,
-              })}
+              maxToRenderPerBatch={6}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
               decelerationRate="normal"
-              scrollEnabled={snapState === 'FULL' && isSettledInFull}
+              scrollEnabled={true}
               contentContainerStyle={[
                 styles.listContent,
                 { paddingBottom: insets.bottom + 90 },
@@ -1239,8 +1249,8 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
                 </View>
               }
             />
-          </Animated.View>
-        </GestureDetector>
+          </GestureDetector>
+        </Animated.View>
       </Animated.View>
     </Animated.View>
 
