@@ -1,8 +1,8 @@
 # Real Estate Monorepo — Project Status & Brain Memory
 
-> **Last Updated**: September 19, 2026  
+> **Last Updated**: September 20, 2026  
 > **Repository**: `banarasikumar/real_estate`  
-> **Active Branch**: `main` (clean working tree, local commit `bcbe4c7b`)  
+> **Active Branch**: `main` (clean working tree, local commit `30c21d2`)  
 > **Active Environment**: Windows (PowerShell) | Node.js / Turborepo / Expo SDK 57 / Next.js 15 / Supabase / Mapbox GL JS v3  
 > **Active Metro Bundler**: Port `8081` (`apps/user-app` — HTTP 200 OK, LAN: `exp://192.168.31.63:8081`)
 
@@ -13,16 +13,17 @@
 This monorepo houses a multi-platform, end-to-end luxury Real Estate platform connecting Property Owners, Property Seekers, and Platform Admins.
 
 ### Current System Health & Stability
-- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map, locked container dimensions, 118-listing demo dataset across Mumbai, Bangalore, Delhi NCR, Ranchi, and Goa, next-generation iOS Luxury Property Details Experience, FormSheet Saved Searches modal with customizable frequency alerts, revamped luxury Saved Portal with animated segmented controls, and dedicated **"Curated for You" AI Recommendations Discovery Tab** (`foryou.tsx`) with App Store-grade editorial cards and city filter capsules.
+- **Seeker App (`apps/user-app`)**: Fully interactive, verified, and running smoothly. Featuring iOS-grade Zillow-fidelity physics, 1:1 real-time finger tracking, screen-coordinate gesture targeting (`gesture.y0`), seamless borderless surface fusion with the stationary search bar, Mapbox 3D WebGL discovery map with inverted polygon focus mask (Zillow style), locked container dimensions, 118-listing demo dataset across Mumbai, Bangalore, Delhi NCR, Ranchi, and Goa, next-generation iOS Luxury Property Details Experience, FormSheet Saved Searches modal with customizable frequency alerts, revamped luxury Saved Portal with animated segmented controls, dedicated **"Curated for You" AI Recommendations Discovery Tab** (`foryou.tsx`) with App Store-grade editorial cards, and Zillow-native bottom sheet refinements (collapsing grab handle in FULL mode, unconstrained 48px subheader with zero text clipping, and zero-bleed PEEK mode).
 - **Customer Web (`apps/customer-web`)**: Upgraded to luxury feature parity with mobile app. Featuring Tabbed Media Viewer (`[ Photos | Floor Plan | 3D Tour ]`) with full-screen OLED black lightbox, Interactive SVG Mortgage & Rental Affordability Calculator, sticky Tour Booking widget with calendar synchronization, GreatSchools and Walk/Transit/Bike Score widgets, and live telemetry view tracking.
 - **Owner App (`apps/owner-app`)**: Upgraded to iOS standards with interactive Mapbox pin-dropping & footprint drawing (`OwnerMapPinPickerModal.tsx`), multi-unit complex & tower manager with tiered floor tabs (`app/complex/[id].tsx`), WhatsApp/iMessage-grade live chat with Realtime sync (`OwnerChatSheetModal.tsx`), and comprehensive Apple HIG Owner Analytics Dashboard (`apps/owner-app/app/(tabs)/index.tsx`) with hardware-accelerated SVG line charts, conversion funnels, market comps gauge, and real-time view telemetry.
 - **Admin Panel (`apps/admin-panel`)**: Fully operational with iOS-grade Listing Moderation & Verification Queue (`ModerationQueue.tsx`), interactive City Boundary Polygon Manager with Mapbox GL JS v3 (`CityBoundaryManager.tsx`), User & Admin role management, ownership deed verification workflows, and Supabase-backed dynamic search regions.
 - **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `admin-panel`, `customer-web`, `@repo/api` all pass `tsc --noEmit` cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `bcbe4c7b`.
+- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `30c21d2`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
+| `30c21d2` | `feat(user-app): redesign bottom sheet subheader and PEEK mode to match Zillow native UI` | user-app / data |
 | `bcbe4c7b` | `feat: localize platform to India with strict INR currency and expand Ranchi dataset` | user-app / owner-app / customer-web / admin-panel / api |
 | `fd2b37e` | `feat(user-app): implement AI-powered property recommendations, editorial card, and for you discovery tab` | user-app / api / db |
 | `eb05382` | `feat(customer-web): implement iOS-grade luxury property details, SVG mortgage calculator, and tour booking` | customer-web / api |
@@ -194,7 +195,31 @@ real_estate/
    - Fullscreen search modal with search history (clock icons), suggested searches, and tabs for For sale / For rent / Sold.
    - Pre-configured search regions with boundary polygons rendered on the map in blue (`#2563eb`).
 
-12. **Next-Gen iOS-Grade Luxury Property Details Experience (`apps/user-app/app/property/[id].tsx` & `components/property/`)**:
+12. **Zillow Native Bottom Sheet Refinements & Inverted Focus Mask (`MobileMapboxView.tsx`, `MobileTriStateBottomSheet.tsx`, `index.tsx`)**:
+    - **Inverted Polygon Map Boundary Focus Mask (`MobileMapboxView.tsx`)**:
+      - Replaced standard polygon fill with a Zillow-style inverted focus mask: outer world bounds `[-180, -85]` to `[180, 85]` with the region boundary cut out as an inner hole.
+      - Fills everything outside the searched boundary with a `#1e293b` 25% opacity dark shade while keeping the searched region 100% clear.
+      - Retains the sharp 2.5px `#2563eb` blue stroke boundary line.
+      - Enriched Mumbai boundary from 14 to 30 points and Ranchi boundary from 10 to 19 points for smooth geographic realism.
+    - **Grab Handle Smooth Collapse in FULL Mode (`MobileTriStateBottomSheet.tsx`)**:
+      - Animated `handleBarOpacity` (1 in PEEK/DUAL -> 0 in FULL), `handleBarHeight` (20px -> 0px), and `handleBarTranslateY` (0 -> -10px) tied to `translateYAnim`.
+      - In FULL mode, the grab handle bar completely collapses to 0 height and 0 opacity with touch disabled, leaving only the clean Sort/Save header matching Zillow native UX.
+    - **Unconstrained 48px Subheader Row with Zero Text Clipping (`MobileTriStateBottomSheet.tsx`)**:
+      - Upgraded `headerContentWrapper`, `sortSubheaderLayer`, and `countSubheaderLayer` from 28px to a generous 48px height.
+      - Styled `zillowSortButton` and `zillowSaveButton` with `fontSize: 14`, `fontWeight: '600'`, color `#006aff`, `lineHeight: 20`, and `includeFontPadding: false` (Android).
+      - Completely resolved vertical clipping and bottom truncation of "Sort: Recommended ⇅" and "🔍 Save search".
+    - **Zero-Bleed PEEK Mode (`MobileTriStateBottomSheet.tsx` & `index.tsx`)**:
+      - Interpolated `listContentOpacity` from `translateYAnim` (`[dualY, peekY] -> [1, 0]`) and wrapped the FlatList in an animated container with `overflow: 'hidden'`.
+      - Guaranteed 0% property card image bleed in PEEK mode across all devices.
+      - Calibrated snap points: `PEEK_HEIGHT = 68`, `MINI_PEEK_HEIGHT = 28`.
+    - **Rental Price Badge Fix**:
+      - Guarded `totalMonthlyBadge` with `listType === 'RENT'` in `LuxuryPropertyCard` so purchase listings don't display "Total monthly price".
+    - **Ranchi Boundary Filtering Fix**:
+      - Added `'ranchi'` to `isCityOrRegion` in `index.tsx` so searching for Ranchi doesn't get restricted by viewport bounds.
+    - **Mapbox Token UTF-16 Cleanup**:
+      - Cleaned up corrupted duplicate tokens with null bytes across all 4 `.env` / `.env.local` files, restoring active Mapbox GL JS rendering with the user's new public token.
+
+13. **Next-Gen iOS-Grade Luxury Property Details Experience (`apps/user-app/app/property/[id].tsx` & `components/property/`)**:
    - **Hero Parallax Carousel & Glassmorphic Sticky Nav (`PropertyHeroParallaxCarousel.tsx`)**:
      - 340px edge-to-edge photo carousel with horizontal paging and touch isolation (`directionalLockEnabled`).
      - Reanimated overscroll pull-down physics (`y < 0`) scaling up to 1.7x elastic zoom.
