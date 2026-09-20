@@ -630,7 +630,7 @@ export default function UserAppHomeScreen() {
   const MINI_PEEK_HEIGHT = 28;
   const PEEK_HEIGHT = 68;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
-  const fullY = searchRowTotalHeight;
+  const fullY = -28;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
   const miniPeekY = fullHeight - MINI_PEEK_HEIGHT;
@@ -649,23 +649,13 @@ export default function UserAppHomeScreen() {
     return {
       opacity: interpolate(
         animatedPosition.value,
-        [fullY, fullY + 60, dualY],
+        [searchRowTotalHeight, searchRowTotalHeight + 60, dualY],
         [0, 0.4, 1],
         Extrapolation.CLAMP
       ),
     };
   });
 
-  const topBarBgStyle = useAnimatedStyle(() => {
-    return {
-      opacity: interpolate(
-        animatedPosition.value,
-        [fullY, fullY + 40, dualY],
-        [1, 0, 0],
-        Extrapolation.CLAMP
-      ),
-    };
-  });
 
   // Property Card Gesture (Swipe down to dismiss)
   const cardDismissGesture = useMemo(() => {
@@ -729,16 +719,88 @@ export default function UserAppHomeScreen() {
         onCancelDraw={() => setIsDrawingMode(false)}
       />
 
-      {/* 3. Stationary Top Search & Filter Bar (Option 1: Unified Single-Surface Fusion) */}
+      {/* 5. Map View Bottom Controls & Sheets (When in Map Mode) */}
+      {viewMode === 'map' && (
+        <>
+          {/* Zillow Tri-State Bottom Sheet with Anchored HUD (PEEK, DUAL, FULL, MINI_PEEK) */}
+          {!selectedBuilding && (
+            <MobileTriStateBottomSheet
+              availableHeight={containerHeight}
+              searchRowTotalHeight={searchRowTotalHeight}
+              snapState={sheetSnapState}
+              translateYAnim={animatedPosition}
+              onSnapChange={(newState) => {
+                setSheetSnapState(newState);
+                if (newState === 'DUAL' || newState === 'FULL') {
+                  setPreferredMode('DUAL');
+                  if (selectedPropertyId) {
+                    setSelectedPropertyId(null);
+                  }
+                } else if (newState === 'PEEK') {
+                  setPreferredMode('PEEK');
+                  if (selectedPropertyId) {
+                    setSelectedPropertyId(null);
+                  }
+                }
+              }}
+              properties={displayedProperties}
+              selectedPropertyId={selectedPropertyId}
+              onSelectProperty={(prop) => {
+                if (!prop) {
+                  setSelectedPropertyId(null);
+                  return;
+                }
+                setSelectedPropertyId(prop.id);
+                if (prop.latitude && prop.longitude) {
+                  mapboxRef.current?.flyToRegion([prop.longitude, prop.latitude], 15.5);
+                }
+              }}
+              onToggleFavorite={handleToggleFavorite}
+              isSaved={(id) => savedPropertyIds.has(id)}
+              listType={isRent ? 'RENT' : 'SALE'}
+              onOpenFilters={() => setIsFilterModalVisible(true)}
+              activeFilterCount={activeFilterCount}
+              mapType={mapType}
+              onToggleMapType={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
+              isDrawingMode={isDrawingMode}
+              onStartDraw={handleStartDraw}
+              onRecenter={handleRecenter}
+              isSearchSaved={isSearchSaved}
+              onToggleSaveSearch={() => setIsSaveSearchModalVisible(true)}
+              searchQuery={searchQuery}
+              onOpenSearchModal={() => setIsSearchModalVisible(true)}
+              onClearSearch={() => {
+                setSearchQuery('');
+                setActiveRegion(null);
+                fetchHomes('');
+              }}
+              regionName={activeRegion?.name}
+            />
+          )}
+
+          {/* Single Property Floating Card Carousel */}
+          {!selectedBuilding && selectedPropertyId && (
+            <GestureDetector gesture={cardDismissGesture}>
+              <View style={[styles.carouselAbsoluteWrap, { bottom: MINI_PEEK_HEIGHT + 10 }]}>
+                <MobilePropertyCardCarousel
+                  properties={displayedProperties}
+                  selectedIndex={selectedIndex}
+                  onSnapToIndex={handleCarouselSnap}
+                  onToggleSaved={handleToggleFavorite}
+                  isPropertySaved={(id) => savedPropertyIds.has(id)}
+                  onClosePreview={() => {
+                    setSelectedPropertyId(null);
+                    setSheetSnapState(preferredMode);
+                  }}
+                />
+              </View>
+            </GestureDetector>
+          )}
+        </>
+      )}
+
+      {/* 3. Stationary Top Search & Filter Bar - ALWAYS ON TOP OF SHEET */}
       <View style={styles.stationaryTopHeaderWrapper} pointerEvents="box-none">
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: '#ffffff' },
-            topBarBgStyle,
-          ]}
-          pointerEvents="none"
-        />
         {/* Fixed Search Row - NEVER moves */}
         <View style={[styles.topFloatingBarContainer, { paddingTop: statusBarHeight + 8 }]}>
           {/* Search Pill */}
@@ -824,86 +886,6 @@ export default function UserAppHomeScreen() {
           <Text style={[styles.floating3DText, is3D && styles.floating3DTextActive]}>3D</Text>
         </TouchableOpacity>
       </Animated.View>
-
-      {/* 5. Map View Bottom Controls & Sheets (When in Map Mode) */}
-      {viewMode === 'map' && (
-        <>
-          {/* Zillow Tri-State Bottom Sheet with Anchored HUD (PEEK, DUAL, FULL, MINI_PEEK) */}
-          {!selectedBuilding && (
-            <MobileTriStateBottomSheet
-              availableHeight={containerHeight}
-              searchRowTotalHeight={searchRowTotalHeight}
-              snapState={sheetSnapState}
-              translateYAnim={animatedPosition}
-              onSnapChange={(newState) => {
-                setSheetSnapState(newState);
-                if (newState === 'DUAL' || newState === 'FULL') {
-                  setPreferredMode('DUAL');
-                  if (selectedPropertyId) {
-                    setSelectedPropertyId(null);
-                  }
-                } else if (newState === 'PEEK') {
-                  setPreferredMode('PEEK');
-                  if (selectedPropertyId) {
-                    setSelectedPropertyId(null);
-                  }
-                }
-              }}
-              properties={displayedProperties}
-              selectedPropertyId={selectedPropertyId}
-              onSelectProperty={(prop) => {
-                if (!prop) {
-                  setSelectedPropertyId(null);
-                  return;
-                }
-                setSelectedPropertyId(prop.id);
-                if (prop.latitude && prop.longitude) {
-                  mapboxRef.current?.flyToRegion([prop.longitude, prop.latitude], 15.5);
-                }
-              }}
-              onToggleFavorite={handleToggleFavorite}
-              isSaved={(id) => savedPropertyIds.has(id)}
-              listType={isRent ? 'RENT' : 'SALE'}
-              onOpenFilters={() => setIsFilterModalVisible(true)}
-              activeFilterCount={activeFilterCount}
-              mapType={mapType}
-              onToggleMapType={() => setMapType(mapType === 'standard' ? 'satellite' : 'standard')}
-              isDrawingMode={isDrawingMode}
-              onStartDraw={handleStartDraw}
-              onRecenter={handleRecenter}
-              isSearchSaved={isSearchSaved}
-              onToggleSaveSearch={() => setIsSaveSearchModalVisible(true)}
-              searchQuery={searchQuery}
-              onOpenSearchModal={() => setIsSearchModalVisible(true)}
-              onClearSearch={() => {
-                setSearchQuery('');
-                setActiveRegion(null);
-                fetchHomes('');
-              }}
-              regionName={activeRegion?.name}
-            />
-          )}
-
-          {/* Single Property Floating Card Carousel */}
-          {!selectedBuilding && selectedPropertyId && (
-            <GestureDetector gesture={cardDismissGesture}>
-              <View style={[styles.carouselAbsoluteWrap, { bottom: MINI_PEEK_HEIGHT + 10 }]}>
-                <MobilePropertyCardCarousel
-                  properties={displayedProperties}
-                  selectedIndex={selectedIndex}
-                  onSnapToIndex={handleCarouselSnap}
-                  onToggleSaved={handleToggleFavorite}
-                  isPropertySaved={(id) => savedPropertyIds.has(id)}
-                  onClosePreview={() => {
-                    setSelectedPropertyId(null);
-                    setSheetSnapState(preferredMode);
-                  }}
-                />
-              </View>
-            </GestureDetector>
-          )}
-        </>
-      )}
 
       {/* 6. Multi-Unit Building Drawer (Zillow Style Bottom Sheet) */}
       <MobileBuildingDrawer
@@ -1210,7 +1192,8 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 50,
+    zIndex: 100,
+    elevation: 20,
     backgroundColor: 'transparent',
   },
   topFloatingBarContainer: {

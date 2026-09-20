@@ -18,12 +18,16 @@ This monorepo houses a multi-platform, end-to-end luxury Real Estate platform co
 - **Owner App (`apps/owner-app`)**: Upgraded to iOS standards with interactive Mapbox pin-dropping & footprint drawing (`OwnerMapPinPickerModal.tsx`), multi-unit complex & tower manager with tiered floor tabs (`app/complex/[id].tsx`), WhatsApp/iMessage-grade live chat with Realtime sync (`OwnerChatSheetModal.tsx`), and comprehensive Apple HIG Owner Analytics Dashboard (`apps/owner-app/app/(tabs)/index.tsx`) with hardware-accelerated SVG line charts, conversion funnels, market comps gauge, and real-time view telemetry.
 - **Admin Panel (`apps/admin-panel`)**: Fully operational with iOS-grade Listing Moderation & Verification Queue (`ModerationQueue.tsx`), interactive City Boundary Polygon Manager with Mapbox GL JS v3 (`CityBoundaryManager.tsx`), User & Admin role management, ownership deed verification workflows, and Supabase-backed dynamic search regions.
 - **TypeScript Type Safety**: 0 errors across all workspaces (`owner-app`, `user-app`, `admin-panel`, `customer-web`, `@repo/api` all pass `tsc --noEmit` cleanly with exit code 0).
-- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `30c21d2`.
+- **Git Working Tree**: 100% clean. All changes are committed locally to `main` up to commit `fe21dda`.
 
 ### Local Git Commit History (Recent Sprints)
 | Commit | Description | Scope |
 |---|---|---|
+| `fe21dda` | `feat(user-app): implement single-sheet expansion, 28px curved borders, search bar layering, and in-place map button` | user-app |
+| `03d8580` | `fix(user-app): migrate explore bottom sheet animations to react-native-reanimated for 60fps native performance` | user-app |
+| `0e2773e` | `docs: synchronize PROJECT_STATUS.md with Zillow bottom sheet and focus mask refinements` | root / docs |
 | `30c21d2` | `feat(user-app): redesign bottom sheet subheader and PEEK mode to match Zillow native UI` | user-app / data |
+| `5646691` | `refactor(user-app): refine explore bottom sheet gestures, map button, and subheader alignment` | user-app |
 | `bcbe4c7b` | `feat: localize platform to India with strict INR currency and expand Ranchi dataset` | user-app / owner-app / customer-web / admin-panel / api |
 | `fd2b37e` | `feat(user-app): implement AI-powered property recommendations, editorial card, and for you discovery tab` | user-app / api / db |
 | `eb05382` | `feat(customer-web): implement iOS-grade luxury property details, SVG mortgage calculator, and tour booking` | customer-web / api |

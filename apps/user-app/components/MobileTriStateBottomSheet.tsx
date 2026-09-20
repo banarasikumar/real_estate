@@ -376,11 +376,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   const MINI_PEEK_HEIGHT = 28;
   const PEEK_HEIGHT = 68;
   const DUAL_HEIGHT = Math.round(fullHeight * 0.44);
-  const fullY = computedSearchRowTotalHeight;
+  // In FULL mode, the single sheet expands to the absolute top of the screen (0),
+  // smoothly flattening its top corners and wiping out the search bar background.
+  const fullY = 0;
   const dualY = fullHeight - DUAL_HEIGHT;
   const peekY = fullHeight - PEEK_HEIGHT;
   const miniPeekY = fullHeight - MINI_PEEK_HEIGHT;
-  const midY = (dualY + fullY) / 2;
+  const midY = (dualY + computedSearchRowTotalHeight) / 2;
 
   const getSnapTranslateY = useCallback(
     (state: SheetSnapState) => {
@@ -462,11 +464,60 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     };
   });
 
+  // Docked Content Translation: stays docked at computedSearchRowTotalHeight as container moves from 0 to computedSearchRowTotalHeight
+  const contentDockingStyle = useAnimatedStyle(() => {
+    const translateY = interpolate(
+      translateYAnim.value,
+      [0, computedSearchRowTotalHeight],
+      [computedSearchRowTotalHeight, 0],
+      Extrapolation.CLAMP
+    );
+    return {
+      transform: [{ translateY }],
+    };
+  });
+
+  // Smooth iOS-grade corner radius (28px curve), subtle hairline border, and shadow flattening
+  const containerBorderRadiusStyle = useAnimatedStyle(() => {
+    const radius = interpolate(
+      translateYAnim.value,
+      [0, 30, computedSearchRowTotalHeight],
+      [0, 16, 28],
+      Extrapolation.CLAMP
+    );
+    const borderAlpha = interpolate(
+      translateYAnim.value,
+      [0, computedSearchRowTotalHeight, dualY],
+      [0, 0.05, 0.08],
+      Extrapolation.CLAMP
+    );
+    const shadowOpacity = interpolate(
+      translateYAnim.value,
+      [0, computedSearchRowTotalHeight, dualY],
+      [0, 0.08, 0.12],
+      Extrapolation.CLAMP
+    );
+    const elevation = interpolate(
+      translateYAnim.value,
+      [0, computedSearchRowTotalHeight, dualY],
+      [0, 3, 6],
+      Extrapolation.CLAMP
+    );
+    return {
+      borderTopLeftRadius: radius,
+      borderTopRightRadius: radius,
+      borderTopWidth: 1,
+      borderTopColor: `rgba(0, 0, 0, ${borderAlpha})`,
+      shadowOpacity,
+      elevation,
+    };
+  });
+
   const countRowAnimatedStyle = useAnimatedStyle(() => {
     return {
       opacity: interpolate(
         translateYAnim.value,
-        [fullY, fullY + 40, dualY],
+        [computedSearchRowTotalHeight, computedSearchRowTotalHeight + 40, dualY],
         [0, 0.4, 1],
         Extrapolation.CLAMP
       ),
@@ -477,7 +528,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     return {
       opacity: interpolate(
         translateYAnim.value,
-        [fullY, fullY + 40, dualY],
+        [computedSearchRowTotalHeight, computedSearchRowTotalHeight + 40, dualY],
         [1, 0.6, 0],
         Extrapolation.CLAMP
       ),
@@ -488,7 +539,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     return {
       opacity: interpolate(
         translateYAnim.value,
-        [fullY, Math.max(fullY + 1, dualY - 80), dualY - 20, dualY, peekY],
+        [computedSearchRowTotalHeight, Math.max(computedSearchRowTotalHeight + 1, dualY - 80), dualY - 20, dualY, peekY],
         [0, 0, 0.7, 1, 1],
         Extrapolation.CLAMP
       ),
@@ -496,50 +547,23 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
   });
 
   const bottomMapButtonAnimatedStyle = useAnimatedStyle(() => {
+    // Only smoothly appears right when the sheet completely enters FULL view mode
+    // No translation from bottom - appears smoothly right in place
     const opacity = interpolate(
       translateYAnim.value,
-      [fullY, fullY + 30, fullY + 80],
-      [1, 0.8, 0],
-      Extrapolation.CLAMP
-    );
-    const translateY = interpolate(
-      translateYAnim.value,
-      [fullY, fullY + 80],
-      [0, 80],
+      [0, 8, 20],
+      [1, 0.6, 0],
       Extrapolation.CLAMP
     );
     const scale = interpolate(
       translateYAnim.value,
-      [fullY, fullY + 60],
-      [1, 0.9],
+      [0, 15],
+      [1, 0.92],
       Extrapolation.CLAMP
     );
     return {
       opacity,
-      transform: [{ translateY }, { scale }],
-    };
-  });
-
-  // Seamless borderless fusion interpolations: fade to 0 in FULL mode, 1 in DUAL/PEEK
-  const sheetBorderAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: interpolate(
-        translateYAnim.value,
-        [fullY, fullY + 20, dualY],
-        [0, 1, 1],
-        Extrapolation.CLAMP
-      ),
-    };
-  });
-
-  const sheetShadowAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: interpolate(
-        translateYAnim.value,
-        [fullY, fullY + 20, dualY],
-        [0, 1, 1],
-        Extrapolation.CLAMP
-      ),
+      transform: [{ scale }],
     };
   });
 
@@ -548,13 +572,13 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     return {
       opacity: interpolate(
         translateYAnim.value,
-        [fullY, fullY + 24, dualY],
+        [computedSearchRowTotalHeight, computedSearchRowTotalHeight + 24, dualY],
         [0, 1, 1],
         Extrapolation.CLAMP
       ),
       height: interpolate(
         translateYAnim.value,
-        [fullY, fullY + 24, dualY],
+        [computedSearchRowTotalHeight, computedSearchRowTotalHeight + 24, dualY],
         [0, 20, 20],
         Extrapolation.CLAMP
       ),
@@ -562,7 +586,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         {
           translateY: interpolate(
             translateYAnim.value,
-            [fullY, fullY + 24, dualY],
+            [computedSearchRowTotalHeight, computedSearchRowTotalHeight + 24, dualY],
             [-10, 0, 0],
             Extrapolation.CLAMP
           ),
@@ -576,7 +600,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     return {
       opacity: interpolate(
         translateYAnim.value,
-        [fullY, dualY, (dualY + peekY) / 2, peekY],
+        [0, dualY, (dualY + peekY) / 2, peekY],
         [1, 1, 0.3, 0],
         Extrapolation.CLAMP
       ),
@@ -635,7 +659,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
     (currentY: number, delta: number, vy: number) => {
       'worklet';
       const fromState = currentSnapState.value;
-      const midFullDual = (fullY + dualY) / 2;
+      const midFullDual = (computedSearchRowTotalHeight + dualY) / 2;
       const midDualPeek = (dualY + peekY) / 2;
 
       let nextState: SheetSnapState = fromState;
@@ -696,7 +720,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 
       runOnJS(onSnapFinishedJS)(nextState);
     },
-    [fullY, dualY, peekY, miniPeekY, currentSnapState, translateYAnim, onSnapFinishedJS]
+    [fullY, computedSearchRowTotalHeight, dualY, peekY, miniPeekY, currentSnapState, translateYAnim, onSnapFinishedJS]
   );
 
   // Dedicated subheader PanGesture from react-native-gesture-handler:
@@ -834,27 +858,11 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       <Animated.View
         style={[
           styles.sheetContainer,
-          { height: fullHeight },
+          { height: fullHeight + computedSearchRowTotalHeight },
           sheetAnimatedStyle,
+          containerBorderRadiusStyle,
         ]}
       >
-      {/* Animated Sheet Shadow Overlay - fades out completely at fullY so no shadow bleeds into search bar */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.sheetShadowOverlay,
-          sheetShadowAnimatedStyle,
-        ]}
-      />
-
-      {/* Animated Hairline Border Overlay - fades out to 0 at fullY for seamless borderless fusion */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.sheetHairlineBorderOverlay,
-          sheetBorderAnimatedStyle,
-        ]}
-      />
 
       {/* 0. Anchored Floating Action HUD Row: Layer | Draw | Recenter | Save Search */}
       <Animated.View
@@ -926,7 +934,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
       </Animated.View>
 
       {/* 1C. Subheader Row & Feed Container */}
-      <View style={styles.mainContentContainer}>
+      <Animated.View style={[styles.mainContentContainer, contentDockingStyle]}>
         {/* Subheader Row: Collapsing handle in FULL, cross-fade text */}
         <GestureDetector gesture={subHeaderGesture}>
           <View style={styles.subHeaderRowContainer}>
@@ -1055,7 +1063,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
             />
           </Animated.View>
         </GestureDetector>
-      </View>
+      </Animated.View>
     </Animated.View>
 
     {/* When in FULL: Floating bottom pill [ 🗺️ Map ] - cleanly floating at bottom-center above safe area */}
@@ -1074,7 +1082,7 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
         onPress={handleFloatingMapPress}
         activeOpacity={0.82}
       >
-        <Ionicons name="map" size={17} color="#ffffff" style={styles.floatingMapIcon} />
+        <Ionicons name="map" size={14.5} color="#ffffff" style={styles.floatingMapIcon} />
         <Text style={styles.floatingMapPillText}>Map</Text>
       </TouchableOpacity>
     </Animated.View>
@@ -1085,59 +1093,39 @@ export const MobileTriStateBottomSheet: React.FC<MobileTriStateBottomSheetProps>
 const styles = StyleSheet.create({
   sheetContainer: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
     backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowRadius: 14,
+    shadowOpacity: 0.12,
+    elevation: 6,
     borderLeftWidth: 0,
     borderRightWidth: 0,
     borderBottomWidth: 0,
     zIndex: 40,
     overflow: 'visible',
   },
-  sheetShadowOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 48,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-    zIndex: -1,
-  },
-  sheetHairlineBorderOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 24,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: '#f1f5f9',
-    backgroundColor: 'transparent',
-    zIndex: 45,
-  },
   mainContentContainer: {
     flex: 1,
     width: '100%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   listWrapper: {
     flex: 1,
     width: '100%',
   },
   subHeaderRowContainer: {
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     width: '100%',
   },
   grabHandleContainer: {
@@ -1145,6 +1133,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
   grabHandleArea: {
     width: '100%',
@@ -1568,23 +1558,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 26,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   floatingMapIcon: {
-    marginRight: 7,
+    marginRight: 6,
   },
   floatingMapPillText: {
     color: '#ffffff',
-    fontSize: 14.5,
+    fontSize: 13,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
