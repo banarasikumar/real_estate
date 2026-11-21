@@ -4,7 +4,10 @@
     "slug": "real-estate-user",
     "scheme": "userapp",
     "version": "1.0.0",
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "expo-status-bar"
+    ],
     "ios": {
       "bundleIdentifier": "com.realestate.seeker",
       "supportsTablet": true
